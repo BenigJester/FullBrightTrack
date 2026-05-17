@@ -28,6 +28,12 @@ dependencies {
 
   // Add the dependencies for any other desired Firebase products
   // https://firebase.google.com/docs/android/setup#available-libraries
+
+  // Google Play
+  implementation("com.google.android.play:feature-delivery:2.1.0")
+  implementation("com.google.android.play:core-common:2.0.3")
+  implementation("com.google.android.play:review:2.0.1")
+  implementation("com.google.android.play:app-update:2.1.0")
 }
 
 android {
@@ -67,11 +73,14 @@ android {
     buildTypes {
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile(
-                'proguard-android-optimize.txt'),
-                'proguard-rules.pro'
+
+            isMinifyEnabled = true
+            isShrinkResources = true
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

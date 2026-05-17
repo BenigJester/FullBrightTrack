@@ -20,3 +20,7 @@
     public static **[] values();
     public static ** valueOf(java.lang.String);
 }
+
+# Flutter / Google Play
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
