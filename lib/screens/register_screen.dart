@@ -28,23 +28,65 @@ class _RegisterTabState extends State<RegisterTab> {
     final confirmPassword = confirmPasswordController.text.trim();
 
     if (email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      HapticFeedback.mediumImpact();
+
+      final messenger = ScaffoldMessenger.of(context);
+
+      messenger.clearSnackBars();
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text("Please fill all fields"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
       return;
     }
 
     if (password.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Password must be at least 6 characters")),
+      HapticFeedback.mediumImpact();
+
+      final messenger = ScaffoldMessenger.of(context);
+
+      messenger.clearSnackBars();
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text("Password must be at least 6 characters"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
       );
       return;
     }
 
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Passwords do not match")));
+      HapticFeedback.mediumImpact();
+
+      final messenger = ScaffoldMessenger.of(context);
+
+      messenger.clearSnackBars();
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: const Text("Passwords do not match"),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
       return;
     }
 
@@ -98,7 +140,6 @@ class _RegisterTabState extends State<RegisterTab> {
                   //     ),
                   //   ),
                   // ),
-
                   const Spacer(),
 
                   // ================= ICON =================
