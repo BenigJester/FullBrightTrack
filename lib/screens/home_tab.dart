@@ -22,13 +22,13 @@ class HomeTab extends StatelessWidget {
 
   String moodIntensityLabel(double intensity) {
   if (intensity < 0.25) {
-    return "Very Low";
+    return "Slightly";
   } else if (intensity < 0.5) {
-    return "Low";
+    return "Somewhat";
   } else if (intensity < 0.75) {
-    return "Moderate";
+    return "Quite";
   } else {
-    return "High";
+    return "Extremely";
   }
 }
 
