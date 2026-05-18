@@ -17,7 +17,7 @@ class StreakService {
     ]);
 
     final stepsData = results[0] as Map<String, int>;
-    final moodData = results[1] as Map<String, int>;
+    final moodData = results[1] as Map<String, int?>;
     final offline = results[2] as List<Map<String, dynamic>>;
 
     // ================= MERGE OFFLINE =================
@@ -113,7 +113,7 @@ class StreakService {
 
   // ================= FETCH MOOD =================
 
-  static Future<Map<String, int>> _getLastNDaysMood(int days) async {
+  static Future<Map<String, int?>> _getLastNDaysMood(int days) async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) return {};
@@ -135,7 +135,10 @@ class StreakService {
           .doc(key)
           .get();
 
-      return MapEntry(key, (doc.data()?['mood_index'] as num?)?.toInt() ?? 0);
+      return MapEntry(
+        key,
+        doc.exists ? (doc.data()?['mood_index'] as num?)?.toInt() : null,
+      );
     });
 
     final entries = await Future.wait(futures);
@@ -177,17 +180,19 @@ class StreakService {
 
   // ================= MOOD STREAK =================
 
-  static Map<String, int> _calculateMoodStreak(Map<String, int> moodData) {
+  static Map<String, int> _calculateMoodStreak(Map<String, int?> moodData) {
     final dates = moodData.keys.toList()..sort();
 
     int current = 0;
     int longest = 0;
     int temp = 0;
 
-    for (final d in dates) {
-      final mood = moodData[d] ?? 0;
+    // ================= LONGEST =================
 
-      if (mood >= 2) {
+    for (final d in dates) {
+      final mood = moodData[d];
+
+      if (mood != null) {
         temp++;
 
         if (temp > longest) {
@@ -198,8 +203,26 @@ class StreakService {
       }
     }
 
+    // ================= CURRENT =================
+
+    final today = DateTime.now();
+
     for (int i = dates.length - 1; i >= 0; i--) {
-      if ((moodData[dates[i]] ?? 0) >= 2) {
+      final date = DateTime.parse(dates[i]);
+
+      final mood = moodData[dates[i]];
+
+      final isToday =
+          date.year == today.year &&
+          date.month == today.month &&
+          date.day == today.day;
+
+      // Skip empty today
+      if (isToday && mood == null) {
+        continue;
+      }
+
+      if (mood != null) {
         current++;
       } else {
         break;
@@ -251,7 +274,7 @@ class StreakService {
 
   // ============================= Refresh Mood Streak ====================
 
-  static void refreshMoodStreak(AppData appData, Map<String, int> moodData) {
+  static void refreshMoodStreak(AppData appData, Map<String, int?> moodData) {
     final moodStreak = _calculateMoodStreak(moodData);
 
     appData.updateStreakData(

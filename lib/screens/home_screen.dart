@@ -29,19 +29,6 @@ class _HomeScreenState extends State<HomeScreen> {
       const MoodTab(),
       const StreakTab(),
     ];
-    // 🔥 Show welcome message after screen loads
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   final user = FirebaseAuth.instance.currentUser;
-
-    //   if (user != null) {
-    //     ScaffoldMessenger.of(context).showSnackBar(
-    //       SnackBar(
-    //         content: Text("Welcome, ${user.displayName ?? user.email}"),
-    //         duration: const Duration(seconds: 2),
-    //       ),
-    //     );
-    //   }
-    // });
   }
 
   void onItemTapped(int index) {

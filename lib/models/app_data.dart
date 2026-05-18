@@ -51,7 +51,7 @@ class AppData extends ChangeNotifier {
   // ================= STREAK TAB =================
 
   Map<String, int> streakStepsData = {};
-  Map<String, int> streakMoodData = {};
+  Map<String, int?> streakMoodData = {};
 
   int moodCurrentStreak = 0;
   int moodLongestStreak = 0;
@@ -159,7 +159,7 @@ class AppData extends ChangeNotifier {
 
   void updateStreakData({
     required Map<String, int> stepsData,
-    required Map<String, int> moodData,
+    required Map<String, int?> moodData,
     required int current,
     required int longest,
     required int moodCurrent,

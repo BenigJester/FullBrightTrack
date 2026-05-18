@@ -164,7 +164,7 @@ class _JournalScreenState extends State<JournalScreen> {
         _controller.clear();
         setState(() {
           selectedTag = "";
-          currentPrompt = _getPrompt(); // 🔥 new prompt after save
+          currentPrompt = _getPrompt();
         });
       }
     } catch (e) {

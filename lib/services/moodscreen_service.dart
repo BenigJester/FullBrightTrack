@@ -94,7 +94,7 @@ class MoodService {
 
     // ================= UPDATE STREAK MAP =================
 
-    final updatedMoodData = Map<String, int>.from(_appData!.streakMoodData);
+    final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
 
     updatedMoodData[today] = moodIndex;
 

@@ -398,27 +398,6 @@ class StreakTab extends StatelessWidget {
     );
   }
 
-  // Widget _mini(String t, String v) {
-  //   return Container(
-  //     padding: const EdgeInsets.all(16),
-
-  //     decoration: BoxDecoration(
-  //       color: Colors.black12,
-  //       borderRadius: BorderRadius.circular(14),
-  //     ),
-
-  //     child: Column(
-  //       children: [
-  //         Text(t),
-
-  //         const SizedBox(height: 6),
-
-  //         Text(v, style: const TextStyle(fontWeight: FontWeight.bold)),
-  //       ],
-  //     ),
-  //   );
-  // }
-
   // ================= HEATMAP =================
 
   Widget _calendarHeatmap(AppData data) {

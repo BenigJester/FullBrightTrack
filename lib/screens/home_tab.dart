@@ -8,17 +8,29 @@ class HomeTab extends StatelessWidget {
   String moodLabel(int mood) {
     switch (mood) {
       case 0:
-        return "😞 Low";
+        return "😞";
       case 1:
-        return "🙂 Neutral";
+        return "🙂";
       case 2:
-        return "😄 Good";
+        return "😄";
       case 3:
-        return "🤩 Great";
+        return "🤩";
       default:
         return "—";
     }
   }
+
+  String moodIntensityLabel(double intensity) {
+  if (intensity < 0.25) {
+    return "Very Low";
+  } else if (intensity < 0.5) {
+    return "Low";
+  } else if (intensity < 0.75) {
+    return "Moderate";
+  } else {
+    return "High";
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -227,7 +239,7 @@ class HomeTab extends StatelessWidget {
                   child: _miniCard(
                     icon: Icons.mood_rounded,
                     title: "Mood",
-                    value: moodLabel(data.moodIndex),
+                    value: "${moodLabel(data.moodIndex)} ${moodIntensityLabel(data.moodIntensity)}",
                     subtitle: "today",
                     color: Colors.orange,
                   ),
