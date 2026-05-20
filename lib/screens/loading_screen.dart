@@ -5,6 +5,7 @@ import 'home_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
 import '../models/app_data.dart';
 import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
@@ -25,6 +26,10 @@ class _LoadingScreenState extends State<LoadingScreen>
 
   late Animation<double> _pulseAnimation;
   bool _isFinished = false;
+
+  bool _hasError = false;
+
+  String errorMessage = "";
 
   String loadingText = "Initializing services...";
 
@@ -47,6 +52,16 @@ class _LoadingScreenState extends State<LoadingScreen>
     );
 
     _initializeApp();
+  }
+
+  Future<void> _restartInitialization() async {
+    setState(() {
+      _hasError = false;
+      errorMessage = "";
+      loadingText = "Restarting services...";
+    });
+
+    await _initializeApp();
   }
 
   Future<void> requestNotificationPermission() async {
@@ -146,8 +161,12 @@ class _LoadingScreenState extends State<LoadingScreen>
     } catch (e) {
       debugPrint("Initialization Error: $e");
 
+      if (!mounted) return;
+
       setState(() {
-        loadingText = "Failed to load app";
+        _hasError = true;
+        errorMessage = e.toString();
+        loadingText = "Failed to initialize app";
       });
     }
   }
@@ -331,39 +350,113 @@ class _LoadingScreenState extends State<LoadingScreen>
 
                   const SizedBox(height: 40),
 
-                  ///
-                  /// PROGRESS BAR
-                  ///
-                  SizedBox(
-                    width: size.width * 0.60,
+                  if (!_hasError) ...[
+                    ///
+                    /// PROGRESS BAR
+                    ///
+                    SizedBox(
+                      width: size.width * 0.60,
 
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(30),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
 
-                      child: LinearProgressIndicator(
-                        minHeight: 8,
-                        backgroundColor: Colors.orange.shade100,
+                        child: LinearProgressIndicator(
+                          minHeight: 8,
+                          backgroundColor: Colors.orange.shade100,
 
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFFFF7A00),
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFFF7A00),
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 18),
+                    const SizedBox(height: 18),
 
-                  ///
-                  /// LOADING LABEL
-                  ///
-                  Text(
-                    "Loading services...",
-                    style: TextStyle(
-                      color: Colors.orange.shade700,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      "Loading services...",
+                      style: TextStyle(
+                        color: Colors.orange.shade700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
+                  ] else ...[
+                    ///
+                    /// ERROR MESSAGE
+                    ///
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 30),
+                      child: Text(
+                        "Something went wrong while starting the app.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.red.shade400,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    ///
+                    /// BUTTONS
+                    ///
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        ///
+                        /// RETRY BUTTON
+                        ///
+                        ElevatedButton.icon(
+                          onPressed: _restartInitialization,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF7A00),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 22,
+                              vertical: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text(
+                            "Retry",
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+
+                        const SizedBox(width: 14),
+
+                        ///
+                        /// EXIT BUTTON
+                        ///
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            SystemNavigator.pop();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 22,
+                              vertical: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          icon: const Icon(Icons.close_rounded),
+                          label: const Text(
+                            "Exit",
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
