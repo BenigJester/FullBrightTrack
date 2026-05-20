@@ -34,6 +34,9 @@ dependencies {
   implementation("com.google.android.play:core-common:2.0.3")
   implementation("com.google.android.play:review:2.0.1")
   implementation("com.google.android.play:app-update:2.1.0")
+
+  implementation("androidx.multidex:multidex:2.0.1")
+  coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 android {
@@ -44,6 +47,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -59,6 +64,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        multiDexEnabled = true
     }
 
     signingConfigs {

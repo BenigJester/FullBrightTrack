@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:productivity_and_wellbeing/services/steps_service.dart';
 import 'home_screen.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/app_data.dart';
 import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
 import '../services/moodscreen_service.dart';
+import '../services/foreground_callback.dart';
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key});
@@ -46,6 +49,16 @@ class _LoadingScreenState extends State<LoadingScreen>
     _initializeApp();
   }
 
+  Future<void> requestNotificationPermission() async {
+    final plugin = FlutterLocalNotificationsPlugin();
+
+    await plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+  }
+
   Future<void> _initializeApp() async {
     final appData = Provider.of<AppData>(context, listen: false);
 
@@ -77,6 +90,14 @@ class _LoadingScreenState extends State<LoadingScreen>
 
       await StepsService.instance.initialize(appData);
 
+      await FlutterForegroundTask.startService(
+        notificationTitle: 'Step Tracking Enabled',
+        notificationText: 'Background tracking active',
+        callback: startCallback,
+      );
+
+      await requestNotificationPermission();
+
       await Future.delayed(const Duration(milliseconds: 500));
 
       ///
@@ -92,7 +113,7 @@ class _LoadingScreenState extends State<LoadingScreen>
       await Future.delayed(const Duration(milliseconds: 500));
 
       ///
-      /// STEP SERVICE
+      /// STREAK SERVICE
       ///
       ///
       ///
@@ -143,7 +164,7 @@ class _LoadingScreenState extends State<LoadingScreen>
     if (_isFinished) {
       return const HomeScreen();
     }
-    
+
     final size = MediaQuery.of(context).size;
 
     return Scaffold(

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'more_screen.dart';
+import 'other_screen.dart';
 import 'leaderboards_screen.dart';
 
 class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {

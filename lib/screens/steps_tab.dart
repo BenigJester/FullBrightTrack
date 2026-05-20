@@ -38,27 +38,6 @@ class StepsTab extends StatelessWidget {
                 ],
               ),
 
-              // const SizedBox(height: 16),
-
-              // Container(
-              //   width: double.infinity,
-              //   padding: const EdgeInsets.all(12),
-
-              //   decoration: BoxDecoration(
-              //     color: Colors.black87,
-              //     borderRadius: BorderRadius.circular(12),
-              //   ),
-
-              //   child: Text(
-              //     data.debugText,
-              //     style: const TextStyle(
-              //       color: Colors.greenAccent,
-              //       fontSize: 12,
-              //       fontFamily: 'monospace',
-              //     ),
-              //   ),
-              // ),
-
               const SizedBox(height: 20),
 
               _buildStreakCard(data),

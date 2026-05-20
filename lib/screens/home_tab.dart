@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../models/app_data.dart';
 
 class HomeTab extends StatelessWidget {
@@ -21,16 +22,16 @@ class HomeTab extends StatelessWidget {
   }
 
   String moodIntensityLabel(double intensity) {
-  if (intensity < 0.25) {
-    return "Slightly";
-  } else if (intensity < 0.5) {
-    return "Somewhat";
-  } else if (intensity < 0.75) {
-    return "Quite";
-  } else {
-    return "Extremely";
+    if (intensity < 0.25) {
+      return "Slightly";
+    } else if (intensity < 0.5) {
+      return "Somewhat";
+    } else if (intensity < 0.75) {
+      return "Quite";
+    } else {
+      return "Extremely";
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +39,8 @@ class HomeTab extends StatelessWidget {
 
     debugPrint("MOOD TYPE: ${data.moodIndex.runtimeType}");
     debugPrint("MOOD VALUE: ${data.moodIndex}");
+
+    logServiceStatus();
 
     final progress = (data.stepsToday / data.stepGoal).clamp(0, 1.0);
 
@@ -239,7 +242,8 @@ class HomeTab extends StatelessWidget {
                   child: _miniCard(
                     icon: Icons.mood_rounded,
                     title: "Mood",
-                    value: "${moodLabel(data.moodIndex)} ${moodIntensityLabel(data.moodIntensity)}",
+                    value:
+                        "${moodLabel(data.moodIndex)} ${moodIntensityLabel(data.moodIntensity)}",
                     subtitle: "today",
                     color: Colors.orange,
                   ),
@@ -430,4 +434,10 @@ class HomeTab extends StatelessWidget {
       child: child,
     );
   }
+}
+
+Future<void> logServiceStatus() async {
+  final isRunning = await FlutterForegroundTask.isRunningService;
+
+  debugPrint('FG Service status → $isRunning');
 }

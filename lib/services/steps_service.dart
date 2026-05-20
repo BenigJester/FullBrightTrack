@@ -94,7 +94,6 @@ class StepsService with WidgetsBindingObserver {
 
     await Future.wait([_loadQueue(), _loadToday()]);
 
-    // 🔥 DON'T BLOCK UI
     Future.microtask(() => getHealthInsights(_goal));
 
     _initPedometer();
