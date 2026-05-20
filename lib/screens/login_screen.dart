@@ -46,15 +46,32 @@ class _LoginTabState extends State<LoginTab> {
         setState(() => isLoading = true);
       }
 
-      await auth.login(
-        emailController.text.trim(),
-        passwordController.text.trim(),
-      );
-    } catch (e) {
+      final email = emailController.text.trim();
+      final password = passwordController.text.trim();
+
+      // ================= VALIDATION =================
+
+      if (email.isEmpty || password.isEmpty) {
+        showErrorSnackBar('Please enter email and password');
+        return;
+      }
+
+      // ================= LOGIN =================
+
+      await auth.login(email, password);
+    } on FirebaseAuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        showErrorSnackBar(_getErrorMessage(e));
+      }
+    } on PlatformException catch (_) {
+      if (mounted) {
+        showErrorSnackBar('Authentication service temporarily unavailable');
+      }
+    } catch (e) {
+      debugPrint('Login Error: $e');
+
+      if (mounted) {
+        showErrorSnackBar('Unable to login right now. Please try again.');
       }
     } finally {
       if (mounted) {
@@ -76,15 +93,94 @@ class _LoginTabState extends State<LoginTab> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        showErrorSnackBar(_getErrorMessage(e));
       }
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
       }
     }
+  }
+
+  void showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF2D2D2D),
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        duration: const Duration(seconds: 3),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        content: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.error_outline_rounded,
+                color: Colors.redAccent,
+                size: 22,
+              ),
+            ),
+
+            const SizedBox(width: 14),
+
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getErrorMessage(dynamic e) {
+    if (e is FirebaseAuthException) {
+      switch (e.code) {
+        case 'invalid-email':
+          return 'Invalid email address';
+
+        case 'user-not-found':
+          return 'No account found with this email';
+
+        case 'wrong-password':
+          return 'Incorrect password';
+
+        case 'invalid-credential':
+          return 'Incorrect email or password';
+
+        case 'email-already-in-use':
+          return 'Email is already registered';
+
+        case 'weak-password':
+          return 'Password is too weak';
+
+        case 'network-request-failed':
+          return 'No internet connection';
+
+        case 'too-many-requests':
+          return 'Too many attempts. Try again later';
+
+        default:
+          return e.message ?? 'Authentication failed';
+      }
+    }
+
+    return 'Something went wrong';
   }
 
   @override
