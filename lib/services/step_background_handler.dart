@@ -94,6 +94,10 @@ class StepBackgroundHandler extends TaskHandler {
       _steps = 0;
     }
 
+    // ================= IMMEDIATE LOCAL SAVE =================
+
+    await _persistLocalState();
+
     // ================= UPDATE NOTIFICATION =================
 
     await FlutterForegroundTask.updateService(
@@ -146,9 +150,7 @@ class StepBackgroundHandler extends TaskHandler {
       final ts = e['timestamp'] ?? 0;
 
       return DateTime.now()
-              .difference(
-                DateTime.fromMillisecondsSinceEpoch(ts),
-              )
+              .difference(DateTime.fromMillisecondsSinceEpoch(ts))
               .inDays >
           7;
     });

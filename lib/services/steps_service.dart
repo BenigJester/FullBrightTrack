@@ -103,6 +103,20 @@ class StepsService with WidgetsBindingObserver {
     });
   }
 
+  // ================ LOCAL SYNC ===============
+
+  Future<void> _persistRealtimeLocal() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setInt('bg_steps', _steps);
+
+    await prefs.setInt('bg_baseline', _baseline);
+
+    await prefs.setInt('bg_last_raw', _lastRawSteps);
+
+    await prefs.setString('bg_day', _currentDay);
+  }
+
   // ================= DISPOSE =================
 
   void dispose() {
@@ -239,6 +253,8 @@ class StepsService with WidgetsBindingObserver {
 
     _steps = computed;
 
+    _persistRealtimeLocal();
+
     _updateStats();
 
     _debugText =
@@ -285,45 +301,91 @@ class StepsService with WidgetsBindingObserver {
   Future<void> _loadToday() async {
     final user = FirebaseAuth.instance.currentUser;
 
+    final prefs = await SharedPreferences.getInstance();
+
     final today = _todayKey();
 
     _currentDay = today;
 
-    if (user == null) {
-      _ready = true;
-      return;
+    // ================= LOCAL REALTIME CACHE =================
+
+    final localDay = prefs.getString('bg_day') ?? '';
+
+    final localSteps = prefs.getInt('bg_steps') ?? 0;
+
+    final localBaseline = prefs.getInt('bg_baseline') ?? 0;
+
+    final localLastRaw = prefs.getInt('bg_last_raw') ?? 0;
+
+    int firestoreSteps = 0;
+
+    int firestoreBaseline = 0;
+
+    int firestoreLastRaw = 0;
+
+    // ================= FIRESTORE =================
+
+    if (user != null) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('steps')
+            .doc(today)
+            .get();
+
+        if (doc.exists) {
+          firestoreSteps = (doc.data()?['steps'] as num?)?.toInt() ?? 0;
+
+          firestoreBaseline = (doc.data()?['baseline'] as num?)?.toInt() ?? 0;
+
+          firestoreLastRaw =
+              (doc.data()?['lastRawSteps'] as num?)?.toInt() ?? 0;
+        }
+      } catch (e) {
+        debugPrint("Firestore preload failed: $e");
+      }
     }
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('steps')
-        .doc(today)
-        .get();
+    // ================= MERGE STRATEGY =================
 
-    if (doc.exists) {
-      _initialSteps = doc.data()?['steps'] ?? 0;
+    final validLocal = localDay == today;
 
-      _baseline = doc.data()?['baseline'] ?? 0;
+    final mergedSteps = validLocal
+        ? max(localSteps, firestoreSteps)
+        : firestoreSteps;
 
-      _lastRawSteps = doc.data()?['lastRawSteps'] ?? 0;
+    _steps = mergedSteps;
 
-      _steps = _initialSteps;
+    // ================= PREFER LOCAL REALTIME VALUES =================
+
+    if (validLocal && localBaseline > 0) {
+      _baseline = localBaseline;
+
+      _lastRawSteps = localLastRaw;
     } else {
-      _initialSteps = 0;
+      _baseline = firestoreBaseline;
 
-      _baseline = 0;
-
-      _lastRawSteps = 0;
-
-      _steps = 0;
+      _lastRawSteps = firestoreLastRaw;
     }
+
+    _initialSteps = _steps;
+
+    // ================= STATS =================
 
     _updateStats();
+
+    // ================= READY =================
 
     _baselineSet = false;
 
     _ready = true;
+
+    _debugText =
+        "LOAD COMPLETE\n"
+        "LOCAL: $localSteps\n"
+        "FIRESTORE: $firestoreSteps\n"
+        "MERGED: $_steps";
 
     _pushToAppData();
   }
