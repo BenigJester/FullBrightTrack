@@ -3,9 +3,14 @@ import 'package:provider/provider.dart';
 import '../models/app_data.dart';
 import '../services/moodscreen_service.dart';
 
-class MoodScreen extends StatelessWidget {
+class MoodScreen extends StatefulWidget {
   const MoodScreen({super.key});
 
+  @override
+  State<MoodScreen> createState() => _MoodScreenState();
+}
+
+class _MoodScreenState extends State<MoodScreen> {
   @override
   Widget build(BuildContext context) {
     final data = context.watch<AppData>();
@@ -76,7 +81,12 @@ class MoodScreen extends StatelessWidget {
                 value: data.moodIntensity,
                 activeColor: Colors.deepOrange,
                 inactiveColor: Colors.orange.shade100,
-                onChanged: (value) {
+                onChanged: (newValue) {
+                  setState(() {
+                    data.moodIntensity = newValue;
+                  });
+                },
+                onChangeEnd: (value) {
                   moodService.updateIntensity(value);
                 },
               ),

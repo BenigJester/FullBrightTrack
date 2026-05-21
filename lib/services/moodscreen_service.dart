@@ -78,60 +78,51 @@ class MoodService {
         });
   }
 
-  // ================= UPDATE MOOD =================
+  // ================= UPDATE STREAK MOOD ========================
 
-  void updateMood(int moodIndex) {
+  void _updateMoodStreak(int moodIndex) {
     if (_appData == null) return;
 
     final today = _todayKey();
 
-    // ================= UPDATE MOOD =================
+    final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
+
+    updatedMoodData[today] = moodIndex;
+
+    StreakService.refreshMoodStreak(_appData!, updatedMoodData);
+  }
+
+  // ================= UPDATE MOOD =================
+
+  void updateMood(int moodIndex) {
+    if (_appData == null) return;
 
     _appData!.updateMoodData(
       moodIndex: moodIndex,
       moodIntensity: _appData!.moodIntensity,
     );
 
-    // ================= UPDATE STREAK MAP =================
-
-    final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
-
-    updatedMoodData[today] = moodIndex;
-
-    // ================= REFRESH MOOD STREAK =================
-
-    StreakService.refreshMoodStreak(_appData!, updatedMoodData);
-
-    // ================= SAVE =================
+    _updateMoodStreak(moodIndex);
 
     _autoSaveMood();
   }
+
   // ================= UPDATE INTENSITY =================
 
   void updateIntensity(double value) {
     if (_appData == null) return;
-
-    final today = _todayKey();
 
     _appData!.updateMoodData(
       moodIndex: _appData!.selectedMood,
       moodIntensity: value,
     );
 
-    // ================= UPDATE STREAK MAP =================
-    final updatedMoodData = Map<String, int>.from(_appData!.streakMoodData);
-    updatedMoodData[today] = _appData!.selectedMood;
-
-    // ================= REFRESH MOOD STREAK =================
-
-    StreakService.refreshMoodStreak(_appData!, updatedMoodData);
-
-    _autoSaveMood();
+    _autoSaveMood(overrideIntensity: value);
   }
 
   // ================= AUTO SAVE =================
 
-  void _autoSaveMood() {
+  void _autoSaveMood({double? overrideIntensity}) {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null || _appData == null) return;
@@ -148,7 +139,7 @@ class MoodService {
           .doc(today)
           .set({
             'mood_index': _appData!.selectedMood,
-            'intensity': _appData!.moodIntensity,
+            'intensity': overrideIntensity ?? _appData!.moodIntensity,
             'updated_at': FieldValue.serverTimestamp(),
           });
     });
