@@ -249,7 +249,7 @@ class _JournalScreenState extends State<JournalScreen> {
 
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.04),
+                                      color: Colors.black.withValues(alpha: 0.04),
 
                                       blurRadius: 18,
                                       offset: const Offset(0, 8),
@@ -443,7 +443,7 @@ class _JournalScreenState extends State<JournalScreen> {
 
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.orange.withOpacity(0.08),
+                          color: Colors.orange.withValues(alpha: 0.08),
                           blurRadius: 16,
                           offset: const Offset(0, 8),
                         ),
@@ -522,7 +522,7 @@ class _JournalScreenState extends State<JournalScreen> {
 
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
+                          color: Colors.black.withValues(alpha: 0.03),
                           blurRadius: 18,
                           offset: const Offset(0, 8),
                         ),
