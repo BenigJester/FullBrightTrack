@@ -62,6 +62,12 @@ class AppData extends ChangeNotifier {
 
   double consistencyPercent = 0;
 
+  // =================== JOURNAL SCREEN =======================
+
+  List<Map<String, dynamic>> journals = [];
+
+  bool journalLoading = false;
+
   // =========================================================
   // HOME UPDATE
   // =========================================================
@@ -140,18 +146,12 @@ class AppData extends ChangeNotifier {
     this.moodIntensity = moodIntensity;
     this.moodIndex = moodIndex;
 
-
     notifyListeners();
   }
 
   // =========================================================
   // MOOD UPDATE
   // =========================================================
-
-  // void updateMood(int mood) {
-  //   moodIndex = mood;
-  //   notifyListeners();
-  // }
 
   // =========================================================
   // STREAK UPDATE
@@ -189,6 +189,20 @@ class AppData extends ChangeNotifier {
 
   void setLoading(bool value) {
     isLoading = value;
+    notifyListeners();
+  }
+
+  // =========================================================
+  // JOURNAL UPDATE
+  // =========================================================
+
+  void updateJournalData({
+    required List<Map<String, dynamic>> journalList,
+    required bool loading,
+  }) {
+    journals = journalList;
+    journalLoading = loading;
+
     notifyListeners();
   }
 }

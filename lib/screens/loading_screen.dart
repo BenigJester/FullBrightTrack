@@ -11,6 +11,7 @@ import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
 import '../services/moodscreen_service.dart';
 import '../services/foreground_callback.dart';
+import '../services/journal_service.dart';
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key});
@@ -120,10 +121,24 @@ class _LoadingScreenState extends State<LoadingScreen>
       ///
       ///
       setState(() {
-        loadingText = "Loading mood data...";
+        loadingText = "Loading journal data...";
       });
 
       await MoodService.instance.initialize(appData);
+
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      ///
+      /// MOOD SERVICE
+      ///
+      ///
+      ///
+
+      setState(() {
+        loadingText = "Loading mood data...";
+      });
+
+      await JournalService.initialize(appData);
 
       await Future.delayed(const Duration(milliseconds: 500));
 
