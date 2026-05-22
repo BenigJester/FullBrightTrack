@@ -5,8 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:pedometer/pedometer.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../models/app_data.dart';
 
 class StepsService with WidgetsBindingObserver {
@@ -33,6 +33,8 @@ class StepsService with WidgetsBindingObserver {
   int _steps = 0;
 
   static const int maxStepSpike = 3000;
+
+  bool _processing = false;
 
   // ================= STATS =================
 
@@ -90,8 +92,6 @@ class StepsService with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addObserver(this);
 
-    Permission.activityRecognition.request();
-
     await Future.wait([_loadQueue(), _loadToday()]);
 
     Future.microtask(() => getHealthInsights(_goal));
@@ -101,6 +101,54 @@ class StepsService with WidgetsBindingObserver {
     Timer.periodic(const Duration(seconds: 15), (_) {
       _syncQueue();
     });
+  }
+
+  // =================== FOREGROUND SYNC ===============
+
+  void _syncForegroundTask() {
+    FlutterForegroundTask.sendDataToTask({"steps": _steps, "day": _currentDay});
+  }
+
+  // ================= LOGOUT CLEAN UP ===================
+
+  Future<void> fullLogoutCleanup() async {
+    // 1. Stop foreground service (IMPORTANT)
+    await FlutterForegroundTask.stopService();
+
+    // 2. Reset StepsService state
+    StepsService.instance.resetAllLocalState();
+
+    // 3. Clear SharedPreferences (ALL step)
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.remove('bg_steps');
+    await prefs.remove('bg_baseline');
+    await prefs.remove('bg_last_raw');
+    await prefs.remove('bg_day');
+    await prefs.remove('steps_queue');
+  }
+
+  // =============== RESET ALL LOCAL DATA =================
+
+  Future<void> resetAllLocalState() async {
+    _steps = 0;
+    _baseline = 0;
+    _initialSteps = 0;
+    _lastRawSteps = 0;
+
+    _baselineSet = false;
+    _currentDay = "";
+    _ready = false;
+
+    _offlineQueue.clear();
+    _latestInsights = null;
+
+    _debugText = "RESET AFTER LOGOUT";
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // optional FULL wipe if app is single-user
+
+    _pushToAppData();
   }
 
   // ================ LOCAL SYNC ===============
@@ -150,20 +198,24 @@ class StepsService with WidgetsBindingObserver {
   // ================= PEDOMETER =================
 
   void _initPedometer() {
-    _stepStream = Pedometer.stepCountStream.listen((event) {
-      if (!_ready) return;
+    _stepStream = Pedometer.stepCountStream.listen((event) async {
+      if (_processing || !_ready) return;
 
-      final today = _todayKey();
+      _processing = true;
 
-      _processStep(event, today);
-
-      _queueSave();
+      try {
+        final today = _todayKey();
+        await _processStep(event, today);
+        _queueSave();
+      } finally {
+        _processing = false;
+      }
     });
   }
 
   // ================= PROCESS STEP =================
 
-  void _processStep(StepCount event, String today) {
+  Future<void> _processStep(StepCount event, String today) async {
     final raw = event.steps;
 
     // ================= NEW DAY =================
@@ -181,6 +233,10 @@ class StepsService with WidgetsBindingObserver {
       _debugText = "🌙 NEW DAY RESET\nRAW: $raw";
 
       _updateStats();
+
+      await _persistRealtimeLocal();
+
+      _syncForegroundTask();
 
       _pushToAppData();
 
@@ -204,6 +260,10 @@ class StepsService with WidgetsBindingObserver {
 
       _debugText = "INIT BASELINE\nRAW: $raw";
 
+      await _persistRealtimeLocal();
+
+      _syncForegroundTask();
+
       _pushToAppData();
 
       return;
@@ -224,6 +284,10 @@ class StepsService with WidgetsBindingObserver {
           "SHIFT BASELINE\n"
           "INIT: $_initialSteps";
 
+      await _persistRealtimeLocal();
+
+      _syncForegroundTask();
+
       _pushToAppData();
 
       return;
@@ -240,6 +304,10 @@ class StepsService with WidgetsBindingObserver {
           "LAST: $_lastRawSteps\n"
           "DIFF: $diffRaw";
 
+      await _persistRealtimeLocal();
+
+      _syncForegroundTask();
+
       _pushToAppData();
 
       return;
@@ -253,7 +321,7 @@ class StepsService with WidgetsBindingObserver {
 
     _steps = computed;
 
-    _persistRealtimeLocal();
+    _lastRawSteps = raw;
 
     _updateStats();
 
@@ -264,7 +332,9 @@ class StepsService with WidgetsBindingObserver {
         "DELTA: $delta\n"
         "TOTAL: $_steps";
 
-    _lastRawSteps = raw;
+    await _persistRealtimeLocal();
+
+    _syncForegroundTask();
 
     _pushToAppData();
   }

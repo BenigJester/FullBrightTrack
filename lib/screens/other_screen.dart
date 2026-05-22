@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/steps_service.dart';
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -117,11 +118,16 @@ class MoreScreen extends StatelessWidget {
               subtitle: "Sign out from your account",
               isLogout: true,
               onTap: () async {
-                await FirebaseAuth.instance.signOut();
+                try {
+                  await StepsService.instance.fullLogoutCleanup();
+                  await FirebaseAuth.instance.signOut();
 
-                if (!context.mounted) return;
+                  if (!context.mounted) return;
 
-                Navigator.pop(context);
+                  Navigator.pop(context);
+                } catch (e) {
+                  debugPrint("Logout error: $e");
+                }
               },
             ),
           ],

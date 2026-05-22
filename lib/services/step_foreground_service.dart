@@ -9,7 +9,6 @@ class StepForegroundService {
       notificationTitle: 'Step Tracker Active',
       notificationText: 'Tracking steps...',
       callback: startCallback,
-      notificationIcon: const NotificationIcon(metaDataName: 'ic_launcher'),
     );
   }
 
