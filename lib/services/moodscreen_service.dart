@@ -77,20 +77,7 @@ class MoodService {
           );
         });
   }
-
-  // ================= UPDATE STREAK MOOD ========================
-
-  void _updateMoodStreak(int moodIndex) {
-    if (_appData == null) return;
-
-    final today = _todayKey();
-
-    final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
-
-    updatedMoodData[today] = moodIndex;
-
-    StreakService.refreshMoodStreak(_appData!, updatedMoodData);
-  }
+  
 
   // ================= UPDATE MOOD =================
 
@@ -101,8 +88,6 @@ class MoodService {
       moodIndex: moodIndex,
       moodIntensity: _appData!.moodIntensity,
     );
-
-    _updateMoodStreak(moodIndex);
 
     _autoSaveMood();
   }
@@ -124,24 +109,32 @@ class MoodService {
 
   void _autoSaveMood({double? overrideIntensity}) {
     final user = FirebaseAuth.instance.currentUser;
-
     if (user == null || _appData == null) return;
 
     _debounce?.cancel();
 
     final today = _todayKey();
 
-    _debounce = Timer(const Duration(milliseconds: 600), () {
-      FirebaseFirestore.instance
+    _debounce = Timer(const Duration(milliseconds: 600), () async {
+      final moodIndex = _appData!.selectedMood;
+      final intensity = overrideIntensity ?? _appData!.moodIntensity;
+
+      // 1. SAVE TO FIRESTORE
+      await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('mood')
           .doc(today)
           .set({
-            'mood_index': _appData!.selectedMood,
-            'intensity': overrideIntensity ?? _appData!.moodIntensity,
+            'mood_index': moodIndex,
+            'intensity': intensity,
             'updated_at': FieldValue.serverTimestamp(),
           });
+      final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
+
+      updatedMoodData[today] = moodIndex;
+
+      StreakService.refreshMoodStreak(_appData!, updatedMoodData);
     });
   }
 
