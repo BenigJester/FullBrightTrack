@@ -35,6 +35,7 @@ class StepsService with WidgetsBindingObserver {
   static const int maxStepSpike = 3000;
 
   bool _processing = false;
+  int _anchorSteps = 0;
 
   // ================= STATS =================
 
@@ -135,6 +136,7 @@ class StepsService with WidgetsBindingObserver {
     _baseline = 0;
     _initialSteps = 0;
     _lastRawSteps = 0;
+    _anchorSteps = 0;
 
     _baselineSet = false;
     _currentDay = "";
@@ -163,6 +165,8 @@ class StepsService with WidgetsBindingObserver {
     await prefs.setInt('bg_last_raw', _lastRawSteps);
 
     await prefs.setString('bg_day', _currentDay);
+
+    await prefs.setInt('bg_anchor', _anchorSteps);
   }
 
   // ================= DISPOSE =================
@@ -250,20 +254,15 @@ class StepsService with WidgetsBindingObserver {
     // ================= FIRST INIT =================
 
     if (!_baselineSet) {
-      if (_baseline == 0) {
-        _baseline = raw;
-      }
+      _baseline = raw;
+
+      _anchorSteps = _steps;
 
       _lastRawSteps = raw;
-
       _baselineSet = true;
 
-      _debugText = "INIT BASELINE\nRAW: $raw";
-
       await _persistRealtimeLocal();
-
       _syncForegroundTask();
-
       _pushToAppData();
 
       return;
@@ -273,6 +272,8 @@ class StepsService with WidgetsBindingObserver {
 
     if (raw < _lastRawSteps) {
       _initialSteps = _steps;
+
+      _anchorSteps = _steps;
 
       _baseline = raw;
 
@@ -317,7 +318,7 @@ class StepsService with WidgetsBindingObserver {
 
     final delta = max(0, raw - _baseline);
 
-    final computed = max(0, _initialSteps + delta);
+    final computed = max(0, _anchorSteps + delta);
 
     _steps = computed;
 
@@ -387,6 +388,8 @@ class StepsService with WidgetsBindingObserver {
 
     final localLastRaw = prefs.getInt('bg_last_raw') ?? 0;
 
+    _anchorSteps = prefs.getInt('bg_anchor') ?? 0;
+
     int firestoreSteps = 0;
 
     int firestoreBaseline = 0;
@@ -438,6 +441,8 @@ class StepsService with WidgetsBindingObserver {
 
       _lastRawSteps = firestoreLastRaw;
     }
+
+    _anchorSteps = localBaseline > 0 ? localBaseline : firestoreBaseline;
 
     _initialSteps = _steps;
 
