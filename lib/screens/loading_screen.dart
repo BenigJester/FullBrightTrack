@@ -1,16 +1,16 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:productivity_and_wellbeing/services/step_foreground_service.dart';
 import 'package:productivity_and_wellbeing/services/steps_service.dart';
 import 'home_screen.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../models/app_data.dart';
 import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
 import '../services/moodscreen_service.dart';
-import '../services/foreground_callback.dart';
 import '../services/journal_service.dart';
 
 class LoadingScreen extends StatefulWidget {
@@ -104,15 +104,24 @@ class _LoadingScreenState extends State<LoadingScreen>
         loadingText = "Starting step tracker...";
       });
 
+      /// 1. Activity recognition
+      final activityPermission = await Permission.activityRecognition.request();
+
+      if (!activityPermission.isGranted) {
+        throw Exception("Activity recognition permission denied");
+      }
+
+      /// 2. Notification permission
+      await requestNotificationPermission();
+
+      /// Give Android time to apply permission state
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      /// 3. Initialize services
       await StepsService.instance.initialize(appData);
 
-      await FlutterForegroundTask.startService(
-        notificationTitle: 'Step Tracking Enabled',
-        notificationText: 'Background tracking active',
-        callback: startCallback,
-      );
-
-      await requestNotificationPermission();
+      /// 4. Start foreground service
+      await StepForegroundService.start();
 
       await Future.delayed(const Duration(milliseconds: 500));
 
