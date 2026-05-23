@@ -38,11 +38,9 @@ class StreakService {
 
     // ================= CONSISTENCY =================
 
-    final active = stepsData.values.where((s) => s >= goal).length;
+    final avg = stepsData.values.reduce((a, b) => a + b) / stepsData.length;
 
-    final consistency = stepsData.isEmpty
-        ? 0.0
-        : (active / stepsData.length) * 100;
+    final consistency = (avg / goal).clamp(0.0, 1.5) * 100;
 
     // ================= UPDATE APPDATA =================
 
