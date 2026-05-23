@@ -39,10 +39,11 @@ class StreakTab extends StatelessWidget {
           _consistencyRow(data),
           const SizedBox(height: 16),
 
-          _calendarHeatmap(data),
+          _trendCard(trend),
           const SizedBox(height: 16),
 
-          _trendCard(trend),
+          _calendarHeatmap(data),
+
         ],
       ),
     );
@@ -229,12 +230,7 @@ class StreakTab extends StatelessWidget {
                     ),
 
                     const Spacer(),
-
-                    // const Icon(
-                    //   Icons.arrow_outward_rounded,
-                    //   color: Colors.white70,
-                    //   size: 18,
-                    // ),
+                    
                     Text(
                       data.longestStreak >= 7
                           ? "🔥 Outstanding"
@@ -272,17 +268,6 @@ class StreakTab extends StatelessWidget {
                 ),
 
                 const SizedBox(height: 20),
-
-                // Text(
-                //   data.longestStreak >= 7
-                //       ? "🔥 Outstanding consistency"
-                //       : "🚀 Keep building momentum",
-                //   style: const TextStyle(
-                //     color: Colors.white,
-                //     fontSize: 12,
-                //     fontWeight: FontWeight.w500,
-                //   ),
-                // ),
               ],
             ),
           ),
