@@ -1,10 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
+import 'mood_popup_card.dart';
 
-class HomeTab extends StatelessWidget {
+class HomeTab extends StatefulWidget {
   const HomeTab({super.key});
+
+  @override
+  State<HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<HomeTab> {
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showMoodPopupIfNeeded(context);
+    });
+  }
+
+  // ================= DAILY MOOD POPUP =================
+
+  Future<void> showMoodPopupIfNeeded(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final today =
+        "${DateTime.now().year}-${DateTime.now().month}-${DateTime.now().day}";
+
+    final lastShown = prefs.getString("last_mood_popup");
+
+    if (lastShown == today) return;
+
+    await prefs.setString("last_mood_popup", today);
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+
+      builder: (_) => const MoodPopupCard(),
+    );
+  }
 
   String moodLabel(int mood) {
     switch (mood) {
@@ -344,7 +384,6 @@ class HomeTab extends StatelessWidget {
   }
 
   // ================= MINI CARD =================
-
   Widget _miniCard({
     required IconData icon,
     required String title,
@@ -412,7 +451,6 @@ class HomeTab extends StatelessWidget {
   }
 
   // ================= GLASS CARD =================
-
   Widget _glassCard({required Widget child}) {
     return Container(
       width: double.infinity,
