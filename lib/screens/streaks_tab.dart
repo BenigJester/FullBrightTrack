@@ -30,10 +30,16 @@ class StreakTab extends StatelessWidget {
 
       child: Column(
         children: [
-          _heroCard(streak),
-          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: _heroCard(streak)),
 
-          _moodStreakCard(moodStreak),
+              const SizedBox(width: 14),
+
+              Expanded(child: _moodStreakCard(moodStreak)),
+            ],
+          ),
+
           const SizedBox(height: 16),
 
           _consistencyRow(data),
@@ -43,7 +49,6 @@ class StreakTab extends StatelessWidget {
           const SizedBox(height: 16),
 
           _calendarHeatmap(data),
-
         ],
       ),
     );
@@ -53,34 +58,84 @@ class StreakTab extends StatelessWidget {
 
   Widget _heroCard(Map<String, int> streak) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
 
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Colors.deepOrange, Colors.orange],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
 
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
+
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withValues(alpha: 0.25),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
 
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
 
         children: [
-          const Text("Steps Streak", style: TextStyle(color: Colors.white70)),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
 
-          const SizedBox(height: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+
+                child: const Icon(
+                  Icons.local_fire_department_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+
+              const Spacer(),
+
+              const Text(
+                "🔥 Active",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
 
           Text(
-            "${streak["current"]} days 🔥",
-
+            "${streak["current"]}",
             style: const TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
               color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.bold,
+              height: 1,
             ),
           ),
+
+          const SizedBox(height: 6),
+
+          const Text(
+            "Current Streak",
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -89,66 +144,99 @@ class StreakTab extends StatelessWidget {
   // ================= MOOD =================
 
   Widget _moodStreakCard(Map<String, int> moodStreak) {
-    String message;
-
     final currentMoodStreak = moodStreak["current"] ?? 0;
 
+    String status;
+
     if (currentMoodStreak == 0) {
-      message = "Track your mood today 🙂";
+      status = "🙂 Start";
     } else if (currentMoodStreak < 3) {
-      message = "Getting better!";
+      status = "🌱 Growing";
     } else if (currentMoodStreak < 7) {
-      message = "You're feeling good 💛";
+      status = "💛 Positive";
     } else {
-      message = "Emotional balance strong 🌿";
+      status = "🌿 Balanced";
     }
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
 
       decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [Colors.purple, Colors.blue]),
+        gradient: const LinearGradient(
+          colors: [Colors.purple, Colors.blue],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
 
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
+
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withValues(alpha: 0.22),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
 
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
 
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-
+          Row(
             children: [
-              const Text(
-                "Mood Streak",
-                style: TextStyle(color: Colors.white70),
-              ),
+              Container(
+                padding: const EdgeInsets.all(8),
 
-              const SizedBox(height: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
 
-              Text(
-                "${moodStreak["current"]} days 😊",
-
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+                child: const Icon(
+                  Icons.mood_rounded,
                   color: Colors.white,
+                  size: 20,
                 ),
               ),
 
-              const SizedBox(height: 4),
+              const Spacer(),
 
-              Text(message, style: const TextStyle(color: Colors.white)),
+              Text(
+                status,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ),
 
-          Text(
-            "Best: ${moodStreak["longest"]}",
+          const SizedBox(height: 18),
 
-            style: const TextStyle(color: Colors.white),
+          Text(
+            "${moodStreak["current"]}",
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.bold,
+              height: 1,
+            ),
           ),
+
+          const SizedBox(height: 6),
+
+          const Text(
+            "Mood Streak",
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+
+          const SizedBox(height: 20),
         ],
       ),
     );
@@ -230,11 +318,11 @@ class StreakTab extends StatelessWidget {
                     ),
 
                     const Spacer(),
-                    
+
                     Text(
                       data.longestStreak >= 7
-                          ? "🔥 Outstanding"
-                          : "🚀 Keep Walking",
+                          ? "Outstanding"
+                          : "Keep Walking",
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
