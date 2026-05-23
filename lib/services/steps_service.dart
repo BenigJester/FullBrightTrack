@@ -262,7 +262,7 @@ class StepsService with WidgetsBindingObserver {
     if (!_baselineSet) {
       _baseline = raw;
 
-      _anchorSteps = _steps;
+      _anchorSteps = 0;
 
       _lastRawSteps = raw;
       _baselineSet = true;
@@ -448,7 +448,7 @@ class StepsService with WidgetsBindingObserver {
       _lastRawSteps = firestoreLastRaw;
     }
 
-    _anchorSteps = mergedSteps;
+    _anchorSteps = 0;
 
     _initialSteps = mergedSteps;
 
