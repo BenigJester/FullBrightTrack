@@ -52,6 +52,7 @@ class StepsService with WidgetsBindingObserver {
   // ================= SAVE CONTROL =================
 
   Timer? _saveTimer;
+  Timer? _syncTimer;
 
   int _lastSavedSteps = 0;
   DateTime _lastSaveTime = DateTime.now();
@@ -99,7 +100,7 @@ class StepsService with WidgetsBindingObserver {
 
     _initPedometer();
 
-    Timer.periodic(const Duration(seconds: 15), (_) {
+    _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _syncQueue();
     });
   }
@@ -113,13 +114,10 @@ class StepsService with WidgetsBindingObserver {
   // ================= LOGOUT CLEAN UP ===================
 
   Future<void> fullLogoutCleanup() async {
-    // 1. Stop foreground service (IMPORTANT)
     await FlutterForegroundTask.stopService();
 
-    // 2. Reset StepsService state
     StepsService.instance.resetAllLocalState();
 
-    // 3. Clear SharedPreferences (ALL step)
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.remove('bg_steps');
@@ -148,7 +146,7 @@ class StepsService with WidgetsBindingObserver {
     _debugText = "RESET AFTER LOGOUT";
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // optional FULL wipe if app is single-user
+    await prefs.clear();
 
     _pushToAppData();
   }
@@ -177,6 +175,8 @@ class StepsService with WidgetsBindingObserver {
     _stepStream?.cancel();
 
     _saveTimer?.cancel();
+
+    _syncTimer?.cancel();
 
     _enqueueSave();
   }
@@ -228,13 +228,19 @@ class StepsService with WidgetsBindingObserver {
       _currentDay = today;
 
       _baseline = raw;
+
+      _anchorSteps = 0;
       _initialSteps = 0;
       _steps = 0;
 
       _lastRawSteps = raw;
+
       _baselineSet = true;
 
-      _debugText = "🌙 NEW DAY RESET\nRAW: $raw";
+      _debugText =
+          "🌙 NEW DAY RESET\n"
+          "RAW: $raw\n"
+          "BASELINE RESET";
 
       _updateStats();
 
@@ -442,9 +448,9 @@ class StepsService with WidgetsBindingObserver {
       _lastRawSteps = firestoreLastRaw;
     }
 
-    _anchorSteps = localBaseline > 0 ? localBaseline : firestoreBaseline;
+    _anchorSteps = mergedSteps;
 
-    _initialSteps = _steps;
+    _initialSteps = mergedSteps;
 
     // ================= STATS =================
 
@@ -452,7 +458,7 @@ class StepsService with WidgetsBindingObserver {
 
     // ================= READY =================
 
-    _baselineSet = false;
+    _baselineSet = _baseline > 0;
 
     _ready = true;
 
