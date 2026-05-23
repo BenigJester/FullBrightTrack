@@ -121,7 +121,7 @@ class _JournalHistoryScreenState extends State<JournalHistoryScreen> {
                 );
               },
 
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
 
               itemCount: filters.length,
             ),
