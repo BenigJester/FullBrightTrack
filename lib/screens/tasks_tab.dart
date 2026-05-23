@@ -529,53 +529,95 @@ class _TasksTabState extends State<TasksTab> {
   void _showAddTaskDialog() {
     final titleController = TextEditingController();
     DateTime? selectedDeadline;
+    String? localError;
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (_) {
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
         return StatefulBuilder(
-          builder: (dialogContext, setStateDialog) {
-            return AlertDialog(
-              title: const Text("New Task"),
-              content: Column(
+          builder: (context, setState) {
+            return Container(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+              ),
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextField(
-                    controller: titleController,
-                    decoration: const InputDecoration(hintText: "Task title"),
+                  // ================= HANDLE =================
+                  Center(
+                    child: Container(
+                      width: 50,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 20),
 
-                  // 🔥 SINGLE DEADLINE BUTTON
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.calendar_today),
-                    label: Text(
-                      selectedDeadline == null
-                          ? "Set Deadline"
-                          : _formatDateTime(selectedDeadline!),
+                  // ================= TITLE =================
+                  const Text(
+                    "Create New Task",
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  Text(
+                    "Stay organized and track your progress",
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ================= TASK INPUT =================
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    onPressed: () async {
-                      if (!dialogContext.mounted) return;
+                    child: TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        hintText: "What do you need to do?",
+                      ),
+                    ),
+                  ),
 
-                      // 1️⃣ Pick Date
+                  const SizedBox(height: 16),
+
+                  // ================= DEADLINE PICKER =================
+                  InkWell(
+                    onTap: () async {
                       final pickedDate = await showDatePicker(
-                        context: dialogContext,
+                        context: context,
                         firstDate: DateTime.now(),
                         lastDate: DateTime(2100),
                       );
 
-                      if (pickedDate == null || !dialogContext.mounted) return;
+                      if (pickedDate == null) return;
 
-                      // 2️⃣ Pick Time
                       final pickedTime = await showTimePicker(
-                        context: dialogContext,
+                        context: context,
                         initialTime: TimeOfDay.now(),
                       );
 
-                      if (pickedTime == null || !dialogContext.mounted) return;
+                      if (pickedTime == null) return;
 
-                      // 3️⃣ Combine
                       final combined = DateTime(
                         pickedDate.year,
                         pickedDate.month,
@@ -584,61 +626,111 @@ class _TasksTabState extends State<TasksTab> {
                         pickedTime.minute,
                       );
 
-                      setStateDialog(() {
+                      setState(() {
                         selectedDeadline = combined;
-                        errorText = null;
+                        localError = null;
                       });
                     },
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.orange.shade50,
+                            Colors.deepOrange.shade50,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.orange.shade100),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.calendar_today,
+                            color: Colors.deepOrange,
+                          ),
+
+                          const SizedBox(width: 10),
+
+                          Expanded(
+                            child: Text(
+                              selectedDeadline == null
+                                  ? "Set deadline"
+                                  : _formatDateTime(selectedDeadline!),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+
+                          const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                        ],
+                      ),
+                    ),
                   ),
+
                   const SizedBox(height: 10),
 
-                  // 🔥 ERROR TEXT HERE
-                  if (errorText != null)
+                  // ================= ERROR =================
+                  if (localError != null)
                     Text(
-                      errorText!,
+                      localError!,
                       style: const TextStyle(color: Colors.red, fontSize: 13),
                     ),
+
+                  const SizedBox(height: 20),
+
+                  // ================= ACTION BUTTON =================
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepOrange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: () async {
+                        final now = DateTime.now();
+
+                        if (titleController.text.trim().isEmpty ||
+                            selectedDeadline == null) {
+                          setState(() {
+                            localError = "Please complete all fields.";
+                          });
+                          return;
+                        }
+
+                        if (selectedDeadline!.isBefore(now)) {
+                          setState(() {
+                            localError = "Deadline must be in the future.";
+                          });
+                          return;
+                        }
+
+                        try {
+                          await addTask(
+                            titleController.text.trim(),
+                            selectedDeadline!,
+                          );
+
+                          if (!mounted) return;
+                          Navigator.pop(context);
+                        } catch (e) {
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text("Error: $e")));
+                        }
+                      },
+                      child: const Text(
+                        "Create Task",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () async {
-                    final now = DateTime.now();
-
-                    if (titleController.text.trim().isEmpty ||
-                        selectedDeadline == null) {
-                      setStateDialog(() {
-                        errorText = "Please set title and deadline.";
-                      });
-                      return;
-                    }
-
-                    if (selectedDeadline!.isBefore(now)) {
-                      setStateDialog(() {
-                        errorText =
-                            "You selected a past time. Please choose a future deadline.";
-                      });
-                      return;
-                    }
-
-                    try {
-                      await addTask(
-                        titleController.text.trim(),
-                        selectedDeadline!,
-                      );
-
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(SnackBar(content: Text("Error: $e")));
-                    }
-                  },
-                  child: const Text("Add"),
-                ),
-              ],
             );
           },
         );
@@ -732,7 +824,7 @@ class _TasksTabState extends State<TasksTab> {
           const SizedBox(height: 8),
 
           const Text(
-            "Stay organized and focused 🚀",
+            "Stay organized and focused",
 
             style: TextStyle(
               color: Colors.white,
