@@ -10,6 +10,8 @@ import 'models/app_data.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterForegroundTask.initCommunicationPort();
+
   await Firebase.initializeApp();
 
   await NotificationService.initialize();
