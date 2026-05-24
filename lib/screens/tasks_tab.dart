@@ -609,14 +609,14 @@ class _TasksTabState extends State<TasksTab> {
                         lastDate: DateTime(2100),
                       );
 
-                      if (pickedDate == null) return;
+                      if (!context.mounted || pickedDate == null) return;
 
                       final pickedTime = await showTimePicker(
                         context: context,
                         initialTime: TimeOfDay.now(),
                       );
 
-                      if (pickedTime == null) return;
+                      if (!context.mounted || pickedTime == null) return;
 
                       final combined = DateTime(
                         pickedDate.year,
@@ -692,6 +692,9 @@ class _TasksTabState extends State<TasksTab> {
                         ),
                       ),
                       onPressed: () async {
+                        final navigator = Navigator.of(context);
+                        final messenger = ScaffoldMessenger.of(context);
+
                         final now = DateTime.now();
 
                         if (titleController.text.trim().isEmpty ||
@@ -716,11 +719,14 @@ class _TasksTabState extends State<TasksTab> {
                           );
 
                           if (!mounted) return;
-                          Navigator.pop(context);
+
+                          navigator.pop();
                         } catch (e) {
-                          ScaffoldMessenger.of(
-                            context,
-                          ).showSnackBar(SnackBar(content: Text("Error: $e")));
+                          if (!mounted) return;
+
+                          messenger.showSnackBar(
+                            SnackBar(content: Text("Error: $e")),
+                          );
                         }
                       },
                       child: const Text(
