@@ -34,7 +34,7 @@ class StreakService {
 
     final moodStreak = _calculateMoodStreak(moodData);
 
-    final trend = _calculateTrend(stepsData);
+    final trend = _calculateTrend(stepsData, goal);
 
     // ================= CONSISTENCY =================
 
@@ -232,7 +232,7 @@ class StreakService {
 
   // ================= TREND =================
 
-  static Map<String, dynamic> _calculateTrend(Map<String, int> data) {
+  static Map<String, dynamic> _calculateTrend(Map<String, int> data, int goal) {
     final dates = data.keys.toList()..sort();
 
     if (dates.length < 14) {
@@ -259,7 +259,21 @@ class StreakService {
       return {"trend": "down", "percent": -100.0, "label": "Stopped"};
     }
 
-    final percent = ((sumLast - sumPrev) / sumPrev) * 100;
+    final minimumMeaningfulBaseline = goal > 0 ? goal : 1000;
+
+    if (sumPrev < minimumMeaningfulBaseline &&
+        sumLast >= minimumMeaningfulBaseline) {
+      return {"trend": "up", "percent": 100.0, "label": "Started"};
+    }
+
+    if (sumPrev < minimumMeaningfulBaseline &&
+        sumLast < minimumMeaningfulBaseline) {
+      return {"trend": "stable", "percent": 0.0, "label": "Low activity"};
+    }
+
+    final rawPercent = ((sumLast - sumPrev) / sumPrev) * 100;
+
+    final percent = rawPercent.clamp(-100.0, 100.0).toDouble();
 
     if (percent > 5) {
       return {"trend": "up", "percent": percent, "label": "Improving"};

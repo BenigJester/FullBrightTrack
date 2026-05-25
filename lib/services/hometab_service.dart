@@ -98,15 +98,11 @@ class HomeTabService {
       }
     }
 
-    double trendPercent;
-
-    if (sumPrev == 0 && sumLast == 0) {
-      trendPercent = 0;
-    } else if (sumPrev == 0) {
-      trendPercent = 100;
-    } else {
-      trendPercent = ((sumLast - sumPrev) / sumPrev) * 100;
-    }
+    final trendPercent = _calculateTrendPercent(
+      sumLast: sumLast,
+      sumPrev: sumPrev,
+      goal: appData.stepGoal,
+    );
 
     // ================= STREAK =================
 
@@ -133,5 +129,39 @@ class HomeTabService {
       streak: streak,
       trend: trendPercent,
     );
+  }
+
+  static double _calculateTrendPercent({
+    required int sumLast,
+    required int sumPrev,
+    required int goal,
+  }) {
+    if (sumPrev == 0 && sumLast == 0) {
+      return 0;
+    }
+
+    if (sumPrev == 0 && sumLast > 0) {
+      return 100;
+    }
+
+    if (sumPrev > 0 && sumLast == 0) {
+      return -100;
+    }
+
+    final minimumMeaningfulBaseline = goal > 0 ? goal : 1000;
+
+    if (sumPrev < minimumMeaningfulBaseline &&
+        sumLast >= minimumMeaningfulBaseline) {
+      return 100;
+    }
+
+    if (sumPrev < minimumMeaningfulBaseline &&
+        sumLast < minimumMeaningfulBaseline) {
+      return 0;
+    }
+
+    final rawPercent = ((sumLast - sumPrev) / sumPrev) * 100;
+
+    return rawPercent.clamp(-100.0, 100.0).toDouble();
   }
 }

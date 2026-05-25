@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_data.dart';
+import '../services/steps_service.dart';
 
 class StepsTab extends StatelessWidget {
   const StepsTab({super.key});
@@ -20,36 +21,41 @@ class StepsTab extends StatelessWidget {
     final data = context.watch<AppData>();
 
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
+      body: RefreshIndicator(
+        color: Colors.deepOrange,
+        onRefresh: StepsService.instance.refreshNow,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
 
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
+            child: Column(
+              children: [
+                const SizedBox(height: 20),
 
-              Row(
-                children: [
-                  _buildProgressCircle(data),
+                Row(
+                  children: [
+                    _buildProgressCircle(data),
 
-                  const SizedBox(width: 20),
+                    const SizedBox(width: 20),
 
-                  Expanded(child: _buildStatsPanel(data)),
-                ],
-              ),
+                    Expanded(child: _buildStatsPanel(data)),
+                  ],
+                ),
 
-              const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-              _buildStreakCard(data),
+                _buildStreakCard(data),
 
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              _buildTrendCard(data),
+                _buildTrendCard(data),
 
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
 
-              _buildInsightsList(data),
-            ],
+                _buildInsightsList(data),
+              ],
+            ),
           ),
         ),
       ),

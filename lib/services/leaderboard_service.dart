@@ -129,11 +129,13 @@ class LeaderboardService {
 
     await _firestore.collection('leaderboard').doc(user.uid).set({
       'uid': user.uid,
-      'name': _displayName({
-        ...profileData,
-        'name': profileData['name'] ?? user.displayName,
-        'email': profileData['email'] ?? user.email,
-      }),
+      'name': _firstName(
+        _displayName({
+          ...profileData,
+          'name': profileData['name'] ?? user.displayName,
+          'email': profileData['email'] ?? user.email,
+        }),
+      ),
       'photoUrl': profileData['photoUrl'] ?? user.photoURL,
       'monthlySteps': monthlySteps,
       'todaySteps': steps[_dateKey(now)] ?? todaySteps,
@@ -158,7 +160,7 @@ class LeaderboardService {
 
     return LeaderboardEntry(
       uid: doc.id,
-      name: _displayName(data),
+      name: _firstName(_displayName(data)),
       photoUrl: data['photoUrl'] as String?,
       monthlySteps: monthlySteps,
       todaySteps: todaySteps,
@@ -211,6 +213,13 @@ class LeaderboardService {
     if (email != null && email.isNotEmpty) return email.split('@').first;
 
     return 'Student';
+  }
+
+  static String _firstName(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return 'Student';
+
+    return trimmed.split(RegExp(r'\s+')).first;
   }
 
   static String _dateKey(DateTime date) {

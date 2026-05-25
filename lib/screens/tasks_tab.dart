@@ -36,9 +36,7 @@ class TasksTab extends StatefulWidget {
 }
 
 class _TasksTabState extends State<TasksTab> {
-  bool activeOpen = true;
-  bool overdueOpen = true;
-  bool completedOpen = false;
+  String? _openSection = 'active';
   Timer? _refreshTimer;
 
   @override
@@ -101,6 +99,12 @@ class _TasksTabState extends State<TasksTab> {
   }
 
   String? errorText;
+
+  void _toggleSection(String section) {
+    setState(() {
+      _openSection = _openSection == section ? null : section;
+    });
+  }
 
   // ================= UI =================
 
@@ -165,10 +169,10 @@ class _TasksTabState extends State<TasksTab> {
                   title: "Active",
                   icon: Icons.flash_on_rounded,
                   color: Colors.green,
-                  isOpen: activeOpen,
+                  isOpen: _openSection == 'active',
                   count: activeTasks.length,
                   tasks: activeTasks,
-                  onTap: () => setState(() => activeOpen = !activeOpen),
+                  onTap: () => _toggleSection('active'),
                 ),
 
                 const SizedBox(height: 14),
@@ -178,10 +182,10 @@ class _TasksTabState extends State<TasksTab> {
                   title: "Overdue",
                   icon: Icons.warning_amber_rounded,
                   color: Colors.redAccent,
-                  isOpen: overdueOpen,
+                  isOpen: _openSection == 'overdue',
                   count: overdueTasks.length,
                   tasks: overdueTasks,
-                  onTap: () => setState(() => overdueOpen = !overdueOpen),
+                  onTap: () => _toggleSection('overdue'),
                 ),
 
                 const SizedBox(height: 14),
@@ -191,10 +195,10 @@ class _TasksTabState extends State<TasksTab> {
                   title: "Completed",
                   icon: Icons.task_alt_rounded,
                   color: Colors.grey,
-                  isOpen: completedOpen,
+                  isOpen: _openSection == 'completed',
                   count: completedTasks.length,
                   tasks: completedTasks,
-                  onTap: () => setState(() => completedOpen = !completedOpen),
+                  onTap: () => _toggleSection('completed'),
                 ),
               ],
             );

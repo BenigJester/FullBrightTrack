@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_data.dart';
+import '../services/steps_service.dart';
 
 class StreakTab extends StatelessWidget {
   const StreakTab({super.key});
@@ -21,35 +22,41 @@ class StreakTab extends StatelessWidget {
     };
 
     final trend = {
+      "trend": data.trendType,
       "label": data.trendLabelStreak,
-      "percent": data.trendPercent,
+      "percent": data.streakTrendPercent,
     };
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+    return RefreshIndicator(
+      color: Colors.deepOrange,
+      onRefresh: StepsService.instance.refreshNow,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
 
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: _heroCard(streak)),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(child: _heroCard(streak)),
 
-              const SizedBox(width: 14),
+                const SizedBox(width: 14),
 
-              Expanded(child: _moodStreakCard(moodStreak)),
-            ],
-          ),
+                Expanded(child: _moodStreakCard(moodStreak)),
+              ],
+            ),
 
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-          _consistencyRow(data),
-          const SizedBox(height: 16),
+            _consistencyRow(data),
+            const SizedBox(height: 16),
 
-          _trendCard(trend),
-          const SizedBox(height: 16),
+            _trendCard(trend),
+            const SizedBox(height: 16),
 
-          _calendarHeatmap(data),
-        ],
+            _calendarHeatmap(data),
+          ],
+        ),
       ),
     );
   }

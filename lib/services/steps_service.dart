@@ -9,6 +9,7 @@ import '../models/app_data.dart';
 import 'leaderboard_service.dart';
 import 'step_foreground_service.dart';
 import 'step_local_store.dart';
+import 'streak_service.dart';
 
 class StepsService with WidgetsBindingObserver {
   HealthInsights? _latestInsights;
@@ -101,6 +102,12 @@ class StepsService with WidgetsBindingObserver {
     });
 
     unawaited(_syncQueue());
+  }
+
+  Future<void> refreshNow() async {
+    await _refreshFromLocalCache(syncNow: true);
+    await _refreshStepStreaks();
+    await getHealthInsights(_goal);
   }
 
   Future<void> _refreshFromLocalCache({bool syncNow = false}) async {
@@ -330,12 +337,12 @@ class StepsService with WidgetsBindingObserver {
       currentDay: _currentDay,
       ready: _ready,
 
-      currentStreak: _latestInsights?.currentStreak ?? 0,
-      longestStreak: _latestInsights?.longestStreak ?? 0,
-      trend: _latestInsights?.trend ?? "stable",
-      trendPercent: _latestInsights?.trendPercent ?? 0,
-      trendLabel: _latestInsights?.trendLabel ?? "",
-      insights: _latestInsights?.insights ?? [],
+      currentStreak: _latestInsights?.currentStreak ?? _appData!.currentStreak,
+      longestStreak: _latestInsights?.longestStreak ?? _appData!.longestStreak,
+      trend: _latestInsights?.trend ?? _appData!.trend,
+      trendPercent: _latestInsights?.trendPercent ?? _appData!.trendPercent,
+      trendLabel: _latestInsights?.trendLabel ?? _appData!.trendLabel,
+      insights: _latestInsights?.insights ?? _appData!.insights,
     );
   }
 
@@ -544,6 +551,8 @@ class StepsService with WidgetsBindingObserver {
       }, SetOptions(merge: true));
 
       await LeaderboardService.publishCurrentUserSummary(todaySteps: safeSteps);
+      await _refreshStepStreaks();
+      await getHealthInsights(_goal);
 
       _offlineQueue.removeWhere((entry) => entry['day'] == state.day);
       await _persistQueue();
@@ -559,6 +568,17 @@ class StepsService with WidgetsBindingObserver {
     _debugText = status;
     _pushToAppData();
     debugPrint(status);
+  }
+
+  Future<void> _refreshStepStreaks() async {
+    final appData = _appData;
+    if (appData == null) return;
+
+    try {
+      await StreakService.preload(appData);
+    } catch (e) {
+      debugPrint("Step streak refresh failed: $e");
+    }
   }
 
   // ================= LOAD QUEUE =================
@@ -646,13 +666,14 @@ class StepsService with WidgetsBindingObserver {
 
     final streaks = _calculateStreaks(data, goal);
 
-    final trendData = _calculateTrend(data);
+    final trendData = _calculateTrend(data, goal);
 
     final insights = _generateInsights(
       currentStreak: streaks["current"]!,
       longestStreak: streaks["longest"]!,
       trend: trendData["trend"],
       percent: trendData["percent"],
+      trendLabel: trendData["label"],
       data: data,
       goal: goal,
     );
@@ -768,7 +789,7 @@ class StepsService with WidgetsBindingObserver {
 
   // ================= TREND =================
 
-  Map<String, dynamic> _calculateTrend(Map<String, int> data) {
+  Map<String, dynamic> _calculateTrend(Map<String, int> data, int goal) {
     final dates = data.keys.toList()..sort();
 
     if (dates.length < 14) {
@@ -795,9 +816,23 @@ class StepsService with WidgetsBindingObserver {
       return {"trend": "down", "percent": -100.0, "label": "Stopped"};
     }
 
+    final minimumMeaningfulBaseline = goal > 0 ? goal : 1000;
+
+    if (sumPrev < minimumMeaningfulBaseline &&
+        sumLast >= minimumMeaningfulBaseline) {
+      return {"trend": "up", "percent": 100.0, "label": "Started"};
+    }
+
+    if (sumPrev < minimumMeaningfulBaseline &&
+        sumLast < minimumMeaningfulBaseline) {
+      return {"trend": "stable", "percent": 0.0, "label": "Low activity"};
+    }
+
     final diff = sumLast - sumPrev;
 
-    final percent = (diff / sumPrev) * 100;
+    final rawPercent = (diff / sumPrev) * 100;
+
+    final percent = rawPercent.clamp(-100.0, 100.0).toDouble();
 
     String trend;
 
@@ -827,6 +862,7 @@ class StepsService with WidgetsBindingObserver {
     required int longestStreak,
     required String trend,
     required double percent,
+    required String trendLabel,
     required Map<String, int> data,
     required int goal,
   }) {
@@ -844,7 +880,7 @@ class StepsService with WidgetsBindingObserver {
       insights.add("You're close to beating your longest streak!");
     }
 
-    if (trend == "up" && percent > 0 && percent != 100) {
+    if (trend == "up" && percent > 0 && trendLabel != "Started") {
       insights.add(
         "📈 You're improving by ${percent.toStringAsFixed(1)}% this week.",
       );
