@@ -4,10 +4,9 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:pedometer/pedometer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../models/app_data.dart';
+import 'step_foreground_service.dart';
 import 'step_local_store.dart';
 
 class StepsService with WidgetsBindingObserver {
@@ -33,12 +32,6 @@ class StepsService with WidgetsBindingObserver {
 
   int _steps = 0;
 
-  static const int maxStepSpike = 3000;
-
-  // ignore: prefer_final_fields, unused_field
-  bool _processing = false;
-  int _anchorSteps = 0;
-
   // ================= STATS =================
 
   double _calories = 0;
@@ -47,25 +40,17 @@ class StepsService with WidgetsBindingObserver {
   final int _goal = 4000;
   final int _calorieGoal = 300;
 
-  // ================= STREAM =================
-
-  StreamSubscription<StepCount>? _stepStream;
-
   // ================= SAVE CONTROL =================
 
-  Timer? _saveTimer;
   Timer? _syncTimer;
   Timer? _localRefreshTimer;
-
-  int _lastSavedSteps = 0;
-  DateTime _lastSaveTime = DateTime.now();
+  Timer? _firestoreSaveTimer;
 
   // ================= OFFLINE QUEUE =================
 
   List<Map<String, dynamic>> _offlineQueue = [];
 
   bool _syncing = false;
-  bool _taskCallbackRegistered = false;
 
   // ================= DEBUG =================
 
@@ -100,17 +85,12 @@ class StepsService with WidgetsBindingObserver {
 
     await Future.wait([_loadQueue(), _loadToday()]);
 
+    await _refreshFromLocalCache(syncNow: true);
+
     Future.microtask(() => getHealthInsights(_goal));
 
-    if (!_taskCallbackRegistered) {
-      FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
-      _taskCallbackRegistered = true;
-    }
-
-    FlutterForegroundTask.sendDataToTask({'command': 'refresh'});
-
     _localRefreshTimer?.cancel();
-    _localRefreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+    _localRefreshTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       _refreshFromLocalCache();
     });
 
@@ -118,50 +98,25 @@ class StepsService with WidgetsBindingObserver {
     _syncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       _syncQueue();
     });
+
+    unawaited(_syncQueue());
   }
 
-  // ================= FOREGROUND TASK DATA =================
-
-  void _onReceiveTaskData(Object data) {
-    if (data is! Map) return;
-
-    final steps = data['steps'];
-    final baseline = data['baseline'];
-    final initialSteps = data['initialSteps'];
-    final lastRawSteps = data['lastRawSteps'];
-    final anchorSteps = data['anchorSteps'];
-    final baselineSet = data['baselineSet'];
-    final day = data['day'];
-    final debugText = data['debugText'];
-
-    if (steps is int) _steps = steps;
-    if (baseline is int) _baseline = baseline;
-    if (initialSteps is int) _initialSteps = initialSteps;
-    if (lastRawSteps is int) _lastRawSteps = lastRawSteps;
-    if (anchorSteps is int) _anchorSteps = anchorSteps;
-    if (baselineSet is bool) _baselineSet = baselineSet;
-    if (day is String) _currentDay = day;
-    if (debugText is String) _debugText = debugText;
-
-    _ready = true;
-    _updateStats();
-    _pushToAppData();
-    _syncQueue();
-  }
-
-  Future<void> _refreshFromLocalCache() async {
-    final local = await StepLocalStore.load();
+  Future<void> _refreshFromLocalCache({bool syncNow = false}) async {
+    final rawLocal = await _readBestLocalState();
+    final local = _mergeLocalWithoutStepRollback(rawLocal);
 
     if (local.day != _currentDay ||
         local.steps != _steps ||
         local.baseline != _baseline ||
         local.lastRawSteps != _lastRawSteps ||
         local.debugText != _debugText) {
+      final stepsChanged = local.steps != _steps;
+
       _steps = local.steps;
       _baseline = local.baseline;
       _initialSteps = local.initialSteps;
       _lastRawSteps = local.lastRawSteps;
-      _anchorSteps = local.anchorSteps;
       _baselineSet = local.baselineSet;
       _currentDay = local.day;
       _debugText = local.debugText;
@@ -169,21 +124,96 @@ class StepsService with WidgetsBindingObserver {
 
       _updateStats();
       _pushToAppData();
+
+      await StepLocalStore.persist(local);
+      if (stepsChanged && local.day.isNotEmpty) {
+        _queueLocalState(local);
+        await _persistQueue();
+        _autoSaveTodaySteps(local);
+        if (syncNow) {
+          await _saveTodayStepsToFirestore(local);
+        }
+      }
+    } else if (syncNow && local.day.isNotEmpty) {
+      _queueLocalState(local);
+      await _persistQueue();
+      await _saveTodayStepsToFirestore(local);
     }
   }
 
-  // =================== FOREGROUND SYNC ===============
+  StepLocalState _mergeLocalWithoutStepRollback(StepLocalState local) {
+    final sameDay = local.day.isNotEmpty && local.day == _currentDay;
+    if (!sameDay || local.steps >= _steps) {
+      return local;
+    }
 
-  void _syncForegroundTask() {
-    FlutterForegroundTask.sendDataToTask({"steps": _steps, "day": _currentDay});
+    return StepLocalState(
+      steps: _steps,
+      baseline: local.baseline > 0 ? local.baseline : _baseline,
+      initialSteps: local.initialSteps,
+      lastRawSteps: local.lastRawSteps > 0 ? local.lastRawSteps : _lastRawSteps,
+      anchorSteps: max(local.anchorSteps, _steps),
+      baselineSet: local.baselineSet || _baselineSet,
+      day: local.day,
+      debugText:
+          "Kept Firestore steps ($_steps); native reported lower (${local.steps})",
+    );
+  }
+
+  void _queueLocalState(StepLocalState state) {
+    _offlineQueue.removeWhere((e) => e['day'] == state.day);
+    _offlineQueue.add({
+      'day': state.day,
+      'steps': state.steps,
+      'baseline': state.baseline,
+      'lastRawSteps': state.lastRawSteps,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  Future<StepLocalState> _readBestLocalState() async {
+    final fallback = await StepLocalStore.load();
+
+    try {
+      final native = await StepForegroundService.getCurrentState();
+      final nativeSteps = _nativeInt(native['steps']);
+      final nativeDay = native['day'] as String? ?? '';
+      final nativeDebug = native['debugText'] as String? ?? '';
+
+      if (nativeDay.isEmpty && nativeSteps == 0 && nativeDebug.isEmpty) {
+        return fallback;
+      }
+
+      return StepLocalState(
+        steps: nativeSteps,
+        baseline: _nativeInt(native['baseline']),
+        initialSteps: _nativeInt(native['initialSteps']),
+        lastRawSteps: _nativeInt(native['lastRawSteps']),
+        anchorSteps: _nativeInt(native['anchorSteps']),
+        baselineSet: _nativeInt(native['baseline']) > 0,
+        day: nativeDay.isEmpty ? fallback.day : nativeDay,
+        debugText: nativeDebug.isEmpty ? fallback.debugText : nativeDebug,
+      );
+    } catch (e) {
+      debugPrint("Native step state read failed: $e");
+      return fallback;
+    }
+  }
+
+  int _nativeInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 0;
   }
 
   // ================= LOGOUT CLEAN UP ===================
 
   Future<void> fullLogoutCleanup() async {
-    await FlutterForegroundTask.stopService();
+    await _flushCurrentStepsToFirestore();
 
-    StepsService.instance.resetAllLocalState();
+    await StepForegroundService.stop();
+
+    await StepsService.instance.resetAllLocalState();
 
     final prefs = await SharedPreferences.getInstance();
 
@@ -192,8 +222,41 @@ class StepsService with WidgetsBindingObserver {
     await prefs.remove('bg_last_raw');
     await prefs.remove('bg_initial_steps');
     await prefs.remove('bg_day');
+    await prefs.remove('bg_anchor');
+    await prefs.remove('bg_native_running');
     await prefs.remove('steps_queue');
     await prefs.remove('bg_debug');
+  }
+
+  Future<void> _flushCurrentStepsToFirestore() async {
+    _firestoreSaveTimer?.cancel();
+    await _refreshFromLocalCache();
+
+    final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
+    final state = StepLocalState(
+      steps: _steps,
+      baseline: _baseline,
+      initialSteps: _initialSteps,
+      lastRawSteps: _lastRawSteps,
+      anchorSteps: 0,
+      baselineSet: _baselineSet,
+      day: day,
+      debugText: _debugText,
+    );
+
+    _queueLocalState(state);
+    await _persistQueue();
+    await _waitForSyncIdle();
+    final saved = await _saveTodayStepsToFirestore(state);
+    if (!saved) {
+      throw Exception("Could not save today's steps before logout");
+    }
+  }
+
+  Future<void> _waitForSyncIdle() async {
+    for (var attempt = 0; attempt < 20 && _syncing; attempt++) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
   }
 
   // =============== RESET ALL LOCAL DATA =================
@@ -203,8 +266,6 @@ class StepsService with WidgetsBindingObserver {
     _baseline = 0;
     _initialSteps = 0;
     _lastRawSteps = 0;
-    _anchorSteps = 0;
-
     _baselineSet = false;
     _currentDay = "";
     _ready = false;
@@ -220,42 +281,14 @@ class StepsService with WidgetsBindingObserver {
     _pushToAppData();
   }
 
-  // ================ LOCAL SYNC ===============
-
-  Future<void> _persistRealtimeLocal() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.setInt('bg_steps', _steps);
-
-    await prefs.setInt('bg_baseline', _baseline);
-
-    await prefs.setInt('bg_initial_steps', _initialSteps);
-
-    await prefs.setInt('bg_last_raw', _lastRawSteps);
-
-    await prefs.setString('bg_day', _currentDay);
-
-    await prefs.setInt('bg_anchor', _anchorSteps);
-
-    await prefs.setString('bg_debug', _debugText);
-  }
-
   // ================= DISPOSE =================
 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
 
-    _stepStream?.cancel();
-
-    _saveTimer?.cancel();
-
     _syncTimer?.cancel();
     _localRefreshTimer?.cancel();
-
-    if (_taskCallbackRegistered) {
-      FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
-      _taskCallbackRegistered = false;
-    }
+    _firestoreSaveTimer?.cancel();
 
     _enqueueSave();
   }
@@ -276,136 +309,6 @@ class StepsService with WidgetsBindingObserver {
     final now = DateTime.now();
 
     return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-  }
-
-  // ================= PROCESS STEP =================
-
-  // ignore: unused_element
-  Future<void> _processStep(StepCount event, String today) async {
-    final raw = event.steps;
-
-    // ================= NEW DAY =================
-
-    if (_currentDay != today) {
-      _currentDay = today;
-
-      _baseline = raw;
-
-      _anchorSteps = 0;
-      _initialSteps = 0;
-      _steps = 0;
-
-      _lastRawSteps = raw;
-
-      _baselineSet = true;
-
-      _debugText =
-          "🌙 NEW DAY RESET\n"
-          "RAW: $raw\n"
-          "BASELINE RESET";
-
-      _updateStats();
-
-      await _persistRealtimeLocal();
-
-      _syncForegroundTask();
-
-      _pushToAppData();
-
-      getHealthInsights(_goal);
-
-      _enqueueSave();
-
-      return;
-    }
-
-    // ================= FIRST INIT =================
-
-    if (!_baselineSet) {
-      _baseline = raw;
-
-      _anchorSteps = 0;
-
-      _lastRawSteps = raw;
-      _baselineSet = true;
-
-      await _persistRealtimeLocal();
-      _syncForegroundTask();
-      _pushToAppData();
-
-      return;
-    }
-
-    // ================= SENSOR RESET =================
-
-    if (raw < _lastRawSteps) {
-      _initialSteps = _steps;
-
-      _anchorSteps = _steps;
-
-      _baseline = raw;
-
-      _lastRawSteps = raw;
-
-      _debugText =
-          "🔁 SENSOR RESET\n"
-          "RAW: $raw\n"
-          "SHIFT BASELINE\n"
-          "INIT: $_initialSteps";
-
-      await _persistRealtimeLocal();
-
-      _syncForegroundTask();
-
-      _pushToAppData();
-
-      return;
-    }
-
-    final diffRaw = raw - _lastRawSteps;
-
-    // ================= SPIKE DETECTION =================
-
-    if (diffRaw > maxStepSpike) {
-      _debugText =
-          "⚠️ SPIKE IGNORED\n"
-          "RAW: $raw\n"
-          "LAST: $_lastRawSteps\n"
-          "DIFF: $diffRaw";
-
-      await _persistRealtimeLocal();
-
-      _syncForegroundTask();
-
-      _pushToAppData();
-
-      return;
-    }
-
-    // ================= NORMAL COMPUTE =================
-
-    final delta = max(0, raw - _baseline);
-
-    final computed = max(0, _anchorSteps + delta);
-
-    _steps = computed;
-
-    _lastRawSteps = raw;
-
-    _updateStats();
-
-    _debugText =
-        "RAW: $raw\n"
-        "BASE: $_baseline\n"
-        "LAST: $_lastRawSteps\n"
-        "DELTA: $delta\n"
-        "TOTAL: $_steps";
-
-    await _persistRealtimeLocal();
-
-    _syncForegroundTask();
-
-    _pushToAppData();
   }
 
   // ================= UPDATE APP DATA =================
@@ -449,19 +352,19 @@ class StepsService with WidgetsBindingObserver {
 
     // ================= LOCAL REALTIME CACHE =================
 
-    final localDay = prefs.getString('bg_day') ?? '';
+    final localState = await _readBestLocalState();
 
-    final localSteps = prefs.getInt('bg_steps') ?? 0;
+    final localDay = localState.day;
 
-    final localBaseline = prefs.getInt('bg_baseline') ?? 0;
+    final localSteps = localState.steps;
 
-    final localLastRaw = prefs.getInt('bg_last_raw') ?? 0;
+    final localBaseline = localState.baseline;
 
-    final localAnchor = prefs.getInt('bg_anchor') ?? 0;
+    final localLastRaw = localState.lastRawSteps;
 
-    final localInitialSteps = prefs.getInt('bg_initial_steps') ?? 0;
+    final localInitialSteps = localState.initialSteps;
 
-    final localDebug = prefs.getString('bg_debug');
+    final localDebug = localState.debugText;
 
     int firestoreSteps = 0;
 
@@ -515,8 +418,6 @@ class StepsService with WidgetsBindingObserver {
       _lastRawSteps = firestoreLastRaw;
     }
 
-    _anchorSteps = validLocal ? localAnchor : 0;
-
     _initialSteps = validLocal ? localInitialSteps : mergedSteps;
 
     // ================= STATS =================
@@ -535,7 +436,7 @@ class StepsService with WidgetsBindingObserver {
         "FIRESTORE: $firestoreSteps\n"
         "MERGED: $_steps";
 
-    if (validLocal && localDebug != null) {
+    if (validLocal && localDebug.isNotEmpty) {
       _debugText = localDebug;
     }
 
@@ -550,42 +451,92 @@ class StepsService with WidgetsBindingObserver {
     _calories = StepLocalStore.caloriesFor(_steps);
   }
 
-  // ================= SAVE QUEUE =================
-
-  // ignore: unused_element
-  void _queueSave() {
-    _saveTimer?.cancel();
-
-    _saveTimer = Timer(const Duration(seconds: 2), () {
-      if ((_steps - _lastSavedSteps).abs() < 10 &&
-          DateTime.now().difference(_lastSaveTime).inSeconds < 20) {
-        return;
-      }
-
-      _lastSavedSteps = _steps;
-
-      _lastSaveTime = DateTime.now();
-
-      _enqueueSave();
-    });
-  }
-
   Future<void> _enqueueSave() {
     final today = _todayKey();
 
-    _offlineQueue.removeWhere((e) => e['day'] == today);
+    _queueLocalState(
+      StepLocalState(
+        steps: _steps,
+        baseline: _baseline,
+        initialSteps: _initialSteps,
+        lastRawSteps: _lastRawSteps,
+        anchorSteps: 0,
+        baselineSet: _baselineSet,
+        day: today,
+        debugText: _debugText,
+      ),
+    );
 
-    _offlineQueue.add({
-      'day': today,
-      'steps': _steps,
-      'baseline': _baseline,
-      'lastRawSteps': _lastRawSteps,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    return _persistQueue().then((_) async {
+      await _saveCurrentStepsToFirestore();
     });
+  }
 
-    return _persistQueue().then((_) {
-      _syncQueue();
+  void _autoSaveTodaySteps(StepLocalState state) {
+    _firestoreSaveTimer?.cancel();
+    _firestoreSaveTimer = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_saveTodayStepsToFirestore(state));
     });
+  }
+
+  Future<bool> _saveCurrentStepsToFirestore() {
+    final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
+
+    return _saveTodayStepsToFirestore(
+      StepLocalState(
+        steps: _steps,
+        baseline: _baseline,
+        initialSteps: _initialSteps,
+        lastRawSteps: _lastRawSteps,
+        anchorSteps: 0,
+        baselineSet: _baselineSet,
+        day: day,
+        debugText: _debugText,
+      ),
+    );
+  }
+
+  Future<bool> _saveTodayStepsToFirestore(StepLocalState state) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null || state.day.isEmpty) {
+      _setDebugStatus("Firestore step save skipped: no signed-in user");
+      return false;
+    }
+
+    try {
+      final safeSteps = state.day == _currentDay ? max(state.steps, _steps) : state.steps;
+
+      final ref = FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('steps')
+          .doc(state.day);
+
+      await ref.set({
+        'steps': safeSteps,
+        'baseline': state.baseline,
+        'lastRawSteps': state.lastRawSteps,
+        'calories': StepLocalStore.caloriesFor(safeSteps),
+        'distance': StepLocalStore.distanceFor(safeSteps),
+        'updated_at': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      _offlineQueue.removeWhere((entry) => entry['day'] == state.day);
+      await _persistQueue();
+      _setDebugStatus("Firestore saved $safeSteps steps");
+      return true;
+    } catch (e) {
+      _setDebugStatus("Firestore step save failed: $e");
+      return false;
+    }
+  }
+
+  void _setDebugStatus(String status) {
+    _debugText = status;
+    _pushToAppData();
+    debugPrint(status);
   }
 
   // ================= LOAD QUEUE =================
@@ -596,10 +547,14 @@ class StepsService with WidgetsBindingObserver {
 
     final raw = prefs.getString('steps_queue');
 
-    if (raw != null) {
-      final List decoded = jsonDecode(raw);
-
-      _offlineQueue = decoded.cast<Map<String, dynamic>>();
+    if (raw != null && raw.isNotEmpty) {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        _offlineQueue = decoded
+            .whereType<Map>()
+            .map((entry) => Map<String, dynamic>.from(entry))
+            .toList();
+      }
     }
   }
 
@@ -633,16 +588,21 @@ class StepsService with WidgetsBindingObserver {
 
         final doc = await ref.get();
 
-        int remote = doc.data()?['steps'] ?? 0;
+        final remote = (doc.data()?['steps'] as num?)?.toInt() ?? 0;
 
-        int merged = item['steps'] > remote ? item['steps'] : remote;
+        final localSteps = (item['steps'] as num?)?.toInt() ?? 0;
 
-        final remoteBaseline = doc.data()?['baseline'] ?? 0;
+        final merged = localSteps > remote ? localSteps : remote;
+
+        final remoteBaseline =
+            (doc.data()?['baseline'] as num?)?.toInt() ?? 0;
+        final localBaseline = (item['baseline'] as num?)?.toInt() ?? 0;
+        final localLastRaw = (item['lastRawSteps'] as num?)?.toInt() ?? 0;
 
         await ref.set({
           'steps': merged,
-          'baseline': remoteBaseline == 0 ? item['baseline'] : remoteBaseline,
-          'lastRawSteps': item['lastRawSteps'],
+          'baseline': remoteBaseline == 0 ? localBaseline : remoteBaseline,
+          'lastRawSteps': localLastRaw,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
@@ -650,7 +610,8 @@ class StepsService with WidgetsBindingObserver {
 
         await _persistQueue();
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint("Step queue sync failed: $e");
     } finally {
       _syncing = false;
     }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'services/auth_wrapper.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/hourly_worker.dart';
@@ -10,7 +9,6 @@ import 'models/app_data.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  FlutterForegroundTask.initCommunicationPort();
 
   await Firebase.initializeApp();
 
@@ -22,22 +20,6 @@ void main() async {
     'hourly-reminder',
     HourlyWorker.taskName,
     frequency: const Duration(hours: 1),
-  );
-
-  FlutterForegroundTask.init(
-    androidNotificationOptions: AndroidNotificationOptions(
-      channelId: 'step_channel',
-      channelName: 'Step Tracker',
-      channelDescription: 'Tracks steps in background',
-      channelImportance: NotificationChannelImportance.LOW,
-    ),
-    iosNotificationOptions: const IOSNotificationOptions(),
-    foregroundTaskOptions: ForegroundTaskOptions(
-      eventAction: ForegroundTaskEventAction.repeat(1000),
-      autoRunOnBoot: true,
-      allowWakeLock: true,
-      allowWifiLock: true,
-    ),
   );
 
   runApp(

@@ -1,18 +1,27 @@
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import '../services/foreground_callback.dart';
+import 'package:flutter/services.dart';
 
 class StepForegroundService {
-  static Future<void> start() async {
-    if (await FlutterForegroundTask.isRunningService) return;
+  static const MethodChannel _channel = MethodChannel(
+    'fullbright_track/step_service',
+  );
 
-    await FlutterForegroundTask.startService(
-      notificationTitle: 'Step Tracker Active',
-      notificationText: 'Tracking steps...',
-      callback: startCallback,
-    );
+  static Future<void> start() async {
+    await _channel.invokeMethod<bool>('start');
   }
 
   static Future<void> stop() async {
-    await FlutterForegroundTask.stopService();
+    await _channel.invokeMethod<bool>('stop');
+  }
+
+  static Future<bool> isRunning() async {
+    return await _channel.invokeMethod<bool>('isRunning') ?? false;
+  }
+
+  static Future<Map<String, dynamic>> getCurrentState() async {
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'getCurrentState',
+    );
+
+    return result ?? <String, dynamic>{};
   }
 }

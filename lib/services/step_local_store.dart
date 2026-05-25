@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
-import 'package:pedometer/pedometer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StepLocalState {
@@ -39,8 +37,6 @@ class StepLocalState {
 }
 
 class StepLocalStore {
-  static const int maxStepSpike = 3000;
-
   static String todayKey() {
     final now = DateTime.now();
 
@@ -67,7 +63,7 @@ class StepLocalStore {
         anchorSteps: 0,
         baselineSet: false,
         day: today,
-        debugText: 'Waiting for today steps...',
+        debugText: prefs.getString('bg_debug') ?? 'Waiting for today steps...',
       );
     }
 
@@ -83,82 +79,6 @@ class StepLocalStore {
       day: savedDay,
       debugText: prefs.getString('bg_debug') ?? 'Loaded local steps',
     );
-  }
-
-  static Future<StepLocalState> processStep(
-    StepLocalState state,
-    StepCount event,
-  ) async {
-    final raw = event.steps;
-    final today = todayKey();
-
-    if (state.day.isNotEmpty && state.day != today && state.steps > 0) {
-      await enqueueSave(state, dayOverride: state.day);
-    }
-
-    if (state.day != today) {
-      state
-        ..day = today
-        ..baseline = raw
-        ..anchorSteps = 0
-        ..initialSteps = 0
-        ..steps = 0
-        ..lastRawSteps = raw
-        ..baselineSet = true
-        ..debugText = 'New day reset\nRAW: $raw\nBASELINE RESET';
-
-      await persist(state);
-      await enqueueSave(state);
-      return state;
-    }
-
-    if (!state.baselineSet) {
-      state
-        ..baseline = raw
-        ..anchorSteps = 0
-        ..lastRawSteps = raw
-        ..baselineSet = true
-        ..debugText = 'Baseline set\nRAW: $raw';
-
-      await persist(state);
-      return state;
-    }
-
-    if (raw < state.lastRawSteps) {
-      state
-        ..initialSteps = state.steps
-        ..anchorSteps = state.steps
-        ..baseline = raw
-        ..lastRawSteps = raw
-        ..debugText =
-            'Sensor reset\nRAW: $raw\nSHIFT BASELINE\nINIT: ${state.initialSteps}';
-
-      await persist(state);
-      await enqueueSave(state);
-      return state;
-    }
-
-    final diffRaw = raw - state.lastRawSteps;
-
-    if (diffRaw > maxStepSpike) {
-      state.debugText =
-          'Spike ignored\nRAW: $raw\nLAST: ${state.lastRawSteps}\nDIFF: $diffRaw';
-
-      await persist(state);
-      return state;
-    }
-
-    final delta = max(0, raw - state.baseline);
-    final computed = max(0, state.anchorSteps + delta);
-
-    state
-      ..steps = computed
-      ..lastRawSteps = raw
-      ..debugText =
-          'RAW: $raw\nBASE: ${state.baseline}\nLAST: ${state.lastRawSteps}\nDELTA: $delta\nTOTAL: ${state.steps}';
-
-    await persist(state);
-    return state;
   }
 
   static Future<void> persist(StepLocalState state) async {

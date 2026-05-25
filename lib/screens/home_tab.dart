@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
 import 'mood_popup_card.dart';
@@ -79,8 +78,6 @@ class _HomeTabState extends State<HomeTab> {
 
     debugPrint("MOOD TYPE: ${data.moodIndex.runtimeType}");
     debugPrint("MOOD VALUE: ${data.moodIndex}");
-
-    logServiceStatus();
 
     final progress = (data.stepsToday / data.stepGoal).clamp(0, 1.0);
 
@@ -472,10 +469,4 @@ class _HomeTabState extends State<HomeTab> {
       child: child,
     );
   }
-}
-
-Future<void> logServiceStatus() async {
-  final isRunning = await FlutterForegroundTask.isRunningService;
-
-  debugPrint('FG Service status → $isRunning');
 }

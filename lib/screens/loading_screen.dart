@@ -117,13 +117,13 @@ class _LoadingScreenState extends State<LoadingScreen>
       /// Give Android time to apply permission state
       await Future.delayed(const Duration(milliseconds: 800));
 
-      /// 3. Initialize services
-      await StepsService.instance.initialize(appData);
-
-      /// 4. Start foreground service
+      /// 3. Start foreground service
       await StepForegroundService.start();
 
       await Future.delayed(const Duration(milliseconds: 500));
+
+      /// 4. Initialize services
+      await StepsService.instance.initialize(appData);
 
       ///
       /// MOOD SERVICE
