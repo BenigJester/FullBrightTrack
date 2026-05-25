@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
+import 'leaderboard_service.dart';
 import 'step_foreground_service.dart';
 import 'step_local_store.dart';
 
@@ -542,6 +543,8 @@ class StepsService with WidgetsBindingObserver {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
+      await LeaderboardService.publishCurrentUserSummary(todaySteps: safeSteps);
+
       _offlineQueue.removeWhere((entry) => entry['day'] == state.day);
       await _persistQueue();
       _setDebugStatus("Firestore saved $safeSteps steps");
@@ -685,7 +688,7 @@ class StepsService with WidgetsBindingObserver {
 
     final dates = _generateDateRange(start, now);
 
-    final futures = dates.map((date) {
+    final futures = dates.map<Future<MapEntry<String, int>>>((date) {
       return FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -704,7 +707,7 @@ class StepsService with WidgetsBindingObserver {
     // merge offline queue
     for (final item in _offlineQueue) {
       if (result.containsKey(item['day'])) {
-        result[item['day']] = item['steps'];
+        result[item['day'] as String] = (item['steps'] as num?)?.toInt() ?? 0;
       }
     }
 
