@@ -32,6 +32,12 @@ class MainActivity : FlutterActivity() {
                 "isRunning" -> result.success(StepCounterService.isMarkedRunning(this))
                 "getCurrentState" -> result.success(readState())
                 "diagnose" -> result.success(readDiagnosis())
+                "seedState" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val args = call.arguments as? Map<String, Any> ?: emptyMap()
+                    StepCounterService.seedState(this, args)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

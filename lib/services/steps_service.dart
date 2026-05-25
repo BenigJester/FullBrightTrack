@@ -440,7 +440,26 @@ class StepsService with WidgetsBindingObserver {
       _debugText = localDebug;
     }
 
+    await _seedNativeStateFromCurrent();
+
     _pushToAppData();
+  }
+
+  Future<void> _seedNativeStateFromCurrent() async {
+    if (_currentDay.isEmpty) return;
+
+    try {
+      await StepForegroundService.seedState(
+        steps: _steps,
+        baseline: _baseline,
+        initialSteps: _initialSteps,
+        lastRawSteps: _lastRawSteps,
+        anchorSteps: max(_steps, _initialSteps),
+        day: _currentDay,
+      );
+    } catch (e) {
+      debugPrint("Native step seed failed: $e");
+    }
   }
 
   // ================= UPDATE STATS =================

@@ -405,5 +405,27 @@ class StepCounterService : Service(), SensorEventListener {
             return context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
                 .getBoolean("flutter.$KEY_RUNNING", false)
         }
+
+        fun seedState(context: Context, args: Map<String, Any>) {
+            fun intArg(key: String): Int {
+                return (args[key] as? Number)?.toInt() ?: 0
+            }
+
+            val day = args["day"] as? String ?: LocalDate.now().toString()
+            val steps = intArg("steps")
+            val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+
+            prefs.edit()
+                .putLong("flutter.$KEY_STEPS", steps.toLong())
+                .putLong("flutter.$KEY_BASELINE", intArg("baseline").toLong())
+                .putLong("flutter.$KEY_INITIAL_STEPS", intArg("initialSteps").toLong())
+                .putLong("flutter.$KEY_LAST_RAW", intArg("lastRawSteps").toLong())
+                .putLong("flutter.$KEY_ANCHOR", intArg("anchorSteps").toLong())
+                .putString("flutter.$KEY_DAY", day)
+                .putString("flutter.$KEY_DEBUG", "Native state seeded from Firestore: $steps steps")
+                .apply()
+
+            start(context)
+        }
     }
 }

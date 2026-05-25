@@ -24,4 +24,22 @@ class StepForegroundService {
 
     return result ?? <String, dynamic>{};
   }
+
+  static Future<void> seedState({
+    required int steps,
+    required int baseline,
+    required int initialSteps,
+    required int lastRawSteps,
+    required int anchorSteps,
+    required String day,
+  }) async {
+    await _channel.invokeMethod<bool>('seedState', {
+      'steps': steps,
+      'baseline': baseline,
+      'initialSteps': initialSteps,
+      'lastRawSteps': lastRawSteps,
+      'anchorSteps': anchorSteps,
+      'day': day,
+    });
+  }
 }
