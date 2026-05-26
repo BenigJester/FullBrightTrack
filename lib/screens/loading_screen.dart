@@ -12,6 +12,7 @@ import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
 import '../services/moodscreen_service.dart';
 import '../services/journal_service.dart';
+import '../services/auth_service.dart';
 
 class LoadingScreen extends StatefulWidget {
   const LoadingScreen({super.key});
@@ -75,108 +76,45 @@ class _LoadingScreenState extends State<LoadingScreen>
         ?.requestNotificationsPermission();
   }
 
+  void _setLoadingText(String value) {
+    if (!mounted) return;
+
+    setState(() {
+      loadingText = value;
+    });
+  }
+
   Future<void> _initializeApp() async {
     final appData = Provider.of<AppData>(context, listen: false);
 
     try {
-      ///
-      /// AUTH
-      ///
-      setState(() {
-        loadingText = "Checking account...";
-      });
+      _setLoadingText("Checking account...");
+      await AuthService.refreshGoogleProfile();
 
-      await Future.delayed(const Duration(milliseconds: 400));
-
-      ///
-      /// HOME DATA
-      ///
-      setState(() {
-        loadingText = "Loading daily motivation...";
-      });
-
+      _setLoadingText("Loading daily motivation...");
       await HomeTabService.preload(appData);
 
-      ///
-      /// STEP SYSTEM
-      ///
-      setState(() {
-        loadingText = "Starting step tracker...";
-      });
+      _setLoadingText("Starting step tracker...");
 
-      /// 1. Activity recognition
       final activityPermission = await Permission.activityRecognition.request();
 
       if (!activityPermission.isGranted) {
         throw Exception("Activity recognition permission denied");
       }
 
-      /// 2. Notification permission
       await requestNotificationPermission();
-
-      /// Give Android time to apply permission state
-      await Future.delayed(const Duration(milliseconds: 800));
-
-      /// 3. Start foreground service
       await StepForegroundService.start();
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      /// 4. Initialize services
       await StepsService.instance.initialize(appData);
 
-      ///
-      /// MOOD SERVICE
-      ///
-      ///
-      setState(() {
-        loadingText = "Loading journal data...";
-      });
+      _setLoadingText("Syncing wellness data...");
+      await Future.wait([
+        MoodService.instance.initialize(appData),
+        JournalService.initialize(appData),
+        StreakService.preload(appData),
+      ]);
 
-      await MoodService.instance.initialize(appData);
+      _setLoadingText("Preparing dashboard...");
 
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      ///
-      /// MOOD SERVICE
-      ///
-      ///
-      ///
-
-      setState(() {
-        loadingText = "Loading mood data...";
-      });
-
-      await JournalService.initialize(appData);
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      ///
-      /// STREAK SERVICE
-      ///
-      ///
-      ///
-
-      setState(() {
-        loadingText = "Syncing activity data...";
-      });
-
-      await StreakService.preload(appData);
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      ///
-      /// FINALIZATION
-      ///
-      setState(() {
-        loadingText = "Preparing dashboard...";
-      });
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      ///
-      /// DONE
-      ///
       if (!mounted) return;
 
       setState(() {

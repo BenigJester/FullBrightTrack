@@ -196,7 +196,7 @@ class _MoreScreenState extends State<MoreScreen> {
                       showAboutDialog(
                         context: context,
                         applicationName: "Productivity and Wellbeing",
-                        applicationVersion: "0.2.0-alpha",
+                        applicationVersion: "0.3.0-alpha",
                       );
                     },
                   ),
@@ -494,31 +494,75 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text("Add Password Sign-in"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
+          backgroundColor: const Color(0xFFF7F8FC),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+          contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Row(
             children: [
-              _input(
-                controller: _passwordController,
-                label: "Password",
-                icon: Icons.lock_outline_rounded,
-                obscureText: true,
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.add_moderator_outlined,
+                  color: Colors.deepOrange,
+                ),
               ),
-              const SizedBox(height: 12),
-              _input(
-                controller: _confirmPasswordController,
-                label: "Confirm password",
-                icon: Icons.lock_person_outlined,
-                obscureText: true,
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  "Add Password",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
+          content: _settingsCard(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Create a password so this Google account can also sign in with email.",
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                _input(
+                  controller: _passwordController,
+                  label: "Password",
+                  icon: Icons.lock_outline_rounded,
+                  obscureText: true,
+                ),
+                const SizedBox(height: 12),
+                _input(
+                  controller: _confirmPasswordController,
+                  label: "Confirm password",
+                  icon: Icons.lock_person_outlined,
+                  obscureText: true,
+                ),
+              ],
             ),
-            TextButton(
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.close_rounded),
+              label: const Text("Cancel"),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.deepOrange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
               onPressed: () {
                 final password = _passwordController.text.trim();
                 final confirm = _confirmPasswordController.text.trim();
@@ -535,7 +579,8 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
 
                 Navigator.pop(context, password);
               },
-              child: const Text("Add"),
+              icon: const Icon(Icons.check_rounded),
+              label: const Text("Add"),
             ),
           ],
         );
@@ -677,13 +722,14 @@ class _NotificationSettingsScreenState
 
       if (nextEnabled) {
         await _requestNotificationPermission();
-        await Workmanager().registerPeriodicTask(
-          'hourly-reminder',
-          HourlyWorker.taskName,
-          frequency: Duration(hours: nextInterval),
-          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-        );
       }
+
+      await Workmanager().registerPeriodicTask(
+        'hourly-reminder',
+        HourlyWorker.taskName,
+        frequency: Duration(hours: nextInterval),
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+      );
 
       if (!mounted) return;
 
@@ -716,7 +762,6 @@ class _NotificationSettingsScreenState
 
   Future<void> _sendTestNotification() async {
     await _requestNotificationPermission();
-    await StepsService.instance.refreshNow();
 
     final prefs = await SharedPreferences.getInstance();
     final steps = prefs.getInt('bg_steps') ?? 0;

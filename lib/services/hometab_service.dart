@@ -66,18 +66,18 @@ class HomeTabService {
       (i) => _format(now.subtract(Duration(days: i))),
     );
 
-    final stepDocs = await Future.wait(
-      dates.map((date) => stepsRef.doc(date).get()),
-    );
-
     // ================= MAP DATA =================
 
-    final Map<String, int> stepMap = {};
+    final stepSnapshot = await stepsRef
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: dates.last)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: dates.first)
+        .orderBy(FieldPath.documentId)
+        .get();
 
-    for (int i = 0; i < dates.length; i++) {
-      final data = stepDocs[i].data();
+    final stepMap = {for (final date in dates) date: 0};
 
-      stepMap[dates[i]] = ((data as Map?)?['steps'] as num?)?.toInt() ?? 0;
+    for (final doc in stepSnapshot.docs) {
+      stepMap[doc.id] = (doc.data()['steps'] as num?)?.toInt() ?? 0;
     }
 
     // ================= TREND =================

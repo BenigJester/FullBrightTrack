@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'streak_service.dart';
 import '../models/app_data.dart';
+import 'leaderboard_service.dart';
 
 class MoodService {
   // ================= SINGLETON =================
@@ -135,6 +136,9 @@ class MoodService {
       updatedMoodData[today] = moodIndex;
 
       StreakService.refreshMoodStreak(_appData!, updatedMoodData);
+      await LeaderboardService.publishCurrentUserSummary(
+        todaySteps: _appData!.stepsToday,
+      );
     });
   }
 

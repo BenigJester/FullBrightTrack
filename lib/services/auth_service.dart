@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -64,5 +65,54 @@ class AuthService {
 
   Future<void> logout() async {
     await _auth.signOut();
+  }
+
+  static Future<void> refreshGoogleProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await user.reload();
+
+    final refreshed = FirebaseAuth.instance.currentUser;
+    if (refreshed == null) return;
+
+    UserInfo? googleInfo;
+    for (final info in refreshed.providerData) {
+      if (info.providerId == 'google.com') {
+        googleInfo = info;
+        break;
+      }
+    }
+
+    if (googleInfo == null) return;
+
+    GoogleSignInAccount? googleAccount;
+    try {
+      googleAccount = await GoogleSignIn().signInSilently();
+    } catch (_) {
+      googleAccount = null;
+    }
+
+    final nextName =
+        googleAccount?.displayName ??
+        googleInfo.displayName ??
+        refreshed.displayName;
+    final nextPhoto =
+        googleAccount?.photoUrl ?? googleInfo.photoURL ?? refreshed.photoURL;
+
+    if (nextName != null && nextName != refreshed.displayName) {
+      await refreshed.updateDisplayName(nextName);
+    }
+
+    if (nextPhoto != null && nextPhoto != refreshed.photoURL) {
+      await refreshed.updatePhotoURL(nextPhoto);
+    }
+
+    await FirebaseFirestore.instance.collection('users').doc(refreshed.uid).set({
+      'name': nextName,
+      'email': refreshed.email,
+      'photoUrl': nextPhoto,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

@@ -8,7 +8,9 @@ class LeaderboardEntry {
     required this.photoUrl,
     required this.monthlySteps,
     required this.todaySteps,
-    required this.currentStreak,
+    required this.stepStreak,
+    required this.moodStreak,
+    required this.streakPoints,
     required this.rank,
     required this.isCurrentUser,
   });
@@ -18,7 +20,9 @@ class LeaderboardEntry {
   final String? photoUrl;
   final int monthlySteps;
   final int todaySteps;
-  final int currentStreak;
+  final int stepStreak;
+  final int moodStreak;
+  final int streakPoints;
   final int rank;
   final bool isCurrentUser;
 
@@ -29,7 +33,9 @@ class LeaderboardEntry {
       photoUrl: photoUrl,
       monthlySteps: monthlySteps,
       todaySteps: todaySteps,
-      currentStreak: currentStreak,
+      stepStreak: stepStreak,
+      moodStreak: moodStreak,
+      streakPoints: streakPoints,
       rank: rank ?? this.rank,
       isCurrentUser: isCurrentUser,
     );
@@ -76,11 +82,17 @@ class LeaderboardService {
     }
 
     entries.sort((a, b) {
+      final pointsCompare = b.streakPoints.compareTo(a.streakPoints);
+      if (pointsCompare != 0) return pointsCompare;
+
+      final stepStreakCompare = b.stepStreak.compareTo(a.stepStreak);
+      if (stepStreakCompare != 0) return stepStreakCompare;
+
+      final moodStreakCompare = b.moodStreak.compareTo(a.moodStreak);
+      if (moodStreakCompare != 0) return moodStreakCompare;
+
       final stepsCompare = b.monthlySteps.compareTo(a.monthlySteps);
       if (stepsCompare != 0) return stepsCompare;
-
-      final streakCompare = b.currentStreak.compareTo(a.currentStreak);
-      if (streakCompare != 0) return streakCompare;
 
       return a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
@@ -117,6 +129,7 @@ class LeaderboardService {
       startKey: _dateKey(monthStart),
       endKey: _dateKey(monthEnd),
     );
+    final mood = await _loadUserRecentMood(uid: user.uid, days: 30);
 
     steps[_dateKey(now)] = maxOf(steps[_dateKey(now)] ?? 0, todaySteps);
 
@@ -126,6 +139,9 @@ class LeaderboardService {
       0,
       (total, value) => total + value,
     );
+    final stepStreak = _currentStepStreak(steps, now);
+    final moodStreak = _currentMoodStreak(mood, now);
+    final streakPoints = stepStreak + moodStreak;
 
     await _firestore.collection('leaderboard').doc(user.uid).set({
       'uid': user.uid,
@@ -136,10 +152,13 @@ class LeaderboardService {
           'email': profileData['email'] ?? user.email,
         }),
       ),
-      'photoUrl': profileData['photoUrl'] ?? user.photoURL,
+      'photoUrl': user.photoURL ?? profileData['photoUrl'],
       'monthlySteps': monthlySteps,
       'todaySteps': steps[_dateKey(now)] ?? todaySteps,
-      'currentStreak': _currentStreak(steps, now),
+      'currentStreak': stepStreak,
+      'stepStreak': stepStreak,
+      'moodStreak': moodStreak,
+      'streakPoints': streakPoints,
       'monthKey': _monthKey(now),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -152,9 +171,15 @@ class LeaderboardService {
     final data = doc.data();
     final monthlySteps = (data['monthlySteps'] as num?)?.toInt() ?? 0;
     final todaySteps = (data['todaySteps'] as num?)?.toInt() ?? 0;
-    final currentStreak = (data['currentStreak'] as num?)?.toInt() ?? 0;
+    final stepStreak =
+        (data['stepStreak'] as num?)?.toInt() ??
+        (data['currentStreak'] as num?)?.toInt() ??
+        0;
+    final moodStreak = (data['moodStreak'] as num?)?.toInt() ?? 0;
+    final streakPoints =
+        (data['streakPoints'] as num?)?.toInt() ?? stepStreak + moodStreak;
 
-    if (monthlySteps == 0 && todaySteps == 0 && currentStreak == 0) {
+    if (streakPoints == 0) {
       return null;
     }
 
@@ -164,9 +189,11 @@ class LeaderboardService {
       photoUrl: data['photoUrl'] as String?,
       monthlySteps: monthlySteps,
       todaySteps: todaySteps,
-      currentStreak: currentStreak,
+      stepStreak: stepStreak,
+      moodStreak: moodStreak,
+      streakPoints: streakPoints,
       rank: 0,
-      isCurrentUser: doc.id == currentUid,
+      isCurrentUser: doc.id == currentUid || data['uid'] == currentUid,
     );
   }
 
@@ -190,13 +217,68 @@ class LeaderboardService {
     };
   }
 
-  static int _currentStreak(Map<String, int> steps, DateTime now) {
+  static Future<Map<String, int?>> _loadUserRecentMood({
+    required String uid,
+    required int days,
+  }) async {
+    final now = DateTime.now();
+    final start = now.subtract(Duration(days: days - 1));
+
+    final dates = List.generate(days, (index) {
+      final date = start.add(Duration(days: index));
+      return _dateKey(date);
+    });
+
+    final docs = await _firestore
+        .collection('users')
+        .doc(uid)
+        .collection('mood')
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: dates.first)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: dates.last)
+        .orderBy(FieldPath.documentId)
+        .get();
+
+    final result = <String, int?>{for (final date in dates) date: null};
+
+    for (final doc in docs.docs) {
+      result[doc.id] = (doc.data()['mood_index'] as num?)?.toInt();
+    }
+
+    return result;
+  }
+
+  static int _currentStepStreak(Map<String, int> steps, DateTime now) {
     var streak = 0;
     var cursor = DateTime(now.year, now.month, now.day);
+    final todayKey = _dateKey(cursor);
 
-    while (cursor.month == now.month) {
+    if ((steps[todayKey] ?? 0) < stepGoal) {
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+
+    while (!cursor.isBefore(DateTime(now.year, now.month, 1))) {
       final key = _dateKey(cursor);
       if ((steps[key] ?? 0) < stepGoal) break;
+
+      streak++;
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+
+    return streak;
+  }
+
+  static int _currentMoodStreak(Map<String, int?> mood, DateTime now) {
+    var streak = 0;
+    var cursor = DateTime(now.year, now.month, now.day);
+    final todayKey = _dateKey(cursor);
+
+    if (mood[todayKey] == null) {
+      cursor = cursor.subtract(const Duration(days: 1));
+    }
+
+    while (!cursor.isBefore(DateTime(now.year, now.month, 1))) {
+      final key = _dateKey(cursor);
+      if (mood[key] == null) break;
 
       streak++;
       cursor = cursor.subtract(const Duration(days: 1));

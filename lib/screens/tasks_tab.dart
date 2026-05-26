@@ -18,12 +18,15 @@ class Task {
 
   bool get isOverdue => !isCompleted && DateTime.now().isAfter(deadline);
 
-  factory Task.fromFirestore(String id, Map<String, dynamic> data) {
+  static Task? fromFirestore(String id, Map<String, dynamic> data) {
+    final rawDeadline = data['deadline'];
+    if (rawDeadline is! Timestamp) return null;
+
     return Task(
       id: id,
-      title: data['title'] ?? '',
-      deadline: (data['deadline'] as Timestamp).toDate(),
-      isCompleted: data['isCompleted'] ?? false,
+      title: (data['title'] as String?)?.trim() ?? '',
+      deadline: rawDeadline.toDate(),
+      isCompleted: data['isCompleted'] == true,
     );
   }
 }
@@ -70,6 +73,8 @@ class _TasksTabState extends State<TasksTab> {
     return _taskRef.orderBy('deadline').snapshots().map((snapshot) {
       return snapshot.docs
           .map((doc) => Task.fromFirestore(doc.id, doc.data()))
+          .whereType<Task>()
+          .where((task) => task.title.isNotEmpty)
           .toList();
     });
   }
@@ -77,7 +82,7 @@ class _TasksTabState extends State<TasksTab> {
   // ================= CRUD =================
 
   Future<void> toggleTask(Task task, bool value) async {
-    if (task.deadline.isBefore(DateTime.now())) {
+    if (task.isCompleted || task.deadline.isBefore(DateTime.now())) {
       return;
     }
 
@@ -85,8 +90,12 @@ class _TasksTabState extends State<TasksTab> {
   }
 
   Future<void> addTask(String title, DateTime deadline) async {
+    final trimmedTitle = title.trim();
+    if (trimmedTitle.isEmpty) return;
+    if (!deadline.isAfter(DateTime.now())) return;
+
     await _taskRef.add({
-      'title': title,
+      'title': trimmedTitle,
       'deadline': deadline,
       'isCompleted': false,
       'createdAt': FieldValue.serverTimestamp(),
@@ -106,11 +115,26 @@ class _TasksTabState extends State<TasksTab> {
     });
   }
 
+  String _timeLeftLabel(DateTime deadline) {
+    final diff = deadline.difference(DateTime.now());
+
+    if (diff.isNegative) return "Overdue";
+
+    final totalMinutes = diff.inMinutes;
+    if (totalMinutes < 1) return "Due now";
+    if (totalMinutes < 60) return "$totalMinutes min left";
+
+    final hours = (totalMinutes / 60).ceil();
+    if (hours < 24) return "$hours ${hours == 1 ? "hr" : "hrs"} left";
+
+    final days = (hours / 24).ceil();
+    return "$days ${days == 1 ? "day" : "days"} left";
+  }
+
   Future<void> _refreshTasks() async {
     setState(() {});
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
-
   // ================= UI =================
 
   @override
@@ -384,13 +408,13 @@ class _TasksTabState extends State<TasksTab> {
       color = Colors.redAccent;
       status = "Overdue";
       icon = Icons.warning_rounded;
-    } else if (diff.inHours <= 1) {
+    } else if (diff.inMinutes <= 60) {
       color = Colors.orange;
-      status = "Due Soon";
+      status = _timeLeftLabel(task.deadline);
       icon = Icons.access_time_filled_rounded;
     } else {
       color = Colors.green;
-      status = "${diff.inHours} hrs left";
+      status = _timeLeftLabel(task.deadline);
       icon = Icons.bolt_rounded;
     }
 

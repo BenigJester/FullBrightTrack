@@ -13,22 +13,18 @@ class RegisterTab extends StatefulWidget {
 class _RegisterTabState extends State<RegisterTab> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
-  final confirmPasswordController = TextEditingController();
 
   final auth = AuthService();
 
   bool obscurePassword = true;
   bool isLoading = false;
-  bool obscureConfirmPassword = true;
 
   Future<void> register() async {
     final email = emailController.text.trim();
 
     final password = passwordController.text.trim();
 
-    final confirmPassword = confirmPasswordController.text.trim();
-
-    if (email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
+    if (email.isEmpty || password.isEmpty) {
       HapticFeedback.mediumImpact();
 
       final messenger = ScaffoldMessenger.of(context);
@@ -59,27 +55,6 @@ class _RegisterTabState extends State<RegisterTab> {
       messenger.showSnackBar(
         SnackBar(
           content: const Text("Password must be at least 6 characters"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      );
-      return;
-    }
-
-    if (password != confirmPassword) {
-      HapticFeedback.mediumImpact();
-
-      final messenger = ScaffoldMessenger.of(context);
-
-      messenger.clearSnackBars();
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text("Passwords do not match"),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
 
@@ -327,30 +302,6 @@ class _RegisterTabState extends State<RegisterTab> {
                       },
                       icon: Icon(
                         obscurePassword
-                            ? Icons.visibility_off_rounded
-                            : Icons.visibility_rounded,
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  // ================= CONFIRM PASSWORD =================
-                  _inputField(
-                    controller: confirmPasswordController,
-                    hint: "Confirm Password",
-                    icon: Icons.lock_person_outlined,
-                    obscure: obscureConfirmPassword,
-                    suffix: IconButton(
-                      onPressed: () {
-                        HapticFeedback.lightImpact();
-
-                        setState(() {
-                          obscureConfirmPassword = !obscureConfirmPassword;
-                        });
-                      },
-                      icon: Icon(
-                        obscureConfirmPassword
                             ? Icons.visibility_off_rounded
                             : Icons.visibility_rounded,
                       ),

@@ -18,20 +18,14 @@ void main() async {
   Workmanager().initialize(HourlyWorker.callbackDispatcher);
 
   final prefs = await SharedPreferences.getInstance();
-  final remindersEnabled =
-      prefs.getBool('hourly_step_reminders_enabled') ?? true;
   final reminderInterval = prefs.getInt('step_reminder_interval_hours') ?? 2;
 
-  if (remindersEnabled) {
-    await Workmanager().registerPeriodicTask(
-      'hourly-reminder',
-      HourlyWorker.taskName,
-      frequency: Duration(hours: reminderInterval),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-    );
-  } else {
-    await Workmanager().cancelByUniqueName('hourly-reminder');
-  }
+  await Workmanager().registerPeriodicTask(
+    'hourly-reminder',
+    HourlyWorker.taskName,
+    frequency: Duration(hours: reminderInterval),
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+  );
 
   runApp(
     MultiProvider(

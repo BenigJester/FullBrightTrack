@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
+import 'leaderboard_service.dart';
 
 class StreakService {
   static const int goal = 4000;
@@ -61,6 +62,10 @@ class StreakService {
 
       consistency: consistency,
     );
+
+    await LeaderboardService.publishCurrentUserSummary(
+      todaySteps: stepsData[_todayKey()] ?? 0,
+    );
   }
 
   // ================= OFFLINE =================
@@ -88,25 +93,28 @@ class StreakService {
 
     final start = now.subtract(Duration(days: days - 1));
 
-    final futures = List.generate(days, (i) async {
+    final dates = List.generate(days, (i) {
       final date = start.add(Duration(days: i));
 
-      final key =
-          "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('steps')
-          .doc(key)
-          .get();
-
-      return MapEntry(key, (doc.data()?['steps'] as num?)?.toInt() ?? 0);
+      return _dateKey(date);
     });
 
-    final entries = await Future.wait(futures);
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('steps')
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: dates.first)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: dates.last)
+        .orderBy(FieldPath.documentId)
+        .get();
 
-    return Map.fromEntries(entries);
+    final result = {for (final date in dates) date: 0};
+
+    for (final doc in snapshot.docs) {
+      result[doc.id] = (doc.data()['steps'] as num?)?.toInt() ?? 0;
+    }
+
+    return result;
   }
 
   // ================= FETCH MOOD =================
@@ -120,28 +128,38 @@ class StreakService {
 
     final start = now.subtract(Duration(days: days - 1));
 
-    final futures = List.generate(days, (i) async {
+    final dates = List.generate(days, (i) {
       final date = start.add(Duration(days: i));
 
-      final key =
-          "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('mood')
-          .doc(key)
-          .get();
-
-      return MapEntry(
-        key,
-        doc.exists ? (doc.data()?['mood_index'] as num?)?.toInt() : null,
-      );
+      return _dateKey(date);
     });
 
-    final entries = await Future.wait(futures);
+    final snapshot = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('mood')
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: dates.first)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: dates.last)
+        .orderBy(FieldPath.documentId)
+        .get();
 
-    return Map.fromEntries(entries);
+    final result = <String, int?>{for (final date in dates) date: null};
+
+    for (final doc in snapshot.docs) {
+      result[doc.id] = (doc.data()['mood_index'] as num?)?.toInt();
+    }
+
+    return result;
+  }
+
+  static String _todayKey() {
+    final now = DateTime.now();
+
+    return _dateKey(now);
+  }
+
+  static String _dateKey(DateTime date) {
+    return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
   }
 
   // ================= STREAK =================
@@ -165,8 +183,17 @@ class StreakService {
       }
     }
 
+    final today = _todayKey();
+
     for (int i = dates.length - 1; i >= 0; i--) {
-      if ((data[dates[i]] ?? 0) >= goal) {
+      final date = dates[i];
+      final steps = data[date] ?? 0;
+
+      if (date == today && steps < goal) {
+        continue;
+      }
+
+      if (steps >= goal) {
         current++;
       } else {
         break;

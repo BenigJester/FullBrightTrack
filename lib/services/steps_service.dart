@@ -114,6 +114,8 @@ class StepsService with WidgetsBindingObserver {
     final rawLocal = await _readBestLocalState();
     final local = _mergeLocalWithoutStepRollback(rawLocal);
 
+    await _savePreviousDayBeforeRollover(local);
+
     if (local.day != _currentDay ||
         local.steps != _steps ||
         local.baseline != _baseline ||
@@ -166,6 +168,29 @@ class StepsService with WidgetsBindingObserver {
       debugText:
           "Kept Firestore steps ($_steps); native reported lower (${local.steps})",
     );
+  }
+
+  Future<void> _savePreviousDayBeforeRollover(StepLocalState nextState) async {
+    if (_currentDay.isEmpty ||
+        nextState.day.isEmpty ||
+        nextState.day == _currentDay) {
+      return;
+    }
+
+    final previous = StepLocalState(
+      steps: _steps,
+      baseline: _baseline,
+      initialSteps: _initialSteps,
+      lastRawSteps: _lastRawSteps,
+      anchorSteps: max(_steps, _initialSteps),
+      baselineSet: _baselineSet,
+      day: _currentDay,
+      debugText: "Saved previous day before midnight reset",
+    );
+
+    _queueLocalState(previous);
+    await _persistQueue();
+    await _saveTodayStepsToFirestore(previous);
   }
 
   void _queueLocalState(StepLocalState state) {
@@ -479,7 +504,7 @@ class StepsService with WidgetsBindingObserver {
   }
 
   Future<void> _enqueueSave() {
-    final today = _todayKey();
+    final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
 
     _queueLocalState(
       StepLocalState(
@@ -489,7 +514,7 @@ class StepsService with WidgetsBindingObserver {
         lastRawSteps: _lastRawSteps,
         anchorSteps: 0,
         baselineSet: _baselineSet,
-        day: today,
+        day: day,
         debugText: _debugText,
       ),
     );
@@ -532,7 +557,11 @@ class StepsService with WidgetsBindingObserver {
     }
 
     try {
-      final safeSteps = state.day == _currentDay ? max(state.steps, _steps) : state.steps;
+      final today = _todayKey();
+      final safeSteps =
+          state.day == _currentDay ? max(state.steps, _steps) : state.steps;
+      final leaderboardTodaySteps =
+          state.day == today ? safeSteps : (_currentDay == today ? _steps : 0);
 
       final ref = FirebaseFirestore.instance
           .collection('users')
@@ -550,7 +579,9 @@ class StepsService with WidgetsBindingObserver {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      await LeaderboardService.publishCurrentUserSummary(todaySteps: safeSteps);
+      await LeaderboardService.publishCurrentUserSummary(
+        todaySteps: leaderboardTodaySteps,
+      );
       await _refreshStepStreaks();
       await getHealthInsights(_goal);
 
@@ -776,8 +807,17 @@ class StepsService with WidgetsBindingObserver {
       }
     }
 
+    final today = _todayKey();
+
     for (int i = dates.length - 1; i >= 0; i--) {
-      if ((data[dates[i]] ?? 0) >= goal) {
+      final date = dates[i];
+      final steps = data[date] ?? 0;
+
+      if (date == today && steps < goal) {
+        continue;
+      }
+
+      if (steps >= goal) {
         currentStreak++;
       } else {
         break;

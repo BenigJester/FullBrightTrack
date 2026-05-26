@@ -132,7 +132,7 @@ class _HeaderCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      "Step Champions",
+                      "Your Streak Rank",
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
@@ -141,7 +141,7 @@ class _HeaderCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      "Top active students this ${data.monthLabel}",
+                      "Your wellness streak standing this ${data.monthLabel}",
                       style: const TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                   ],
@@ -154,8 +154,9 @@ class _HeaderCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _headerStat("Your Rank", current == null ? "-" : "#${current.rank}"),
-              _headerStat("Today", _compact(current?.todaySteps ?? 0)),
-              _headerStat("Monthly Steps", _compact(current?.monthlySteps ?? 0)),
+              _headerStat("Points", _compact(current?.streakPoints ?? 0)),
+              _headerStat("Step Streak", "${current?.stepStreak ?? 0}d"),
+              _headerStat("Mood Streak", "${current?.moodStreak ?? 0}d"),
             ],
           ),
         ],
@@ -260,12 +261,25 @@ class _PodiumBlock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          _compact(entry?.monthlySteps ?? 0),
-          style: TextStyle(
-            color: Colors.orange.shade800,
-            fontWeight: FontWeight.w600,
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.local_fire_department_rounded,
+              size: 18,
+              color: entry == null ? Colors.grey : Colors.deepOrange,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              entry == null ? "-" : "${entry?.streakPoints}",
+              style: TextStyle(
+                color: entry == null
+                    ? Colors.grey.shade600
+                    : Colors.orange.shade800,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         Container(
@@ -350,7 +364,7 @@ class _RankingTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${entry.monthlySteps} monthly steps',
+                  '${entry.monthlySteps} total steps',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                 ),
               ],
@@ -371,7 +385,7 @@ class _RankingTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '${entry.currentStreak}',
+                  '${entry.streakPoints}',
                   style: const TextStyle(
                     color: Colors.deepOrange,
                     fontWeight: FontWeight.bold,
@@ -444,7 +458,7 @@ class _EmptyState extends StatelessWidget {
           ),
           SizedBox(height: 8),
           Text(
-            "Step data will appear here after students start saving progress.",
+            "Streak points will appear here after students save mood and step progress.",
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.black54),
           ),

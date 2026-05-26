@@ -108,7 +108,7 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    "Hi, $firstName ðŸ‘‹",
+                    "Hi, $firstName",
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
