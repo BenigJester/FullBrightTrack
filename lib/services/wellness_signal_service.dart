@@ -51,10 +51,11 @@ class WellnessSignalService {
         .limit(60)
         .get();
 
-    final totalSteps = stepsSnapshot.docs.fold<int>(
-      0,
-      (total, doc) => total + ((doc.data()['steps'] as num?)?.toInt() ?? 0),
-    );
+    final recordedSteps = stepsSnapshot.docs
+        .map((doc) => (doc.data()['steps'] as num?)?.toInt() ?? 0)
+        .where((steps) => steps > 0)
+        .toList();
+    final avgDailySteps = averageRecordedDailySteps(recordedSteps);
     final moodValues = moodSnapshot.docs.map((doc) {
       final data = doc.data();
       return _MoodSignal(
@@ -130,7 +131,7 @@ class WellnessSignalService {
     final input = StressModelInput(
       avgMoodIndex: avgMoodIndex,
       avgMoodIntensity: avgMoodIntensity,
-      avgDailySteps: totalSteps / max(1, dateKeys.length),
+      avgDailySteps: avgDailySteps,
       moodLogCoverage: moodValues.length / max(1, dateKeys.length),
       journalEntryCount: journalSnapshot.docs.length,
       activeTaskCount: activeTasks,
@@ -184,6 +185,17 @@ class WellnessSignalService {
 
   static String _dateKey(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+  }
+
+  static double averageRecordedDailySteps(Iterable<int> recordedSteps) {
+    final positiveSteps = recordedSteps.where((steps) => steps > 0).toList();
+    if (positiveSteps.isEmpty) return 0;
+
+    final total = positiveSteps.fold<int>(
+      0,
+      (runningTotal, steps) => runningTotal + steps,
+    );
+    return total / positiveSteps.length;
   }
 }
 

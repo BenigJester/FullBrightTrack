@@ -211,6 +211,7 @@ Do not diagnose. Do not mention medical certainty.
 Mood scale is important: avgMoodIndex 0 = sad/high stress risk, 1 = low mood, 2 = okay, 3 = happy/low stress risk.
 avgMoodIntensity is 0 to 1. High intensity amplifies the current mood. High intensity with sad/low mood increases stress risk.
 Step activity is protective. More avgDailySteps must never increase stress risk by itself.
+avgDailySteps is the average across recorded positive step days, not a 30-day total.
 Low avgDailySteps may increase risk, but high avgDailySteps should reduce or balance activity-related risk.
 Treat journalWarningWeight as numeric severity: 0 normal, about 0.3 normal stress day, about 0.65 elevated concern, 1.0 critical danger/self-harm concern.
 Never return Low if avgMoodIndex is 0 and avgMoodIntensity is 0.8 or higher. That should be at least Elevated.
