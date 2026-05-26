@@ -328,7 +328,7 @@ class _JournalHistoryScreenState extends State<JournalHistoryScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
 
                 children: [
-                  const Text("🧠", style: TextStyle(fontSize: 18)),
+                  const Text("\u{1F9E0}", style: TextStyle(fontSize: 18)),
 
                   const SizedBox(width: 10),
 

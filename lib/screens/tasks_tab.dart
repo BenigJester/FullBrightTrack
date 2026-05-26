@@ -135,6 +135,7 @@ class _TasksTabState extends State<TasksTab> {
     setState(() {});
     await Future<void>.delayed(const Duration(milliseconds: 250));
   }
+
   // ================= UI =================
 
   @override
@@ -376,7 +377,7 @@ class _TasksTabState extends State<TasksTab> {
                                 const SizedBox(height: 10),
 
                                 Text(
-                                  "No tasks here 🎉",
+                                  "No tasks here \u{1F389}",
                                   style: TextStyle(color: Colors.grey.shade600),
                                 ),
                               ],

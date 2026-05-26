@@ -145,7 +145,7 @@ class _JournalScreenState extends State<JournalScreen> {
                           ),
 
                           child: const Text(
-                            "🧠",
+                            "\u{1F9E0}",
                             style: TextStyle(fontSize: 24),
                           ),
                         ),

@@ -24,7 +24,7 @@ class MoodService {
 
   // ================= MOODS =================
 
-  final moods = ["😞", "🙂", "😄", "🤩"];
+  final moods = ["\u{1F61E}", "\u{1F642}", "\u{1F604}", "\u{1F929}"];
 
   // ================= INITIALIZE =================
 
@@ -50,35 +50,33 @@ class MoodService {
 
   // ================= LOAD TODAY MOOD =================
 
-  Future<void> loadTodayMood() {
+  Future<void> loadTodayMood() async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null || _appData == null) {
-      return Future.value();
+      return;
     }
 
     final today = _todayKey();
 
-    return FirebaseFirestore.instance
+    final doc = await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('mood')
         .doc(today)
-        .get()
-        .then((doc) {
-          if (!doc.exists) {
-            _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
+        .get();
 
-            return;
-          }
+    if (!doc.exists) {
+      _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
 
-          _appData!.updateMoodData(
-            moodIndex: doc.data()?['mood_index'] ?? 1,
-            moodIntensity: (doc.data()?['intensity'] ?? 0.5).toDouble(),
-          );
-        });
+      return;
+    }
+
+    _appData!.updateMoodData(
+      moodIndex: doc.data()?['mood_index'] ?? 1,
+      moodIntensity: (doc.data()?['intensity'] ?? 0.5).toDouble(),
+    );
   }
-  
 
   // ================= UPDATE MOOD =================
 
@@ -151,7 +149,7 @@ class MoodService {
     final intensity = _appData!.moodIntensity;
 
     if (mood >= 2 && intensity > 0.7) {
-      return "You're feeling amazing today—great energy!";
+      return "You're feeling amazing today - great energy!";
     } else if (mood == 0 && intensity > 0.7) {
       return "Tough day? Consider taking a short break.";
     } else {

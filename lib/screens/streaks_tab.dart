@@ -109,7 +109,7 @@ class StreakTab extends StatelessWidget {
               const Spacer(),
 
               const Text(
-                "🔥 Active",
+                "\u{1F525} Active",
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -156,13 +156,13 @@ class StreakTab extends StatelessWidget {
     String status;
 
     if (currentMoodStreak == 0) {
-      status = "🙂 Start";
+      status = "\u{1F642} Start";
     } else if (currentMoodStreak < 3) {
-      status = "🌱 Growing";
+      status = "\u{1F331} Growing";
     } else if (currentMoodStreak < 7) {
-      status = "💛 Positive";
+      status = "\u{1F49B} Positive";
     } else {
-      status = "🌿 Balanced";
+      status = "\u{1F33F} Balanced";
     }
 
     return Container(
@@ -714,14 +714,14 @@ class StreakTab extends StatelessWidget {
       iconColor = Colors.grey;
       textColor = Colors.black87;
     } else if (label == "Started") {
-      text = "You started being active 🎉";
+      text = "You started being active \u{1F389}";
       icon = Icons.local_fire_department_rounded;
 
       bgColor = const Color(0xFFFFF3E0);
       iconColor = Colors.deepOrange;
       textColor = Colors.deepOrange.shade700;
     } else if (label == "Stopped") {
-      text = "Activity stopped recently ⚠️";
+      text = "Activity stopped recently \u{26A0}\u{FE0F}";
       icon = Icons.trending_down_rounded;
 
       bgColor = const Color(0xFFFFEBEE);
@@ -730,7 +730,7 @@ class StreakTab extends StatelessWidget {
     } else if (t["trend"] == "up") {
       text =
           "You're improving by "
-          "${percent.toStringAsFixed(1)}% this week 🚀";
+          "${percent.toStringAsFixed(1)}% this week \u{1F680}";
 
       icon = Icons.trending_up_rounded;
 

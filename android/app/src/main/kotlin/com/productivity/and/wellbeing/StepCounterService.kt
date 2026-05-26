@@ -149,6 +149,7 @@ class StepCounterService : Service(), SensorEventListener {
                     initialSteps = 0,
                     lastRawSteps = rawSteps,
                     anchorSteps = 0,
+                    detectorPendingSteps = 0,
                     day = today,
                     debugText = "Native pedometer active: new day baseline set"
                 )
@@ -161,15 +162,26 @@ class StepCounterService : Service(), SensorEventListener {
         val baselineWasMissing = state.baseline <= 0
         val baseline = if (baselineWasMissing) rawSteps else state.baseline
         val lastRaw = state.lastRawSteps
-        val sensorReset = lastRaw > 0 && rawSteps < lastRaw
-        val baselineForCalculation = if (sensorReset) rawSteps else baseline
-        val anchorSteps = if (sensorReset || baselineWasMissing) state.steps else state.anchorSteps
-        val delta = max(0, rawSteps - baselineForCalculation)
-        val calculatedSteps = max(state.steps, anchorSteps + delta)
+        val rawJump = rawSteps - lastRaw
 
-        if (lastRaw > 0 && rawSteps - lastRaw > MAX_REASONABLE_STEP_JUMP) {
+        if (lastRaw > 0 && rawJump > MAX_REASONABLE_STEP_JUMP) {
             saveDebug("Native pedometer ignored a large sensor jump: ${rawSteps - lastRaw}")
             return
+        }
+
+        val sensorReset = lastRaw > 0 && rawSteps < lastRaw
+        val counterDelta = if (lastRaw > 0 && !sensorReset) max(0, rawJump) else 0
+        val detectorPending = state.detectorPendingSteps
+        val baselineForCalculation = if (sensorReset || detectorPending > 0) rawSteps else baseline
+        val anchorSteps = when {
+            sensorReset || baselineWasMissing -> state.steps
+            else -> state.anchorSteps
+        }
+        val calculatedSteps = if (detectorPending > 0) {
+            state.steps + max(0, counterDelta - detectorPending)
+        } else {
+            val delta = max(0, rawSteps - baselineForCalculation)
+            max(state.steps, anchorSteps + delta)
         }
 
         val next = StepState(
@@ -177,7 +189,8 @@ class StepCounterService : Service(), SensorEventListener {
             baseline = baselineForCalculation,
             initialSteps = state.initialSteps,
             lastRawSteps = rawSteps,
-            anchorSteps = anchorSteps,
+            anchorSteps = calculatedSteps,
+            detectorPendingSteps = 0,
             day = today,
             debugText = "Native pedometer active: $calculatedSteps steps"
         )
@@ -201,6 +214,7 @@ class StepCounterService : Service(), SensorEventListener {
                     initialSteps = 0,
                     lastRawSteps = 0,
                     anchorSteps = 1,
+                    detectorPendingSteps = 0,
                     day = today,
                     debugText = "Native pedometer active: detector fallback"
                 )
@@ -211,9 +225,11 @@ class StepCounterService : Service(), SensorEventListener {
 
         val state = currentState()
         val nextSteps = state.steps + 1
+        val detectorPending = if (counterRegistered) state.detectorPendingSteps + 1 else 0
         val next = state.copy(
             steps = nextSteps,
-            anchorSteps = nextSteps,
+            anchorSteps = if (counterRegistered) state.anchorSteps else nextSteps,
+            detectorPendingSteps = detectorPending,
             debugText = "Native pedometer active: $nextSteps steps"
         )
 
@@ -229,6 +245,7 @@ class StepCounterService : Service(), SensorEventListener {
             initialSteps = readInt(KEY_INITIAL_STEPS),
             lastRawSteps = readInt(KEY_LAST_RAW),
             anchorSteps = readInt(KEY_ANCHOR),
+            detectorPendingSteps = readInt(KEY_DETECTOR_PENDING),
             day = readString(KEY_DAY),
             debugText = readString(KEY_DEBUG)
         )
@@ -241,6 +258,7 @@ class StepCounterService : Service(), SensorEventListener {
             .putLong(prefKey(KEY_INITIAL_STEPS), state.initialSteps.toLong())
             .putLong(prefKey(KEY_LAST_RAW), state.lastRawSteps.toLong())
             .putLong(prefKey(KEY_ANCHOR), state.anchorSteps.toLong())
+            .putLong(prefKey(KEY_DETECTOR_PENDING), state.detectorPendingSteps.toLong())
             .putString(prefKey(KEY_DAY), state.day)
             .putString(prefKey(KEY_DEBUG), state.debugText)
             .apply()
@@ -355,6 +373,7 @@ class StepCounterService : Service(), SensorEventListener {
         val initialSteps: Int,
         val lastRawSteps: Int,
         val anchorSteps: Int,
+        val detectorPendingSteps: Int,
         val day: String,
         val debugText: String
     )
@@ -372,6 +391,7 @@ class StepCounterService : Service(), SensorEventListener {
         private const val KEY_INITIAL_STEPS = "bg_initial_steps"
         private const val KEY_LAST_RAW = "bg_last_raw"
         private const val KEY_ANCHOR = "bg_anchor"
+        private const val KEY_DETECTOR_PENDING = "bg_detector_pending"
         private const val KEY_DAY = "bg_day"
         private const val KEY_DEBUG = "bg_debug"
         private const val KEY_QUEUE = "steps_queue"
@@ -414,13 +434,25 @@ class StepCounterService : Service(), SensorEventListener {
             val day = args["day"] as? String ?: LocalDate.now().toString()
             val steps = intArg("steps")
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val currentDay = prefs.getString("flutter.$KEY_DAY", "") ?: ""
+            val currentBaseline = (prefs.all["flutter.$KEY_BASELINE"] as? Number)?.toInt() ?: 0
+            val currentSteps = (prefs.all["flutter.$KEY_STEPS"] as? Number)?.toInt() ?: 0
+
+            if (isMarkedRunning(context) && currentDay == day && currentBaseline > 0 && currentSteps >= steps) {
+                start(context)
+                return
+            }
+
+            val baseline = intArg("baseline")
+            val anchorSteps = intArg("anchorSteps")
 
             prefs.edit()
                 .putLong("flutter.$KEY_STEPS", steps.toLong())
-                .putLong("flutter.$KEY_BASELINE", intArg("baseline").toLong())
+                .putLong("flutter.$KEY_BASELINE", baseline.toLong())
                 .putLong("flutter.$KEY_INITIAL_STEPS", intArg("initialSteps").toLong())
                 .putLong("flutter.$KEY_LAST_RAW", intArg("lastRawSteps").toLong())
-                .putLong("flutter.$KEY_ANCHOR", intArg("anchorSteps").toLong())
+                .putLong("flutter.$KEY_ANCHOR", anchorSteps.toLong())
+                .putLong("flutter.$KEY_DETECTOR_PENDING", 0)
                 .putString("flutter.$KEY_DAY", day)
                 .putString("flutter.$KEY_DEBUG", "Native state seeded from Firestore: $steps steps")
                 .apply()

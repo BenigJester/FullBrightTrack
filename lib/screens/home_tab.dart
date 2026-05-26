@@ -122,18 +122,18 @@ class _HomeTabState extends State<HomeTab> {
     await JournalService.initialize(data);
   }
 
-  String moodLabel(int mood) {
+  String _moodEmoji(int mood) {
     switch (mood) {
       case 0:
-        return "😞";
+        return "\u{1F61E}";
       case 1:
-        return "🙂";
+        return "\u{1F642}";
       case 2:
-        return "😄";
+        return "\u{1F604}";
       case 3:
-        return "🤩";
+        return "\u{1F929}";
       default:
-        return "—";
+        return "-";
     }
   }
 
@@ -152,9 +152,6 @@ class _HomeTabState extends State<HomeTab> {
   @override
   Widget build(BuildContext context) {
     final data = context.watch<AppData>();
-
-    debugPrint("MOOD TYPE: ${data.moodIndex.runtimeType}");
-    debugPrint("MOOD VALUE: ${data.moodIndex}");
 
     final progress = (data.stepsToday / data.stepGoal).clamp(0, 1.0);
 
@@ -275,7 +272,7 @@ class _HomeTabState extends State<HomeTab> {
 
                   Text(
                     data.stepsToday >= data.stepGoal
-                        ? "Goal completed 🎉"
+                        ? "Goal completed \u{1F389}"
                         : "$remaining steps remaining to hit your goal",
                     style: const TextStyle(
                       color: Colors.white,
@@ -308,7 +305,7 @@ class _HomeTabState extends State<HomeTab> {
                     icon: Icons.mood_rounded,
                     title: "Mood",
                     value:
-                        "${moodLabel(data.moodIndex)} ${moodIntensityLabel(data.moodIntensity)}",
+                        "${_moodEmoji(data.moodIndex)} ${moodIntensityLabel(data.moodIntensity)}",
                     subtitle: "today",
                     color: Colors.orange,
                   ),
@@ -385,8 +382,8 @@ class _HomeTabState extends State<HomeTab> {
                   Expanded(
                     child: Text(
                       data.stepsToday >= data.stepGoal
-                          ? "Amazing work today! Keep the momentum going 🎉"
-                          : "A short walk can boost both your mood and productivity 🚶",
+                          ? "Amazing work today! Keep the momentum going \u{1F389}"
+                          : "A short walk can boost both your mood and productivity \u{1F6B6}",
 
                       style: TextStyle(
                         fontSize: 15,

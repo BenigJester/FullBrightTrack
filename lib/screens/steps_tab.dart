@@ -185,7 +185,7 @@ class StepsTab extends StatelessWidget {
   Widget _statItem(Color color, String title) {
     return Row(
       children: [
-        Text("●", style: TextStyle(fontSize: 16, color: color)),
+        Text("\u{2022}", style: TextStyle(fontSize: 16, color: color)),
 
         const SizedBox(width: 6),
 
@@ -228,7 +228,7 @@ class StepsTab extends StatelessWidget {
               const SizedBox(height: 6),
 
               Text(
-                "${data.currentStreak} days 🔥",
+                "${data.currentStreak} days \u{1F525}",
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -377,7 +377,7 @@ class StepsTab extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
 
                 children: [
-                  const Text("🔥", style: TextStyle(fontSize: 18)),
+                  const Text("\u{1F525}", style: TextStyle(fontSize: 18)),
 
                   const SizedBox(width: 10),
 

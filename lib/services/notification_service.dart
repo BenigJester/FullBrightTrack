@@ -27,7 +27,7 @@ class NotificationService {
     await notifications.show(
       id: 100,
       title: 'Step Reminder',
-      body: '$steps steps today 🚶',
+      body: '$steps steps today \u{1F6B6}',
       notificationDetails: details,
     );
   }

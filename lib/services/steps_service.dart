@@ -162,7 +162,7 @@ class StepsService with WidgetsBindingObserver {
       baseline: local.baseline > 0 ? local.baseline : _baseline,
       initialSteps: local.initialSteps,
       lastRawSteps: local.lastRawSteps > 0 ? local.lastRawSteps : _lastRawSteps,
-      anchorSteps: max(local.anchorSteps, _steps),
+      anchorSteps: local.baseline > 0 ? 0 : max(local.anchorSteps, _steps),
       baselineSet: local.baselineSet || _baselineSet,
       day: local.day,
       debugText:
@@ -182,7 +182,7 @@ class StepsService with WidgetsBindingObserver {
       baseline: _baseline,
       initialSteps: _initialSteps,
       lastRawSteps: _lastRawSteps,
-      anchorSteps: max(_steps, _initialSteps),
+      anchorSteps: _baseline > 0 ? 0 : max(_steps, _initialSteps),
       baselineSet: _baselineSet,
       day: _currentDay,
       debugText: "Saved previous day before midnight reset",
@@ -482,12 +482,14 @@ class StepsService with WidgetsBindingObserver {
     if (_currentDay.isEmpty) return;
 
     try {
+      final counterBaseline = _lastRawSteps > 0 ? _lastRawSteps : _baseline;
+
       await StepForegroundService.seedState(
         steps: _steps,
-        baseline: _baseline,
+        baseline: counterBaseline,
         initialSteps: _initialSteps,
         lastRawSteps: _lastRawSteps,
-        anchorSteps: max(_steps, _initialSteps),
+        anchorSteps: counterBaseline > 0 ? _steps : 0,
         day: _currentDay,
       );
     } catch (e) {
@@ -503,7 +505,7 @@ class StepsService with WidgetsBindingObserver {
     _calories = StepLocalStore.caloriesFor(_steps);
   }
 
-  Future<void> _enqueueSave() {
+  Future<void> _enqueueSave() async {
     final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
 
     _queueLocalState(
@@ -519,9 +521,8 @@ class StepsService with WidgetsBindingObserver {
       ),
     );
 
-    return _persistQueue().then((_) async {
-      await _saveCurrentStepsToFirestore();
-    });
+    await _persistQueue();
+    await _saveCurrentStepsToFirestore();
   }
 
   void _autoSaveTodaySteps(StepLocalState state) {
@@ -740,16 +741,15 @@ class StepsService with WidgetsBindingObserver {
 
     final dates = _generateDateRange(start, now);
 
-    final futures = dates.map<Future<MapEntry<String, int>>>((date) {
-      return FirebaseFirestore.instance
+    final futures = dates.map<Future<MapEntry<String, int>>>((date) async {
+      final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('steps')
           .doc(date)
-          .get()
-          .then((doc) {
-            return MapEntry(date, (doc.data()?['steps'] as num?)?.toInt() ?? 0);
-          });
+          .get();
+
+      return MapEntry(date, (doc.data()?['steps'] as num?)?.toInt() ?? 0);
     });
 
     final entries = await Future.wait(futures);
@@ -909,7 +909,7 @@ class StepsService with WidgetsBindingObserver {
     List<String> insights = [];
 
     if (currentStreak >= 3) {
-      insights.add("🔥 You're on a $currentStreak-day streak!");
+      insights.add("\u{1F525} You're on a $currentStreak-day streak!");
     }
 
     if (currentStreak == 0) {
@@ -922,11 +922,11 @@ class StepsService with WidgetsBindingObserver {
 
     if (trend == "up" && percent > 0 && trendLabel != "Started") {
       insights.add(
-        "📈 You're improving by ${percent.toStringAsFixed(1)}% this week.",
+        "\u{1F4C8} You're improving by ${percent.toStringAsFixed(1)}% this week.",
       );
     } else if (trend == "down" && percent < 0 && percent != -100) {
       insights.add(
-        "📉 Activity dropped by ${percent.abs().toStringAsFixed(1)}%.",
+        "\u{1F4C9} Activity dropped by ${percent.abs().toStringAsFixed(1)}%.",
       );
     }
 
@@ -951,7 +951,7 @@ class StepsService with WidgetsBindingObserver {
     final activeDays = data.values.where((s) => s >= goal).length;
 
     if (activeDays >= data.length * 0.7) {
-      insights.add("💪 You're consistently hitting your goal.");
+      insights.add("\u{1F4AA} You're consistently hitting your goal.");
     }
 
     return insights;

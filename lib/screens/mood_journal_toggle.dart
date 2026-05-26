@@ -23,7 +23,7 @@ class MoodJournalToggle extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // 🔥 SAFE ANIMATION (no layout conflict)
+          // SAFE ANIMATION (no layout conflict)
           AnimatedAlign(
             duration: const Duration(milliseconds: 300),
             curve: Curves.easeInOut,
@@ -41,7 +41,7 @@ class MoodJournalToggle extends StatelessWidget {
             ),
           ),
 
-          // 🔘 BUTTONS
+          // BUTTONS
           Row(children: [_buildItem("Mood", 0), _buildItem("Journal", 1)]),
         ],
       ),

@@ -21,12 +21,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
           return Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        // If logged in → Home
+        // If logged in -> Home
         if (snapshot.hasData) {
           return LoadingScreen();
         }
 
-        // If not logged in → Login
+        // If not logged in -> Login
         return LoginTab();
       },
     );

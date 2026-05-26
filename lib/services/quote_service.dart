@@ -22,7 +22,7 @@ class QuoteService {
       return {"quote": doc['quote'], "author": doc['author']};
     }
 
-    // 🌐 Else → fetch from API
+    // Else -> fetch from API
     final response = await http.get(
       Uri.parse("https://zenquotes.io/api/random"),
     );

@@ -155,8 +155,8 @@ class _HeaderCard extends StatelessWidget {
             children: [
               _headerStat("Your Rank", current == null ? "-" : "#${current.rank}"),
               _headerStat("Points", _compact(current?.streakPoints ?? 0)),
-              _headerStat("Step Streak", "${current?.stepStreak ?? 0}d"),
-              _headerStat("Mood Streak", "${current?.moodStreak ?? 0}d"),
+              _headerStat("Step Streak", "${current?.stepStreak ?? 0}"),
+              _headerStat("Mood Streak", "${current?.moodStreak ?? 0}"),
             ],
           ),
         ],
