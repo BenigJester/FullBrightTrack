@@ -103,6 +103,10 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         activeTaskCount: (data['activeTaskCount'] as num?)?.toInt() ?? 0,
         completedTaskCount: (data['completedTaskCount'] as num?)?.toInt() ?? 0,
         overdueTaskCount: (data['overdueTaskCount'] as num?)?.toInt() ?? 0,
+        journalWarningWeight:
+            (data['journalWarningWeight'] as num?)?.toDouble() ?? 0,
+        journalWarningSeverity:
+            (data['journalWarningSeverity'] as String?) ?? 'none',
         source: (data['source'] as String?) ?? 'admin_monitoring',
         modelResult: modelResult,
       ),
@@ -690,6 +694,11 @@ class _PersonalMlPanel extends StatelessWidget {
                 value: "${features.journalEntryCount}",
               ),
               _SignalChip(
+                label: "Warning",
+                ready: features.journalWarningWeight > 0,
+                value: features.journalWarningLabel,
+              ),
+              _SignalChip(
                 label: "Tasks",
                 ready: features.hasTaskSignal,
                 value: "${features.totalTaskCount}",
@@ -729,7 +738,7 @@ class _PersonalMlPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            "Minimized vector: mood=${features.avgMoodIndex.toStringAsFixed(2)}, intensity=${features.avgMoodIntensity.toStringAsFixed(2)}, steps=${features.avgDailySteps.toStringAsFixed(0)}, moodCoverage=${(features.moodLogCoverage * 100).toStringAsFixed(0)}%, journals=${features.journalEntryCount}, overdueTasks=${features.overdueTaskCount}, source=${features.source}, model=${features.modelResult.modelVersion}",
+            "Based on minimized mood, activity, journal warning weight, and task signals. Model: ${features.modelResult.modelVersion}.",
             style: TextStyle(
               color: Colors.grey.shade700,
               fontSize: 12,
@@ -1008,6 +1017,8 @@ class _PersonalMlFeatures {
     required this.activeTaskCount,
     required this.completedTaskCount,
     required this.overdueTaskCount,
+    required this.journalWarningWeight,
+    required this.journalWarningSeverity,
     required this.source,
     required this.modelResult,
   });
@@ -1020,6 +1031,8 @@ class _PersonalMlFeatures {
   final int activeTaskCount;
   final int completedTaskCount;
   final int overdueTaskCount;
+  final double journalWarningWeight;
+  final String journalWarningSeverity;
   final String source;
   final StressModelResult modelResult;
 
@@ -1031,12 +1044,20 @@ class _PersonalMlFeatures {
   int get totalTaskCount =>
       activeTaskCount + completedTaskCount + overdueTaskCount;
 
+  String get journalWarningLabel {
+    if (journalWarningWeight <= 0) return 'None';
+    if (journalWarningSeverity == 'critical') return 'Critical';
+    if (journalWarningSeverity == 'elevated') return 'Elevated';
+    return 'Stress';
+  }
+
   int get readySignalCount {
     return [
       hasMoodSignal,
       hasStepSignal,
       hasJournalSignal,
       hasTaskSignal,
+      journalWarningWeight > 0,
     ].where((ready) => ready).length;
   }
 }

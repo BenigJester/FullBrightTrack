@@ -6,7 +6,7 @@ It accepts minimized numeric data from the Flutter app and optional short warnin
 
 ## Local Run
 
-```bash
+```powershell
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 dart run bin/server.dart
@@ -14,42 +14,55 @@ dart run bin/server.dart
 
 Health check:
 
-```bash
-curl http://localhost:8080/health
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8080/health"
 ```
 
 Stress endpoint:
 
-```bash
-curl -X POST http://localhost:8080/stress ^
-  -H "Content-Type: application/json" ^
-  -d "{\"avgMoodIndex\":1.8,\"avgMoodIntensity\":0.7,\"avgDailySteps\":3500,\"moodLogCoverage\":0.6,\"journalEntryCount\":8,\"activeTaskCount\":4,\"completedTaskCount\":6,\"overdueTaskCount\":2,\"warningSnippets\":[\"short warning line only\"]}"
+```powershell
+$body = @{
+  avgMoodIndex = 1.8
+  avgMoodIntensity = 0.7
+  avgDailySteps = 3500
+  moodLogCoverage = 0.6
+  journalEntryCount = 8
+  activeTaskCount = 4
+  completedTaskCount = 6
+  overdueTaskCount = 2
+  warningSnippets = @("short warning line only")
+  journalWarningWeight = 0.3
+  journalWarningSeverity = "stress"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri "http://localhost:8080/stress" -Method Post -ContentType "application/json" -Body $body
 ```
 
 Optional model override:
 
-```bash
+```powershell
 $env:GROQ_MODEL="llama-3.3-70b-versatile"
 ```
 
-## Deploy To Cloud Run
+## Deploy To Render
 
-```bash
-gcloud run deploy fullbright-stress-ai ^
-  --source genkit_backend ^
-  --region asia-southeast1 ^
-  --allow-unauthenticated ^
-  --set-env-vars GROQ_API_KEY=YOUR_GROQ_API_KEY
+Create a Render Web Service with these settings:
+
+```text
+Runtime: Docker
+Root Directory: genkit_backend
+Health Check Path: /health
+Environment: GROQ_API_KEY=YOUR_GROQ_API_KEY
 ```
 
 Then run Flutter with:
 
-```bash
-flutter run --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_CLOUD_RUN_URL/stress
+```powershell
+flutter run --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
 ```
 
 For release:
 
-```bash
-flutter build apk --release --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_CLOUD_RUN_URL/stress
+```powershell
+flutter build apk --release --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
 ```

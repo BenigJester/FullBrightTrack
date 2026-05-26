@@ -88,6 +88,9 @@ Future<Map<String, dynamic>> _readInput(Request request) async {
     'completedTaskCount': _integer(payload, 'completedTaskCount'),
     'overdueTaskCount': _integer(payload, 'overdueTaskCount'),
     'warningSnippets': _warningSnippets(payload),
+    'journalWarningWeight': _optionalNumber(payload, 'journalWarningWeight'),
+    'journalWarningSeverity':
+        (payload['journalWarningSeverity'] as String?) ?? 'none',
   };
 }
 
@@ -105,6 +108,8 @@ Future<Map<String, dynamic>> _tryReadInput(Request request) async {
       'completedTaskCount': 0,
       'overdueTaskCount': 0,
       'warningSnippets': <String>[],
+      'journalWarningWeight': 0.0,
+      'journalWarningSeverity': 'none',
     };
   }
 }
@@ -202,6 +207,7 @@ The JSON object must use exactly these keys:
 
 Use only the minimized numeric signals and short warning snippets below.
 Do not diagnose. Do not mention medical certainty.
+Treat journalWarningWeight as numeric severity: 0 normal, about 0.3 normal stress day, about 0.65 elevated concern, 1.0 critical danger/self-harm concern.
 score must be a number from 0 to 100.
 confidence must be a number from 0 to 1.
 rationale must be an array of 1 to 3 short signal labels.
@@ -230,6 +236,10 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
   final completedTaskCount = input['completedTaskCount'] as int;
   final overdueTaskCount = input['overdueTaskCount'] as int;
   final warningSnippets = input['warningSnippets'] as List<String>;
+  final journalWarningWeight = (input['journalWarningWeight'] as double).clamp(
+    0,
+    1,
+  );
 
   final lowMoodSignal = ((3 - avgMoodIndex).clamp(0, 3) / 3);
   final moodIntensitySignal = avgMoodIntensity.clamp(0, 1);
@@ -238,7 +248,10 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
   final overdueTaskSignal = min(overdueTaskCount, 8) / 8;
   final activeTaskSignal = min(activeTaskCount, 12) / 12;
   final completionRelief = min(completedTaskCount, 12) / 12;
-  final warningSignal = warningSnippets.isEmpty ? 0.0 : 1.0;
+  final warningSignal = max(
+    journalWarningWeight,
+    warningSnippets.isEmpty ? 0.0 : 0.3,
+  );
 
   final weighted =
       lowMoodSignal * 32 +
@@ -264,7 +277,13 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
           .toDouble();
 
   final rationale = <String>[];
-  if (warningSnippets.isNotEmpty) rationale.add('journal warning signal');
+  if (journalWarningWeight >= 0.8) {
+    rationale.add('critical journal warning');
+  } else if (journalWarningWeight >= 0.5) {
+    rationale.add('elevated journal warning');
+  } else if (warningSignal > 0) {
+    rationale.add('normal stress journal signal');
+  }
   if (lowMoodSignal >= 0.5) rationale.add('lower recent mood');
   if (avgMoodIntensity >= 0.7 && avgMoodIndex <= 1.5) {
     rationale.add('high intensity on low mood');
@@ -351,6 +370,13 @@ double _number(Map<String, dynamic> payload, String key) {
   }
 
   return value;
+}
+
+double _optionalNumber(Map<String, dynamic> payload, String key) {
+  final value = _asDouble(payload[key]);
+  if (value == null || value.isNaN || value.isInfinite) return 0;
+
+  return value.clamp(0, 1).toDouble();
 }
 
 int _integer(Map<String, dynamic> payload, String key) {

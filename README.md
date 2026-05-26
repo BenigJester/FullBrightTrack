@@ -11,11 +11,15 @@ Current app version: `0.3.0-alpha`
 - Step goal progress, calories, distance, streaks, and health insights.
 - Mood check-in with intensity tracking and daily popup reminder.
 - Journal entries with prompts, history, filters, and Firestore storage.
+- Weighted journal warning detection for normal stress, elevated concern, and critical danger phrases.
 - Task management with deadlines, overdue state, completion, and collapsible sections.
 - Streak dashboard for step and mood consistency.
 - Firestore leaderboard using combined step and mood streak points.
+- Admin Monitoring for minimized wellbeing summaries, stress ranking, charts, and warning signals.
+- Groq-backed AI stress estimate endpoint with local fallback scoring.
 - Account flows for email/password and Google sign-in.
-- Hourly step reminder notification support.
+- App Check support for Firebase protection.
+- Step reminder notification support with 1, 2, or 3 hour intervals.
 - Daily motivation popup.
 
 ## Tech Stack
@@ -29,6 +33,8 @@ Current app version: `0.3.0-alpha`
 - Workmanager background jobs
 - Flutter Local Notifications
 - Native Android Kotlin foreground service
+- Firebase App Check
+- Groq AI backend on Render or another Docker host
 
 ## Project Structure
 
@@ -45,6 +51,7 @@ lib/
     mood_screen.dart
     journal_screen.dart
     journal_history.dart
+    admin_monitoring_screen.dart
     tasks_tab.dart
     streaks_tab.dart
     leaderboards_screen.dart
@@ -53,21 +60,34 @@ lib/
     register_screen.dart
   services/
     auth_service.dart
+    app_check_service.dart
+    display_name_service.dart
+    genkit_stress_ai_service.dart
     hometab_service.dart
     hourly_worker.dart
     journal_service.dart
+    journal_warning_service.dart
     leaderboard_service.dart
+    local_stress_model_service.dart
     moodscreen_service.dart
     notification_service.dart
     quote_service.dart
+    reminder_scheduler_service.dart
     step_foreground_service.dart
     step_local_store.dart
     steps_service.dart
     streak_service.dart
+    wellness_signal_service.dart
+
+genkit_backend/
+  bin/server.dart
+  Dockerfile
+  README.md
 
 android/app/src/main/kotlin/com/productivity/and/wellbeing/
   MainActivity.kt
   StepBootReceiver.kt
+  StepReminderReceiver.kt
   StepCounterService.kt
 
 test/
@@ -99,11 +119,24 @@ flutter pub get
   - Email/password
   - Google
 - Enable Cloud Firestore.
+- Configure Firebase App Check for Android. Use debug provider only for debug builds and Play Integrity for release.
 
-3. Run the app:
+3. Configure the AI backend:
+
+- Deploy `genkit_backend` to Render or another Docker host.
+- Set `GROQ_API_KEY` as a server environment variable.
+- Use the deployed `/stress` endpoint when running or building Flutter.
+
+4. Run the app:
 
 ```bash
-flutter run
+flutter run --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
+```
+
+For local Android emulator testing against a local backend, use:
+
+```bash
+flutter run --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
 ```
 
 ## Firestore Data
@@ -126,23 +159,49 @@ leaderboard/{uid}
 
 The leaderboard summary contains public ranking fields such as first name, photo URL, monthly steps, step streak, mood streak, and streak points.
 
+Minimized admin monitoring summaries are stored under:
+
+```text
+admin_monitoring/{uid}
+```
+
+These summaries contain numeric wellbeing signals, weighted journal warning severity, AI/local stress score, rank, confidence, and short warning snippets. Raw journal text and task titles are not copied into admin monitoring.
+
 ## Suggested Firestore Rules
 
-This app expects users to access their own private data and read public leaderboard summaries. Adjust as needed for your deployment.
+This app expects users to access their own private data, read public leaderboard summaries, and write only their own minimized admin monitoring summary. Admin access is controlled by `users/{uid}.isAdmin == true`.
 
 ```js
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null
-                          && request.auth.uid == userId;
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId);
     }
 
     match /leaderboard/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null
-                   && request.auth.uid == userId;
+      allow read: if signedIn();
+      allow write: if isOwner(userId);
+    }
+
+    match /admin_monitoring/{userId} {
+      allow read: if isAdmin();
+      allow write: if isOwner(userId);
     }
   }
 }

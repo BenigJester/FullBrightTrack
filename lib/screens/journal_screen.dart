@@ -385,9 +385,7 @@ class _JournalScreenState extends State<JournalScreen> {
     }
 
     try {
-      final warningSnippets = JournalWarningService.extractWarningSnippets(
-        text,
-      );
+      final warningSummary = JournalWarningService.analyze(text);
 
       await FirebaseFirestore.instance
           .collection('users')
@@ -397,8 +395,12 @@ class _JournalScreenState extends State<JournalScreen> {
             'text': text,
             'tag': selectedTag,
             'prompt': currentPrompt,
-            'warningSnippets': warningSnippets,
-            'hasDangerWarning': warningSnippets.isNotEmpty,
+            'warningSnippets': warningSummary.snippets,
+            'warningFindings': warningSummary.toJsonList(),
+            'journalWarningWeight': warningSummary.weight,
+            'journalWarningSeverity': warningSummary.severity.name,
+            'hasDangerWarning':
+                warningSummary.severity == JournalWarningSeverity.critical,
             'created_at': FieldValue.serverTimestamp(),
           });
       await WellnessSignalService.publishCurrentUserSignals();

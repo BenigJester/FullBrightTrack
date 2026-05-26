@@ -14,6 +14,8 @@ class GenkitStressAiService {
   static Future<StressModelResult> analyze({
     required StressModelInput input,
     required List<String> warningSnippets,
+    required double journalWarningWeight,
+    required String journalWarningSeverity,
   }) async {
     if (!isConfigured) {
       return LocalStressModelService.analyze(input);
@@ -34,6 +36,8 @@ class GenkitStressAiService {
               'completedTaskCount': input.completedTaskCount,
               'overdueTaskCount': input.overdueTaskCount,
               'warningSnippets': warningSnippets.take(3).toList(),
+              'journalWarningWeight': journalWarningWeight.clamp(0, 1),
+              'journalWarningSeverity': journalWarningSeverity,
             }),
           )
           .timeout(const Duration(seconds: 8));

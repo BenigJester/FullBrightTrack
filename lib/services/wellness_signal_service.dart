@@ -90,10 +90,18 @@ class WellnessSignalService {
     }
 
     final warningSnippets = <String>[];
+    final warningFindings = <Map<String, dynamic>>[];
+    var journalWarningWeight = 0.0;
+    var journalWarningSeverity = JournalWarningSeverity.none;
     for (final doc in journalSnapshot.docs) {
       final text = (doc.data()['text'] as String?) ?? '';
-      warningSnippets.addAll(
-        JournalWarningService.extractWarningSnippets(text),
+      final warningSummary = JournalWarningService.analyze(text);
+      warningSnippets.addAll(warningSummary.snippets);
+      warningFindings.addAll(warningSummary.toJsonList());
+      journalWarningWeight = max(journalWarningWeight, warningSummary.weight);
+      journalWarningSeverity = _moreSevere(
+        journalWarningSeverity,
+        warningSummary.severity,
       );
       if (warningSnippets.length >= 5) break;
     }
@@ -107,10 +115,13 @@ class WellnessSignalService {
       activeTaskCount: activeTasks,
       completedTaskCount: completedTasks,
       overdueTaskCount: overdueTasks,
+      journalWarningWeight: journalWarningWeight,
     );
     final result = await GenkitStressAiService.analyze(
       input: input,
       warningSnippets: warningSnippets,
+      journalWarningWeight: journalWarningWeight,
+      journalWarningSeverity: journalWarningSeverity.name,
     );
     final profileData = profile.data() ?? <String, dynamic>{};
     final displayName = DisplayNameService.cleanForDisplay(
@@ -132,7 +143,11 @@ class WellnessSignalService {
       'completedTaskCount': input.completedTaskCount,
       'overdueTaskCount': input.overdueTaskCount,
       'warningSnippets': warningSnippets.take(5).toList(),
-      'hasDangerWarning': warningSnippets.isNotEmpty,
+      'warningFindings': warningFindings.take(5).toList(),
+      'journalWarningWeight': journalWarningWeight,
+      'journalWarningSeverity': journalWarningSeverity.name,
+      'hasDangerWarning':
+          journalWarningSeverity == JournalWarningSeverity.critical,
       'stressScore': result.score,
       'stressRank': result.rank,
       'confidence': result.confidence,
@@ -140,13 +155,20 @@ class WellnessSignalService {
       'rationale': result.rationale,
       'source': result.modelVersion == LocalStressModelService.modelVersion
           ? 'local_fallback'
-          : 'genkit_minimized_payload',
+          : 'ai_minimized_payload',
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
   static String _dateKey(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
+  }
+
+  static JournalWarningSeverity _moreSevere(
+    JournalWarningSeverity current,
+    JournalWarningSeverity next,
+  ) {
+    return next.index > current.index ? next : current;
   }
 }
 

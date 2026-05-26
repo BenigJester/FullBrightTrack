@@ -64,14 +64,18 @@ class JournalService {
 
     if (user == null) return;
 
-    final warningSnippets = JournalWarningService.extractWarningSnippets(text);
+    final warningSummary = JournalWarningService.analyze(text);
 
     await _journalCollection(user.uid).add({
       'text': text,
       'tag': tag,
       'prompt': prompt,
-      'warningSnippets': warningSnippets,
-      'hasDangerWarning': warningSnippets.isNotEmpty,
+      'warningSnippets': warningSummary.snippets,
+      'warningFindings': warningSummary.toJsonList(),
+      'journalWarningWeight': warningSummary.weight,
+      'journalWarningSeverity': warningSummary.severity.name,
+      'hasDangerWarning':
+          warningSummary.severity == JournalWarningSeverity.critical,
       'created_at': FieldValue.serverTimestamp(),
     });
     await WellnessSignalService.publishCurrentUserSignals();

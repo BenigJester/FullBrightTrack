@@ -169,15 +169,6 @@ class StepsTab extends StatelessWidget {
 
         _statItem(Colors.amber, "Distance"),
         Text("${data.distance.toStringAsFixed(2)} KM"),
-
-        const SizedBox(height: 16),
-
-        Text(
-          data.debugText,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-        ),
       ],
     );
   }

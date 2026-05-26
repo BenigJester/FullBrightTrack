@@ -10,6 +10,7 @@ class StressModelInput {
     required this.activeTaskCount,
     required this.completedTaskCount,
     required this.overdueTaskCount,
+    this.journalWarningWeight = 0,
   });
 
   final double avgMoodIndex;
@@ -20,6 +21,7 @@ class StressModelInput {
   final int activeTaskCount;
   final int completedTaskCount;
   final int overdueTaskCount;
+  final double journalWarningWeight;
 }
 
 class StressModelResult {
@@ -52,6 +54,7 @@ class LocalStressModelService {
     final overdueTaskSignal = min(input.overdueTaskCount, 8) / 8;
     final activeTaskSignal = min(input.activeTaskCount, 12) / 12;
     final completionRelief = min(input.completedTaskCount, 12) / 12;
+    final journalWarningSignal = input.journalWarningWeight.clamp(0, 1);
 
     final weighted =
         lowMoodSignal * 38 +
@@ -59,7 +62,8 @@ class LocalStressModelService {
         lowActivitySignal * 16 +
         journalSignal * 8 +
         overdueTaskSignal * 16 +
-        activeTaskSignal * 6 -
+        activeTaskSignal * 6 +
+        journalWarningSignal * 24 -
         completionRelief * 6;
 
     final score = weighted.clamp(0, 100).toDouble();
@@ -91,6 +95,7 @@ class LocalStressModelService {
       input.moodLogCoverage > 0,
       input.avgDailySteps > 0,
       input.journalEntryCount > 0,
+      input.journalWarningWeight > 0,
       input.activeTaskCount +
               input.completedTaskCount +
               input.overdueTaskCount >
@@ -98,7 +103,7 @@ class LocalStressModelService {
     ].where((ready) => ready).length;
 
     final coverageBoost = input.moodLogCoverage.clamp(0, 1) * 0.25;
-    final signalBoost = signals / 4 * 0.65;
+    final signalBoost = signals / 5 * 0.65;
 
     return (0.1 + coverageBoost + signalBoost).clamp(0, 1).toDouble();
   }
@@ -122,6 +127,13 @@ class LocalStressModelService {
     }
     if (overdueTaskSignal > 0) {
       reasons.add('overdue tasks');
+    }
+    if (input.journalWarningWeight >= 0.8) {
+      reasons.add('critical journal warning');
+    } else if (input.journalWarningWeight >= 0.5) {
+      reasons.add('elevated journal warning');
+    } else if (input.journalWarningWeight > 0) {
+      reasons.add('normal stress journal signal');
     }
     if (input.journalEntryCount > 0) {
       reasons.add('journal activity present');
