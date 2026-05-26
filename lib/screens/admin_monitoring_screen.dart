@@ -51,6 +51,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       summaries.add(summary);
     }
 
+    summaries.sort((a, b) => b.stressScore.compareTo(a.stressScore));
+
     return _AdminDashboardData(
       students: summaries,
       generatedAt: now,
@@ -63,7 +65,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     List<String> dateKeys,
   ) {
     final data = doc.data();
-    final modelResult = StressModelResult(
+    final storedModelResult = StressModelResult(
       score: (data['stressScore'] as num?)?.toDouble() ?? 0,
       rank: (data['stressRank'] as String?) ?? 'Low',
       confidence: (data['confidence'] as num?)?.toDouble() ?? 0,
@@ -72,6 +74,43 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
           (data['rationale'] as List?)?.whereType<String>().take(3).toList() ??
           const ['No rationale recorded'],
     );
+    final warningSignature = (data['warningSignature'] as String?) ?? '';
+    final resolvedWarningSignature =
+        (data['resolvedWarningSignature'] as String?) ?? '';
+    final warningResolved =
+        warningSignature.isNotEmpty &&
+        warningSignature == resolvedWarningSignature;
+    final avgMoodIndex = (data['avgMoodIndex'] as num?)?.toDouble() ?? 0;
+    final avgMoodIntensity =
+        (data['avgMoodIntensity'] as num?)?.toDouble() ?? 0;
+    final avgDailySteps = (data['avgDailySteps'] as num?)?.toDouble() ?? 0;
+    final moodLogCoverage = (data['moodLogCoverage'] as num?)?.toDouble() ?? 0;
+    final journalEntryCount = (data['journalEntryCount'] as num?)?.toInt() ?? 0;
+    final activeTaskCount = (data['activeTaskCount'] as num?)?.toInt() ?? 0;
+    final completedTaskCount =
+        (data['completedTaskCount'] as num?)?.toInt() ?? 0;
+    final overdueTaskCount = (data['overdueTaskCount'] as num?)?.toInt() ?? 0;
+    final storedWarningWeight =
+        (data['journalWarningWeight'] as num?)?.toDouble() ?? 0;
+    final journalWarningWeight = warningResolved ? 0.0 : storedWarningWeight;
+    final journalWarningSeverity = warningResolved
+        ? 'none'
+        : (data['journalWarningSeverity'] as String?) ?? 'none';
+    final modelResult = warningResolved && storedWarningWeight > 0
+        ? _resolvedWarningModelResult(
+            storedModelResult: storedModelResult,
+            input: StressModelInput(
+              avgMoodIndex: avgMoodIndex,
+              avgMoodIntensity: avgMoodIntensity,
+              avgDailySteps: avgDailySteps,
+              moodLogCoverage: moodLogCoverage,
+              journalEntryCount: journalEntryCount,
+              activeTaskCount: activeTaskCount,
+              completedTaskCount: completedTaskCount,
+              overdueTaskCount: overdueTaskCount,
+            ),
+          )
+        : storedModelResult;
     final dailyStress = {for (final day in dateKeys) day: modelResult.score};
 
     return _StudentWellnessSummary(
@@ -84,32 +123,54 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       averageSteps: ((data['avgDailySteps'] as num?)?.toDouble() ?? 0).round(),
       moodEntries: (((data['moodLogCoverage'] as num?)?.toDouble() ?? 0) * 30)
           .round(),
-      journalEntries: (data['journalEntryCount'] as num?)?.toInt() ?? 0,
-      averageMood: (data['avgMoodIndex'] as num?)?.toDouble() ?? 0,
-      averageIntensity: (data['avgMoodIntensity'] as num?)?.toDouble() ?? 0,
-      activeTasks: (data['activeTaskCount'] as num?)?.toInt() ?? 0,
-      completedTasks: (data['completedTaskCount'] as num?)?.toInt() ?? 0,
-      overdueTasks: (data['overdueTaskCount'] as num?)?.toInt() ?? 0,
+      journalEntries: journalEntryCount,
+      averageMood: avgMoodIndex,
+      averageIntensity: avgMoodIntensity,
+      activeTasks: activeTaskCount,
+      completedTasks: completedTaskCount,
+      overdueTasks: overdueTaskCount,
       dailyStress: dailyStress,
-      warningSnippets:
-          (data['warningSnippets'] as List?)?.whereType<String>().toList() ??
-          const [],
+      warningSnippets: warningResolved
+          ? const []
+          : (data['warningSnippets'] as List?)?.whereType<String>().toList() ??
+                const [],
+      warningSignature: warningSignature,
+      resolvedWarningSignature: resolvedWarningSignature,
       mlFeatures: _PersonalMlFeatures(
-        avgMoodIndex: (data['avgMoodIndex'] as num?)?.toDouble() ?? 0,
-        avgMoodIntensity: (data['avgMoodIntensity'] as num?)?.toDouble() ?? 0,
-        avgDailySteps: (data['avgDailySteps'] as num?)?.toDouble() ?? 0,
-        moodLogCoverage: (data['moodLogCoverage'] as num?)?.toDouble() ?? 0,
-        journalEntryCount: (data['journalEntryCount'] as num?)?.toInt() ?? 0,
-        activeTaskCount: (data['activeTaskCount'] as num?)?.toInt() ?? 0,
-        completedTaskCount: (data['completedTaskCount'] as num?)?.toInt() ?? 0,
-        overdueTaskCount: (data['overdueTaskCount'] as num?)?.toInt() ?? 0,
-        journalWarningWeight:
-            (data['journalWarningWeight'] as num?)?.toDouble() ?? 0,
-        journalWarningSeverity:
-            (data['journalWarningSeverity'] as String?) ?? 'none',
+        avgMoodIndex: avgMoodIndex,
+        avgMoodIntensity: avgMoodIntensity,
+        avgDailySteps: avgDailySteps,
+        moodLogCoverage: moodLogCoverage,
+        journalEntryCount: journalEntryCount,
+        activeTaskCount: activeTaskCount,
+        completedTaskCount: completedTaskCount,
+        overdueTaskCount: overdueTaskCount,
+        journalWarningWeight: journalWarningWeight,
+        journalWarningSeverity: journalWarningSeverity,
         source: (data['source'] as String?) ?? 'admin_monitoring',
         modelResult: modelResult,
       ),
+    );
+  }
+
+  StressModelResult _resolvedWarningModelResult({
+    required StressModelResult storedModelResult,
+    required StressModelInput input,
+  }) {
+    final resolvedResult = LocalStressModelService.analyze(input);
+    final rationale = <String>[
+      'critical warning marked resolved',
+      ...resolvedResult.rationale.where(
+        (reason) => !reason.toLowerCase().contains('journal warning'),
+      ),
+    ];
+
+    return StressModelResult(
+      score: resolvedResult.score,
+      rank: resolvedResult.rank,
+      confidence: resolvedResult.confidence,
+      modelVersion: '${storedModelResult.modelVersion}+resolved-view',
+      rationale: rationale.take(3).toList(),
     );
   }
 
@@ -165,7 +226,11 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 _StressChart(students: data.students, range: _range),
                 const SizedBox(height: 16),
                 for (final student in data.students)
-                  _StudentCard(student: student, range: _range),
+                  _StudentCard(
+                    student: student,
+                    range: _range,
+                    onResolved: _refresh,
+                  ),
                 if (data.students.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 60),
@@ -231,9 +296,34 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 value: "Normal stress day",
                 color: Colors.amber.shade700,
               ),
+              _GuideRow(
+                label: "Green",
+                value: "Balanced or positive contribution",
+                color: Colors.green,
+              ),
+              _GuideRow(
+                label: "Yellow",
+                value: "A bit negative contribution",
+                color: Colors.amber.shade700,
+              ),
+              _GuideRow(
+                label: "Red",
+                value: "Highly negative contribution",
+                color: Colors.red,
+              ),
               const SizedBox(height: 6),
               Text(
                 "Critical phrases include self-harm or death-intent language such as wanting to die. Elevated phrases include hopelessness, panic, depression, breakdown, or giving up. Normal stress phrases include tired, drained, burnout, overwhelmed, or stress.",
+                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "For privacy, Admin Monitoring shows contribution labels instead of exact steps, mood log counts, journal counts, or task counts. AI receives minimized numeric signals for scoring. Only matched critical warning words or phrases are shown or sent, not the full journal text or personal reason.",
+                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Supported non-English warning phrases are matched locally and converted to privacy-safe English labels before scoring. No full journal text is translated or sent to AI.",
                 style: TextStyle(color: Colors.grey.shade700, height: 1.4),
               ),
               const SizedBox(height: 14),
@@ -467,14 +557,21 @@ class _StressChart extends StatelessWidget {
 }
 
 class _StudentCard extends StatelessWidget {
-  const _StudentCard({required this.student, required this.range});
+  const _StudentCard({
+    required this.student,
+    required this.range,
+    required this.onResolved,
+  });
 
   final _StudentWellnessSummary student;
   final _AdminRange range;
+  final Future<void> Function() onResolved;
 
   @override
   Widget build(BuildContext context) {
     final points = _studentPoints(student, range);
+    final hasActiveWarning =
+        student.warningSnippets.isNotEmpty && !student.warningResolved;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -530,65 +627,12 @@ class _StudentCard extends StatelessWidget {
               _RankBadge(rank: student.stressRank, score: student.stressScore),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricPill(
-                  label: "Steps",
-                  value: "${student.averageSteps}",
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _MetricPill(
-                  label: "Mood logs",
-                  value: "${student.moodEntries}",
-                  color: Colors.orange,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _MetricPill(
-                  label: "Journals",
-                  value: "${student.journalEntries}",
-                  color: Colors.indigo,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricPill(
-                  label: "Active",
-                  value: "${student.activeTasks}",
-                  color: Colors.blue,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _MetricPill(
-                  label: "Done",
-                  value: "${student.completedTasks}",
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _MetricPill(
-                  label: "Overdue",
-                  value: "${student.overdueTasks}",
-                  color: Colors.red,
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 14),
-          if (student.warningSnippets.isNotEmpty) ...[
-            _WarningSnippetPanel(snippets: student.warningSnippets),
+          if (hasActiveWarning) ...[
+            _WarningSnippetPanel(
+              snippets: student.warningSnippets,
+              onResolved: () => _resolveWarning(context),
+            ),
             const SizedBox(height: 14),
           ],
           Row(
@@ -615,12 +659,36 @@ class _StudentCard extends StatelessWidget {
       ),
     );
   }
+
+  Future<void> _resolveWarning(BuildContext context) async {
+    if (student.warningSignature.isEmpty) return;
+
+    await FirebaseFirestore.instance
+        .collection('admin_monitoring')
+        .doc(student.uid)
+        .set({
+          'resolvedWarningSignature': student.warningSignature,
+          'resolvedWarningAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+    await onResolved();
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text("Warning marked as resolved")));
+  }
 }
 
 class _WarningSnippetPanel extends StatelessWidget {
-  const _WarningSnippetPanel({required this.snippets});
+  const _WarningSnippetPanel({
+    required this.snippets,
+    required this.onResolved,
+  });
 
   final List<String> snippets;
+  final Future<void> Function() onResolved;
 
   @override
   Widget build(BuildContext context) {
@@ -659,6 +727,15 @@ class _WarningSnippetPanel extends StatelessWidget {
                 style: TextStyle(color: Colors.red.shade800, height: 1.35),
               ),
             ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: onResolved,
+              icon: const Icon(Icons.check_circle_outline_rounded),
+              label: const Text("Mark resolved"),
+            ),
+          ),
         ],
       ),
     );
@@ -700,7 +777,7 @@ class _PersonalMlPanel extends StatelessWidget {
                 ),
               ),
               Text(
-                "$readySignals/4",
+                "$readySignals/${features.totalSignalCount}",
                 style: TextStyle(
                   color: ready ? Colors.deepOrange : Colors.grey.shade600,
                   fontWeight: FontWeight.bold,
@@ -716,27 +793,33 @@ class _PersonalMlPanel extends StatelessWidget {
               _SignalChip(
                 label: "Mood",
                 ready: features.hasMoodSignal,
-                value: features.avgMoodIndex.toStringAsFixed(1),
+                value: features.moodContributionLabel,
+                color: features.moodContributionColor,
               ),
               _SignalChip(
                 label: "Steps",
                 ready: features.hasStepSignal,
-                value: features.avgDailySteps.toStringAsFixed(0),
+                value: features.stepsContributionLabel,
+                color: features.stepsContributionColor,
               ),
               _SignalChip(
                 label: "Journal",
                 ready: features.hasJournalSignal,
-                value: "${features.journalEntryCount}",
+                value: features.journalContributionLabel,
+                color: features.journalContributionColor,
               ),
               _SignalChip(
                 label: "Warning",
-                ready: features.journalWarningWeight > 0,
+                ready: true,
                 value: features.journalWarningLabel,
+                color: features.journalWarningColor,
+                icon: features.journalWarningIcon,
               ),
               _SignalChip(
                 label: "Tasks",
                 ready: features.hasTaskSignal,
-                value: "${features.totalTaskCount}",
+                value: features.taskContributionLabel,
+                color: features.taskContributionColor,
               ),
             ],
           ),
@@ -791,35 +874,42 @@ class _SignalChip extends StatelessWidget {
     required this.label,
     required this.ready,
     required this.value,
+    this.color,
+    this.icon,
   });
 
   final String label;
   final bool ready;
   final String value;
+  final Color? color;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
-    final color = ready ? Colors.green : Colors.grey;
+    final chipColor = color ?? (ready ? Colors.green : Colors.grey);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: chipColor.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(30),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            ready ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-            color: color,
+            icon ??
+                (ready
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked),
+            color: chipColor,
             size: 15,
           ),
           const SizedBox(width: 5),
           Text(
             "$label $value",
             style: TextStyle(
-              color: color,
+              color: chipColor,
               fontWeight: FontWeight.w700,
               fontSize: 12,
             ),
@@ -1020,6 +1110,8 @@ class _StudentWellnessSummary {
     required this.overdueTasks,
     required this.dailyStress,
     required this.warningSnippets,
+    required this.warningSignature,
+    required this.resolvedWarningSignature,
     required this.mlFeatures,
   });
 
@@ -1039,7 +1131,14 @@ class _StudentWellnessSummary {
   final int overdueTasks;
   final Map<String, double> dailyStress;
   final List<String> warningSnippets;
+  final String warningSignature;
+  final String resolvedWarningSignature;
   final _PersonalMlFeatures mlFeatures;
+
+  bool get warningResolved {
+    return warningSignature.isNotEmpty &&
+        warningSignature == resolvedWarningSignature;
+  }
 }
 
 class _PersonalMlFeatures {
@@ -1076,6 +1175,8 @@ class _PersonalMlFeatures {
   bool get hasJournalSignal => journalEntryCount > 0;
   bool get hasTaskSignal => totalTaskCount > 0;
 
+  int get totalSignalCount => 5;
+
   int get totalTaskCount =>
       activeTaskCount + completedTaskCount + overdueTaskCount;
 
@@ -1084,6 +1185,80 @@ class _PersonalMlFeatures {
     if (journalWarningSeverity == 'critical') return 'Critical';
     if (journalWarningSeverity == 'elevated') return 'Elevated';
     return 'Stress';
+  }
+
+  String get moodContributionLabel {
+    if (!hasMoodSignal) return 'No data';
+    if (avgMoodIndex <= 0.5 && avgMoodIntensity >= 0.8) {
+      return 'Highly negative';
+    }
+    if (avgMoodIndex <= 1.5) return 'A bit negative';
+    return 'Balanced';
+  }
+
+  Color get journalWarningColor {
+    if (journalWarningWeight <= 0) return Colors.green;
+    if (journalWarningSeverity == 'critical') return Colors.red;
+    return Colors.amber.shade800;
+  }
+
+  Color get moodContributionColor {
+    if (!hasMoodSignal) return Colors.grey;
+    if (avgMoodIndex <= 0.5 && avgMoodIntensity >= 0.8) return Colors.red;
+    if (avgMoodIndex <= 1.5) return Colors.amber.shade800;
+    return Colors.green;
+  }
+
+  String get stepsContributionLabel {
+    if (!hasStepSignal) return 'No data';
+    if (avgDailySteps < 1500) return 'Highly negative';
+    if (avgDailySteps < 4000) return 'A bit negative';
+    return 'Balanced';
+  }
+
+  Color get stepsContributionColor {
+    if (!hasStepSignal) return Colors.grey;
+    if (avgDailySteps < 1500) return Colors.red;
+    if (avgDailySteps < 4000) return Colors.amber.shade800;
+    return Colors.green;
+  }
+
+  String get journalContributionLabel {
+    if (!hasJournalSignal) return 'No data';
+    if (journalEntryCount >= 12) return 'A bit negative';
+    return 'Balanced';
+  }
+
+  Color get journalContributionColor {
+    if (!hasJournalSignal) return Colors.grey;
+    if (journalEntryCount >= 12) return Colors.amber.shade800;
+    return Colors.green;
+  }
+
+  String get taskContributionLabel {
+    if (!hasTaskSignal) return 'No data';
+    if (overdueTaskCount >= 3) return 'Highly negative';
+    if (overdueTaskCount > 0 || activeTaskCount >= 8) {
+      return 'A bit negative';
+    }
+    return 'Balanced';
+  }
+
+  Color get taskContributionColor {
+    if (!hasTaskSignal) return Colors.grey;
+    if (overdueTaskCount >= 3) return Colors.red;
+    if (overdueTaskCount > 0 || activeTaskCount >= 8) {
+      return Colors.amber.shade800;
+    }
+    return Colors.green;
+  }
+
+  IconData get journalWarningIcon {
+    if (journalWarningWeight <= 0) return Icons.check_circle_rounded;
+    if (journalWarningSeverity == 'critical') {
+      return Icons.warning_amber_rounded;
+    }
+    return Icons.error_outline_rounded;
   }
 
   int get readySignalCount {

@@ -19,6 +19,7 @@ class JournalScreen extends StatefulWidget {
 
 class _JournalScreenState extends State<JournalScreen> {
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _promptController = TextEditingController();
 
   static const primaryColor = Color(0xFFFF7A59);
   static const backgroundColor = Color(0xFFFFFBFA);
@@ -34,12 +35,19 @@ class _JournalScreenState extends State<JournalScreen> {
     "Motivated",
   ];
 
-  String currentPrompt = "";
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    currentPrompt = _getPrompt();
+    _promptController.text = _getPrompt();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _promptController.dispose();
+    super.dispose();
   }
 
   // ================= JOURNAL HISTORY =================
@@ -55,7 +63,7 @@ class _JournalScreenState extends State<JournalScreen> {
     final appData = context.read<AppData>();
 
     setState(() {
-      currentPrompt = _getPrompt();
+      _promptController.text = _getPrompt();
     });
 
     await JournalService.initialize(appData);
@@ -160,24 +168,56 @@ class _JournalScreenState extends State<JournalScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
 
                               children: [
-                                Text(
-                                  "Today's Reflection",
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey.shade700,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        "Today's Reflection",
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade700,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: "Random reflection question",
+                                      onPressed: _saving
+                                          ? null
+                                          : () {
+                                              setState(() {
+                                                _promptController.text =
+                                                    _getPrompt();
+                                              });
+                                            },
+                                      icon: const Icon(
+                                        Icons.shuffle_rounded,
+                                        color: primaryColor,
+                                      ),
+                                    ),
+                                  ],
                                 ),
 
                                 const SizedBox(height: 6),
 
-                                Text(
-                                  currentPrompt,
+                                TextField(
+                                  controller: _promptController,
+                                  enabled: !_saving,
+                                  minLines: 1,
+                                  maxLines: 3,
                                   style: const TextStyle(
                                     fontSize: 17,
                                     height: 1.4,
                                     fontWeight: FontWeight.w700,
                                     color: textPrimary,
+                                  ),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    hintText: "Write a reflection question...",
+                                    hintStyle: TextStyle(
+                                      color: Colors.grey.shade500,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -293,7 +333,7 @@ class _JournalScreenState extends State<JournalScreen> {
                       height: 58,
 
                       child: ElevatedButton(
-                        onPressed: _saveJournal,
+                        onPressed: _saving ? null : _saveJournal,
 
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
@@ -306,17 +346,27 @@ class _JournalScreenState extends State<JournalScreen> {
                           ),
                         ),
 
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
 
                           children: [
-                            Icon(Icons.favorite_rounded),
+                            if (_saving)
+                              const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white,
+                                ),
+                              )
+                            else
+                              const Icon(Icons.favorite_rounded),
 
-                            SizedBox(width: 10),
+                            const SizedBox(width: 10),
 
                             Text(
-                              "Save Entry",
-                              style: TextStyle(
+                              _saving ? "Saving entry..." : "Save Entry",
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -346,6 +396,21 @@ class _JournalScreenState extends State<JournalScreen> {
       "What are you grateful for?",
       "What drained your energy today?",
       "What did you learn today?",
+      "What emotion stayed with you today?",
+      "What helped you feel grounded today?",
+      "What felt heavier than expected?",
+      "What is one thing you handled well?",
+      "What do you need more of tomorrow?",
+      "What do you want to let go of tonight?",
+      "What gave you energy today?",
+      "What small win can you recognize?",
+      "What thought kept coming back today?",
+      "What would make tomorrow a little easier?",
+      "Who or what supported you today?",
+      "What boundary would help you this week?",
+      "What made you feel calm, even briefly?",
+      "What is one honest thing you can tell yourself?",
+      "What part of today deserves kindness?",
     ];
 
     prompts.shuffle();
@@ -355,36 +420,39 @@ class _JournalScreenState extends State<JournalScreen> {
 
   // ================= SAVE JOURNAL =================
 
+  void _showJournalMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+
   Future<void> _saveJournal() async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) return;
 
     final text = _controller.text.trim();
+    final prompt = _promptController.text.trim();
 
     if (text.isEmpty) {
       HapticFeedback.mediumImpact();
-
-      final messenger = ScaffoldMessenger.of(context);
-
-      messenger.clearSnackBars();
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text("Please write something first"),
-
-          behavior: SnackBarBehavior.floating,
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      );
+      _showJournalMessage("Write a few thoughts before saving.");
 
       return;
     }
 
     try {
+      setState(() {
+        _saving = true;
+      });
+
       final warningSummary = JournalWarningService.analyze(text);
 
       await FirebaseFirestore.instance
@@ -394,7 +462,7 @@ class _JournalScreenState extends State<JournalScreen> {
           .add({
             'text': text,
             'tag': selectedTag,
-            'prompt': currentPrompt,
+            'prompt': prompt.isEmpty ? "Free reflection" : prompt,
             'warningSnippets': warningSummary.snippets,
             'warningFindings': warningSummary.toJsonList(),
             'journalWarningWeight': warningSummary.weight,
@@ -406,24 +474,28 @@ class _JournalScreenState extends State<JournalScreen> {
       await WellnessSignalService.publishCurrentUserSignals();
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Journal saved")));
+        _showJournalMessage("Saved Successfully.");
 
         _controller.clear();
 
         setState(() {
           selectedTag = "";
-          currentPrompt = _getPrompt();
+          _promptController.text = _getPrompt();
         });
       }
     } catch (e) {
       debugPrint("Error saving journal: $e");
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Failed to save journal")));
+        _showJournalMessage(
+          "I couldn't save this entry. Please check your connection and try again.",
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
       }
     }
   }

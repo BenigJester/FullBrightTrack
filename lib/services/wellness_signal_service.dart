@@ -89,22 +89,43 @@ class WellnessSignalService {
       }
     }
 
-    final warningSnippets = <String>[];
-    final warningFindings = <Map<String, dynamic>>[];
+    var warningSnippets = <String>[];
+    var warningFindings = <Map<String, dynamic>>[];
+    var warningSignature = '';
     var journalWarningWeight = 0.0;
     var journalWarningSeverity = JournalWarningSeverity.none;
     for (final doc in journalSnapshot.docs) {
       final text = (doc.data()['text'] as String?) ?? '';
       final warningSummary = JournalWarningService.analyze(text);
-      warningSnippets.addAll(warningSummary.snippets);
-      warningFindings.addAll(warningSummary.toJsonList());
-      journalWarningWeight = max(journalWarningWeight, warningSummary.weight);
-      journalWarningSeverity = _moreSevere(
-        journalWarningSeverity,
-        warningSummary.severity,
-      );
-      if (warningSnippets.length >= 5) break;
+      if (warningSummary.findings.isEmpty) continue;
+
+      warningSnippets = warningSummary.snippets;
+      warningFindings = warningSummary.toJsonList();
+      warningSignature =
+          '${doc.id}:${warningSummary.signatures.take(3).join('|')}';
+      journalWarningWeight = warningSummary.weight;
+      journalWarningSeverity = warningSummary.severity;
+      break;
     }
+    final monitoringRef = _firestore
+        .collection('admin_monitoring')
+        .doc(user.uid);
+    final previousMonitoring = await monitoringRef.get();
+    final resolvedWarningSignature =
+        previousMonitoring.data()?['resolvedWarningSignature'] as String? ?? '';
+    final warningResolved =
+        warningSignature.isNotEmpty &&
+        warningSignature == resolvedWarningSignature;
+    final effectiveWarningSnippets = warningResolved
+        ? <String>[]
+        : warningSnippets;
+    final effectiveWarningFindings = warningResolved
+        ? <Map<String, dynamic>>[]
+        : warningFindings;
+    final effectiveWarningWeight = warningResolved ? 0.0 : journalWarningWeight;
+    final effectiveWarningSeverity = warningResolved
+        ? JournalWarningSeverity.none
+        : journalWarningSeverity;
 
     final input = StressModelInput(
       avgMoodIndex: avgMoodIndex,
@@ -115,13 +136,13 @@ class WellnessSignalService {
       activeTaskCount: activeTasks,
       completedTaskCount: completedTasks,
       overdueTaskCount: overdueTasks,
-      journalWarningWeight: journalWarningWeight,
+      journalWarningWeight: effectiveWarningWeight,
     );
     final result = await GenkitStressAiService.analyze(
       input: input,
-      warningSnippets: warningSnippets,
-      journalWarningWeight: journalWarningWeight,
-      journalWarningSeverity: journalWarningSeverity.name,
+      warningSnippets: effectiveWarningSnippets,
+      journalWarningWeight: effectiveWarningWeight,
+      journalWarningSeverity: effectiveWarningSeverity.name,
     );
     final profileData = profile.data() ?? <String, dynamic>{};
     final displayName = DisplayNameService.cleanForDisplay(
@@ -129,7 +150,7 @@ class WellnessSignalService {
       fallback: 'Student',
     );
 
-    await _firestore.collection('admin_monitoring').doc(user.uid).set({
+    await monitoringRef.set({
       'uid': user.uid,
       'name': displayName,
       'email': user.email ?? profileData['email'],
@@ -142,12 +163,13 @@ class WellnessSignalService {
       'activeTaskCount': input.activeTaskCount,
       'completedTaskCount': input.completedTaskCount,
       'overdueTaskCount': input.overdueTaskCount,
-      'warningSnippets': warningSnippets.take(5).toList(),
-      'warningFindings': warningFindings.take(5).toList(),
-      'journalWarningWeight': journalWarningWeight,
-      'journalWarningSeverity': journalWarningSeverity.name,
+      'warningSnippets': effectiveWarningSnippets.take(5).toList(),
+      'warningFindings': effectiveWarningFindings.take(5).toList(),
+      'warningSignature': warningSignature,
+      'journalWarningWeight': effectiveWarningWeight,
+      'journalWarningSeverity': effectiveWarningSeverity.name,
       'hasDangerWarning':
-          journalWarningSeverity == JournalWarningSeverity.critical,
+          effectiveWarningSeverity == JournalWarningSeverity.critical,
       'stressScore': result.score,
       'stressRank': result.rank,
       'confidence': result.confidence,
@@ -162,13 +184,6 @@ class WellnessSignalService {
 
   static String _dateKey(DateTime date) {
     return "${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}";
-  }
-
-  static JournalWarningSeverity _moreSevere(
-    JournalWarningSeverity current,
-    JournalWarningSeverity next,
-  ) {
-    return next.index > current.index ? next : current;
   }
 }
 

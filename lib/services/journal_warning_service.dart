@@ -2,40 +2,72 @@ class JournalWarningService {
   const JournalWarningService._();
 
   static const _criticalTerms = [
-    'suicide',
-    'kill myself',
-    'end my life',
-    'self harm',
-    'self-harm',
-    'hurt myself',
-    'i want to die',
-    'want to die',
+    _WarningTerm('suicide', 'suicide'),
+    _WarningTerm('kill myself', 'self-harm intent'),
+    _WarningTerm('end my life', 'want to die'),
+    _WarningTerm('self harm', 'self-harm'),
+    _WarningTerm('self-harm', 'self-harm'),
+    _WarningTerm('hurt myself', 'self-harm'),
+    _WarningTerm('i want to die', 'want to die'),
+    _WarningTerm('want to die', 'want to die'),
+    _WarningTerm('gusto kong mamatay', 'want to die'),
+    _WarningTerm('gusto ko nang mamatay', 'want to die'),
+    _WarningTerm('ayoko na mabuhay', 'do not want to live'),
+    _WarningTerm('hindi ko na kaya mabuhay', 'do not want to live'),
+    _WarningTerm('tapusin buhay ko', 'end my life'),
+    _WarningTerm('tapusin ang buhay ko', 'end my life'),
+    _WarningTerm('magpakamatay', 'suicide'),
+    _WarningTerm('magpapakamatay', 'suicide'),
+    _WarningTerm('saktan sarili ko', 'self-harm'),
+    _WarningTerm('saktan ang sarili ko', 'self-harm'),
+    _WarningTerm('sasaktan ko sarili ko', 'self-harm'),
   ];
 
   static const _elevatedTerms = [
-    'hopeless',
-    'worthless',
-    'depressed',
-    'depression',
-    'panic',
-    'anxiety',
-    'breakdown',
-    'give up',
-    'cannot cope',
-    "can't cope",
+    _WarningTerm('hopeless', 'hopeless'),
+    _WarningTerm('worthless', 'worthless'),
+    _WarningTerm('depressed', 'depression'),
+    _WarningTerm('depression', 'depression'),
+    _WarningTerm('panic', 'panic'),
+    _WarningTerm('anxiety', 'anxiety'),
+    _WarningTerm('breakdown', 'breakdown'),
+    _WarningTerm('give up', 'giving up'),
+    _WarningTerm('cannot cope', 'cannot cope'),
+    _WarningTerm("can't cope", 'cannot cope'),
+    _WarningTerm('wala nang pag asa', 'hopeless'),
+    _WarningTerm('wala ng pag asa', 'hopeless'),
+    _WarningTerm('walang pag asa', 'hopeless'),
+    _WarningTerm('walang kwenta', 'worthless'),
+    _WarningTerm('wala akong kwenta', 'worthless'),
+    _WarningTerm('depress', 'depression'),
+    _WarningTerm('depressed ako', 'depression'),
+    _WarningTerm('di ko na kaya', 'cannot cope'),
+    _WarningTerm('hindi ko na kaya', 'cannot cope'),
+    _WarningTerm('susuko na ako', 'giving up'),
+    _WarningTerm('ayoko na', 'giving up'),
+    _WarningTerm('panic ako', 'panic'),
   ];
 
   static const _stressTerms = [
-    'stress',
-    'stressed',
-    'stressful',
-    'burnout',
-    'burned out',
-    'overwhelmed',
-    'exhausted',
-    'tired',
-    'drained',
-    'pressure',
+    _WarningTerm('stress', 'stress'),
+    _WarningTerm('stressed', 'stress'),
+    _WarningTerm('stressful', 'stress'),
+    _WarningTerm('burnout', 'burnout'),
+    _WarningTerm('burned out', 'burnout'),
+    _WarningTerm('overwhelmed', 'overwhelmed'),
+    _WarningTerm('exhausted', 'exhausted'),
+    _WarningTerm('tired', 'tired'),
+    _WarningTerm('drained', 'drained'),
+    _WarningTerm('pressure', 'pressure'),
+    _WarningTerm('pagod', 'tired'),
+    _WarningTerm('pagod na pagod', 'exhausted'),
+    _WarningTerm('sobrang pagod', 'exhausted'),
+    _WarningTerm('naiistress', 'stress'),
+    _WarningTerm('na stress', 'stress'),
+    _WarningTerm('nastress', 'stress'),
+    _WarningTerm('nakakapagod', 'tired'),
+    _WarningTerm('naddrain', 'drained'),
+    _WarningTerm('napapagod', 'tired'),
   ];
 
   static JournalWarningSummary analyze(String text) {
@@ -66,7 +98,7 @@ class JournalWarningService {
     final critical = _matchedTerms(lower, _criticalTerms);
     if (critical.isNotEmpty) {
       return JournalWarningFinding(
-        snippet: _limitSnippet(line),
+        snippet: _safeSnippet(JournalWarningSeverity.critical, critical),
         severity: JournalWarningSeverity.critical,
         weight: 1.0,
         matchedTerms: critical,
@@ -76,7 +108,7 @@ class JournalWarningService {
     final elevated = _matchedTerms(lower, _elevatedTerms);
     if (elevated.isNotEmpty) {
       return JournalWarningFinding(
-        snippet: _limitSnippet(line),
+        snippet: _safeSnippet(JournalWarningSeverity.elevated, elevated),
         severity: JournalWarningSeverity.elevated,
         weight: 0.65,
         matchedTerms: elevated,
@@ -86,7 +118,7 @@ class JournalWarningService {
     final stress = _matchedTerms(lower, _stressTerms);
     if (stress.isNotEmpty) {
       return JournalWarningFinding(
-        snippet: _limitSnippet(line),
+        snippet: _safeSnippet(JournalWarningSeverity.stress, stress),
         severity: JournalWarningSeverity.stress,
         weight: 0.3,
         matchedTerms: stress,
@@ -96,11 +128,38 @@ class JournalWarningService {
     return null;
   }
 
-  static List<String> _matchedTerms(String lower, List<String> terms) {
-    return terms
-        .where((term) => lower.contains(_normalizeForMatching(term)))
-        .take(3)
+  static List<String> _matchedTerms(String lower, List<_WarningTerm> terms) {
+    final matches = terms
+        .where((term) => lower.contains(_normalizeForMatching(term.pattern)))
+        .map((term) => term.canonical)
         .toList();
+
+    return _dedupeMatches(_removeContainedMatches(matches)).take(3).toList();
+  }
+
+  static List<String> _removeContainedMatches(List<String> matches) {
+    return matches.where((term) {
+      final normalized = _normalizeForMatching(term);
+      return !matches.any((other) {
+        final otherNormalized = _normalizeForMatching(other);
+        return otherNormalized != normalized &&
+            otherNormalized.contains(normalized);
+      });
+    }).toList();
+  }
+
+  static List<String> _dedupeMatches(List<String> matches) {
+    final seen = <String>{};
+    final deduped = <String>[];
+
+    for (final match in matches) {
+      final normalized = _normalizeForMatching(match);
+      if (seen.add(normalized)) {
+        deduped.add(match);
+      }
+    }
+
+    return deduped;
   }
 
   static String _normalizeForMatching(String value) {
@@ -111,16 +170,21 @@ class JournalWarningService {
         .trim();
   }
 
-  static String _limitSnippet(String value) {
-    const maxLength = 120;
-    final normalized = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  static String _safeSnippet(
+    JournalWarningSeverity severity,
+    List<String> matchedTerms,
+  ) {
+    if (severity != JournalWarningSeverity.critical) return '';
 
-    if (normalized.length <= maxLength) {
-      return normalized;
-    }
-
-    return '${normalized.substring(0, maxLength).trimRight()}...';
+    return matchedTerms.take(2).join(', ');
   }
+}
+
+class _WarningTerm {
+  const _WarningTerm(this.pattern, this.canonical);
+
+  final String pattern;
+  final String canonical;
 }
 
 enum JournalWarningSeverity {
@@ -158,10 +222,11 @@ class JournalWarningFinding {
 
   Map<String, dynamic> toJson() {
     return {
-      'snippet': snippet,
+      if (snippet.isNotEmpty) 'snippet': snippet,
       'severity': severity.name,
       'weight': weight,
-      'matchedTerms': matchedTerms,
+      if (severity == JournalWarningSeverity.critical)
+        'matchedTerms': matchedTerms,
     };
   }
 }
@@ -172,7 +237,23 @@ class JournalWarningSummary {
   final List<JournalWarningFinding> findings;
 
   List<String> get snippets {
-    return findings.map((finding) => finding.snippet).toList();
+    return findings
+        .where(
+          (finding) =>
+              finding.severity == JournalWarningSeverity.critical &&
+              finding.snippet.isNotEmpty,
+        )
+        .map((finding) => finding.snippet)
+        .toList();
+  }
+
+  List<String> get signatures {
+    return findings
+        .map(
+          (finding) =>
+              '${finding.severity.name}:${finding.matchedTerms.take(3).join(',')}',
+        )
+        .toList();
   }
 
   double get weight {
