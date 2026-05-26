@@ -169,7 +169,7 @@ Future<Map<String, dynamic>> _scoreWithGroq(
     final rawScore = (_asDouble(parsed['score']) ?? local['score'] as double)
         .clamp(0, 100)
         .toDouble();
-    final score = max(rawScore, _safetyFloor(input)).clamp(0, 100).toDouble();
+    final score = _calibratedScore(input, local, rawScore);
     final confidence =
         (_asDouble(parsed['confidence']) ?? local['confidence'] as double)
             .clamp(0, 1)
@@ -210,6 +210,8 @@ Use only the minimized numeric signals and short warning snippets below.
 Do not diagnose. Do not mention medical certainty.
 Mood scale is important: avgMoodIndex 0 = sad/high stress risk, 1 = low mood, 2 = okay, 3 = happy/low stress risk.
 avgMoodIntensity is 0 to 1. High intensity amplifies the current mood. High intensity with sad/low mood increases stress risk.
+Step activity is protective. More avgDailySteps must never increase stress risk by itself.
+Low avgDailySteps may increase risk, but high avgDailySteps should reduce or balance activity-related risk.
 Treat journalWarningWeight as numeric severity: 0 normal, about 0.3 normal stress day, about 0.65 elevated concern, 1.0 critical danger/self-harm concern.
 Never return Low if avgMoodIndex is 0 and avgMoodIntensity is 0.8 or higher. That should be at least Elevated.
 Never return below High if journalWarningWeight is 1.0.
@@ -304,6 +306,27 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
     'modelVersion': _fallbackVersion,
     'rationale': rationale.take(3).toList(),
   };
+}
+
+double _calibratedScore(
+  Map<String, dynamic> input,
+  Map<String, dynamic> local,
+  double rawScore,
+) {
+  final avgDailySteps = input['avgDailySteps'] as double;
+  final localScore = local['score'] as double;
+  final safetyFloor = _safetyFloor(input);
+  var calibrated = rawScore;
+
+  if (avgDailySteps >= 10000) {
+    calibrated = min(calibrated, localScore + 4);
+  } else if (avgDailySteps >= 7000) {
+    calibrated = min(calibrated, localScore + 6);
+  } else if (avgDailySteps >= 4000) {
+    calibrated = min(calibrated, localScore + 8);
+  }
+
+  return max(calibrated, safetyFloor).clamp(0, 100).toDouble();
 }
 
 double _safetyFloor(Map<String, dynamic> input) {
