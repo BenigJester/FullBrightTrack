@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
 import 'leaderboard_service.dart';
+import 'wellness_signal_service.dart';
 import 'step_foreground_service.dart';
 import 'step_local_store.dart';
 import 'streak_service.dart';
@@ -559,10 +560,12 @@ class StepsService with WidgetsBindingObserver {
 
     try {
       final today = _todayKey();
-      final safeSteps =
-          state.day == _currentDay ? max(state.steps, _steps) : state.steps;
-      final leaderboardTodaySteps =
-          state.day == today ? safeSteps : (_currentDay == today ? _steps : 0);
+      final safeSteps = state.day == _currentDay
+          ? max(state.steps, _steps)
+          : state.steps;
+      final leaderboardTodaySteps = state.day == today
+          ? safeSteps
+          : (_currentDay == today ? _steps : 0);
 
       final ref = FirebaseFirestore.instance
           .collection('users')
@@ -583,6 +586,7 @@ class StepsService with WidgetsBindingObserver {
       await LeaderboardService.publishCurrentUserSummary(
         todaySteps: leaderboardTodaySteps,
       );
+      await WellnessSignalService.publishCurrentUserSignals();
       await _refreshStepStreaks();
       await getHealthInsights(_goal);
 
@@ -668,8 +672,7 @@ class StepsService with WidgetsBindingObserver {
 
         final merged = localSteps > remote ? localSteps : remote;
 
-        final remoteBaseline =
-            (doc.data()?['baseline'] as num?)?.toInt() ?? 0;
+        final remoteBaseline = (doc.data()?['baseline'] as num?)?.toInt() ?? 0;
         final localBaseline = (item['baseline'] as num?)?.toInt() ?? 0;
         final localLastRaw = (item['lastRawSteps'] as num?)?.toInt() ?? 0;
 

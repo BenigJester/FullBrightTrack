@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../services/journal_warning_service.dart';
+import '../services/wellness_signal_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -97,236 +100,236 @@ class _JournalScreenState extends State<JournalScreen> {
             ),
 
             child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: MediaQuery.of(context).size.height - 120,
-            ),
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.of(context).size.height - 120,
+              ),
 
-            child: Padding(
-              padding: const EdgeInsets.all(20),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
 
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
 
-                children: [
-                  const SizedBox(height: 20),
+                  children: [
+                    const SizedBox(height: 20),
 
-                  // ================= PROMPT CARD =================
-                  Container(
-                    padding: const EdgeInsets.all(20),
+                    // ================= PROMPT CARD =================
+                    Container(
+                      padding: const EdgeInsets.all(20),
 
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFFFFF1EB), Color(0xFFFFE5DC)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-
-                      borderRadius: BorderRadius.circular(26),
-
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.orange.withValues(alpha: 0.08),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFFF1EB), Color(0xFFFFE5DC)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                      ],
-                    ),
 
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                        borderRadius: BorderRadius.circular(26),
 
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.orange.withValues(alpha: 0.08),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
                           ),
-
-                          child: const Text(
-                            "\u{1F9E0}",
-                            style: TextStyle(fontSize: 24),
-                          ),
-                        ),
-
-                        const SizedBox(width: 14),
-
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-
-                            children: [
-                              Text(
-                                "Today's Reflection",
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.grey.shade700,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-
-                              const SizedBox(height: 6),
-
-                              Text(
-                                currentPrompt,
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  height: 1.4,
-                                  fontWeight: FontWeight.w700,
-                                  color: textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // ================= JOURNAL INPUT =================
-                  Container(
-                    height: 320,
-
-                    padding: const EdgeInsets.all(20),
-
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-
-                      borderRadius: BorderRadius.circular(28),
-
-                      border: Border.all(
-                        color: Colors.orange.shade100,
-                        width: 1.2,
+                        ],
                       ),
 
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 18,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-
-                    child: TextField(
-                      controller: _controller,
-                      maxLines: null,
-
-                      style: const TextStyle(
-                        fontSize: 16,
-                        height: 1.7,
-                        color: textPrimary,
-                      ),
-
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-
-                        hintText: "Write your thoughts here...",
-
-                        hintStyle: TextStyle(color: Colors.grey.shade500),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // ================= TAGS =================
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-
-                    children: tags.map((tag) {
-                      final isSelected = selectedTag == tag;
-
-                      return ChoiceChip(
-                        label: Text(tag),
-
-                        selected: isSelected,
-
-                        selectedColor: const Color(0xFFFFD8CC),
-
-                        backgroundColor: Colors.white,
-
-                        side: BorderSide(
-                          color: isSelected
-                              ? primaryColor
-                              : Colors.orange.shade100,
-                        ),
-
-                        labelStyle: TextStyle(
-                          color: isSelected
-                              ? primaryColor
-                              : Colors.grey.shade700,
-
-                          fontWeight: FontWeight.w600,
-                        ),
-
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-
-                        onSelected: (_) {
-                          setState(() {
-                            selectedTag = tag;
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-
-                  const SizedBox(height: 28),
-
-                  // ================= SAVE BUTTON =================
-                  SizedBox(
-                    width: double.infinity,
-                    height: 58,
-
-                    child: ElevatedButton(
-                      onPressed: _saveJournal,
-
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryColor,
-                        foregroundColor: Colors.white,
-
-                        elevation: 0,
-
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                      ),
-
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
 
                         children: [
-                          Icon(Icons.favorite_rounded),
+                          Container(
+                            padding: const EdgeInsets.all(12),
 
-                          SizedBox(width: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
 
-                          Text(
-                            "Save Entry",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                            child: const Text(
+                              "\u{1F9E0}",
+                              style: TextStyle(fontSize: 24),
+                            ),
+                          ),
+
+                          const SizedBox(width: 14),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+
+                              children: [
+                                Text(
+                                  "Today's Reflection",
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+
+                                const SizedBox(height: 6),
+
+                                Text(
+                                  currentPrompt,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    height: 1.4,
+                                    fontWeight: FontWeight.w700,
+                                    color: textPrimary,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 24),
-                ],
+                    const SizedBox(height: 24),
+
+                    // ================= JOURNAL INPUT =================
+                    Container(
+                      height: 320,
+
+                      padding: const EdgeInsets.all(20),
+
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+
+                        borderRadius: BorderRadius.circular(28),
+
+                        border: Border.all(
+                          color: Colors.orange.shade100,
+                          width: 1.2,
+                        ),
+
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 18,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+
+                      child: TextField(
+                        controller: _controller,
+                        maxLines: null,
+
+                        style: const TextStyle(
+                          fontSize: 16,
+                          height: 1.7,
+                          color: textPrimary,
+                        ),
+
+                        decoration: InputDecoration(
+                          border: InputBorder.none,
+
+                          hintText: "Write your thoughts here...",
+
+                          hintStyle: TextStyle(color: Colors.grey.shade500),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // ================= TAGS =================
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+
+                      children: tags.map((tag) {
+                        final isSelected = selectedTag == tag;
+
+                        return ChoiceChip(
+                          label: Text(tag),
+
+                          selected: isSelected,
+
+                          selectedColor: const Color(0xFFFFD8CC),
+
+                          backgroundColor: Colors.white,
+
+                          side: BorderSide(
+                            color: isSelected
+                                ? primaryColor
+                                : Colors.orange.shade100,
+                          ),
+
+                          labelStyle: TextStyle(
+                            color: isSelected
+                                ? primaryColor
+                                : Colors.grey.shade700,
+
+                            fontWeight: FontWeight.w600,
+                          ),
+
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(30),
+                          ),
+
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+
+                          onSelected: (_) {
+                            setState(() {
+                              selectedTag = tag;
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    // ================= SAVE BUTTON =================
+                    SizedBox(
+                      width: double.infinity,
+                      height: 58,
+
+                      child: ElevatedButton(
+                        onPressed: _saveJournal,
+
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+
+                          elevation: 0,
+
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(22),
+                          ),
+                        ),
+
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+
+                          children: [
+                            Icon(Icons.favorite_rounded),
+
+                            SizedBox(width: 10),
+
+                            Text(
+                              "Save Entry",
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
-            ),
             ),
           ),
         ),
@@ -382,6 +385,10 @@ class _JournalScreenState extends State<JournalScreen> {
     }
 
     try {
+      final warningSnippets = JournalWarningService.extractWarningSnippets(
+        text,
+      );
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -390,8 +397,11 @@ class _JournalScreenState extends State<JournalScreen> {
             'text': text,
             'tag': selectedTag,
             'prompt': currentPrompt,
+            'warningSnippets': warningSnippets,
+            'hasDangerWarning': warningSnippets.isNotEmpty,
             'created_at': FieldValue.serverTimestamp(),
           });
+      await WellnessSignalService.publishCurrentUserSignals();
 
       if (mounted) {
         ScaffoldMessenger.of(

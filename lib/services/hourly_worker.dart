@@ -1,8 +1,8 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
+import 'app_check_service.dart';
 import 'leaderboard_service.dart';
-import 'notification_service.dart';
 
 class HourlyWorker {
   static const taskName = 'hourly-step-reminder';
@@ -19,20 +19,12 @@ class HourlyWorker {
         if (Firebase.apps.isEmpty) {
           await Firebase.initializeApp();
         }
+        await AppCheckService.activate();
 
         await LeaderboardService.publishCurrentUserSummary(todaySteps: steps);
       } catch (_) {
         // Background leaderboard sync is best-effort.
       }
-
-      final enabled = prefs.getBool('hourly_step_reminders_enabled') ?? true;
-      if (!enabled) {
-        return Future.value(true);
-      }
-
-      await NotificationService.initialize();
-
-      await NotificationService.showHourlySteps(steps);
 
       return Future.value(true);
     });

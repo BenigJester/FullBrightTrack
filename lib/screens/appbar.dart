@@ -1,23 +1,46 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../services/admin_access_service.dart';
+import '../services/display_name_service.dart';
+import 'admin_monitoring_screen.dart';
 import 'other_screen.dart';
 import 'leaderboards_screen.dart';
 
 String _firstName(String? name) {
-  final trimmed = name?.trim() ?? "";
-  if (trimmed.isEmpty) return "User";
-
-  return trimmed.split(RegExp(r'\s+')).first;
+  return DisplayNameService.firstName(name);
 }
 
-class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
+class HomeAppBar extends StatefulWidget implements PreferredSizeWidget {
   const HomeAppBar({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
+  State<HomeAppBar> createState() => _HomeAppBarState();
 
+  @override
+  Size get preferredSize => const Size.fromHeight(82);
+}
+
+class _HomeAppBarState extends State<HomeAppBar> {
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.userChanges(),
+      initialData: FirebaseAuth.instance.currentUser,
+      builder: (context, snapshot) {
+        return _HomeAppBarContent(user: snapshot.data);
+      },
+    );
+  }
+}
+
+class _HomeAppBarContent extends StatelessWidget {
+  const _HomeAppBarContent({required this.user});
+
+  final User? user;
+
+  @override
+  Widget build(BuildContext context) {
     final firstName = _firstName(user?.displayName);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -122,6 +145,29 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
         actions: [
+          FutureBuilder<bool>(
+            future: AdminAccessService.isCurrentUserAdmin(),
+            builder: (context, snapshot) {
+              if (snapshot.data != true) {
+                return const SizedBox.shrink();
+              }
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: _actionButton(
+                  icon: Icons.admin_panel_settings_rounded,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const AdminMonitoringScreen(),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
           _actionButton(
             icon: Icons.emoji_events_rounded,
             onTap: () {
@@ -158,7 +204,4 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
       ),
     );
   }
-
-  @override
-  Size get preferredSize => const Size.fromHeight(82);
 }

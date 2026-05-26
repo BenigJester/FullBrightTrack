@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_data.dart';
+import 'journal_warning_service.dart';
+import 'wellness_signal_service.dart';
 
 class JournalService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -62,12 +64,17 @@ class JournalService {
 
     if (user == null) return;
 
+    final warningSnippets = JournalWarningService.extractWarningSnippets(text);
+
     await _journalCollection(user.uid).add({
       'text': text,
       'tag': tag,
       'prompt': prompt,
+      'warningSnippets': warningSnippets,
+      'hasDangerWarning': warningSnippets.isNotEmpty,
       'created_at': FieldValue.serverTimestamp(),
     });
+    await WellnessSignalService.publishCurrentUserSignals();
   }
 
   // =========================================================

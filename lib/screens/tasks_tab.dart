@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/wellness_signal_service.dart';
+
 class Task {
   final String id;
   final String title;
@@ -87,6 +89,7 @@ class _TasksTabState extends State<TasksTab> {
     }
 
     await _taskRef.doc(task.id).update({'isCompleted': value});
+    await WellnessSignalService.publishCurrentUserSignals();
   }
 
   Future<void> addTask(String title, DateTime deadline) async {
@@ -100,6 +103,7 @@ class _TasksTabState extends State<TasksTab> {
       'isCompleted': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    await WellnessSignalService.publishCurrentUserSignals();
   }
 
   String _formatDateTime(DateTime dt) {
@@ -180,70 +184,71 @@ class _TasksTabState extends State<TasksTab> {
 
               final tasks = snapshot.data!;
 
-            final activeTasks = tasks
-                .where((t) => !t.isCompleted && !t.isOverdue)
-                .toList();
+              final activeTasks = tasks
+                  .where((t) => !t.isCompleted && !t.isOverdue)
+                  .toList();
 
-            final overdueTasks = tasks
-                .where((t) => !t.isCompleted && t.isOverdue)
-                .toList();
+              final overdueTasks =
+                  tasks.where((t) => !t.isCompleted && t.isOverdue).toList()
+                    ..sort((a, b) => b.deadline.compareTo(a.deadline));
 
-            final completedTasks = tasks.where((t) => t.isCompleted).toList();
+              final completedTasks = tasks.where((t) => t.isCompleted).toList()
+                ..sort((a, b) => b.deadline.compareTo(a.deadline));
 
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(
                   parent: BouncingScrollPhysics(),
                 ),
 
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
 
-              children: [
-                // ================= HERO =================
-                _buildHeroCard(
-                  active: activeTasks.length,
-                  overdue: overdueTasks.length,
-                  completed: completedTasks.length,
-                ),
+                children: [
+                  // ================= HERO =================
+                  _buildHeroCard(
+                    active: activeTasks.length,
+                    overdue: overdueTasks.length,
+                    completed: completedTasks.length,
+                  ),
 
-                const SizedBox(height: 22),
+                  const SizedBox(height: 22),
 
-                // ================= ACTIVE =================
-                buildSection(
-                  title: "Active",
-                  icon: Icons.flash_on_rounded,
-                  color: Colors.green,
-                  isOpen: _openSection == 'active',
-                  count: activeTasks.length,
-                  tasks: activeTasks,
-                  onTap: () => _toggleSection('active'),
-                ),
+                  // ================= ACTIVE =================
+                  buildSection(
+                    title: "Active",
+                    icon: Icons.flash_on_rounded,
+                    color: Colors.green,
+                    isOpen: _openSection == 'active',
+                    count: activeTasks.length,
+                    tasks: activeTasks,
+                    onTap: () => _toggleSection('active'),
+                  ),
 
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                // ================= OVERDUE =================
-                buildSection(
-                  title: "Overdue",
-                  icon: Icons.warning_amber_rounded,
-                  color: Colors.redAccent,
-                  isOpen: _openSection == 'overdue',
-                  count: overdueTasks.length,
-                  tasks: overdueTasks,
-                  onTap: () => _toggleSection('overdue'),
-                ),
+                  // ================= OVERDUE =================
+                  buildSection(
+                    title: "Overdue",
+                    icon: Icons.warning_amber_rounded,
+                    color: Colors.redAccent,
+                    isOpen: _openSection == 'overdue',
+                    count: overdueTasks.length,
+                    tasks: overdueTasks,
+                    onTap: () => _toggleSection('overdue'),
+                  ),
 
-                const SizedBox(height: 14),
+                  const SizedBox(height: 14),
 
-                // ================= COMPLETED =================
-                buildSection(
-                  title: "Completed",
-                  icon: Icons.task_alt_rounded,
-                  color: Colors.grey,
-                  isOpen: _openSection == 'completed',
-                  count: completedTasks.length,
-                  tasks: completedTasks,
-                  onTap: () => _toggleSection('completed'),
-                ),
-              ],
+                  // ================= COMPLETED =================
+                  buildSection(
+                    title: "Completed",
+                    icon: Icons.task_alt_rounded,
+                    color: Colors.grey,
+                    isOpen: _openSection == 'completed',
+                    count: completedTasks.length,
+                    tasks: completedTasks,
+                    onTap: () => _toggleSection('completed'),
+                  ),
+                ],
               );
             },
           ),
@@ -800,6 +805,7 @@ class _TasksTabState extends State<TasksTab> {
     }
 
     await _taskRef.doc(task.id).delete();
+    await WellnessSignalService.publishCurrentUserSignals();
   }
 
   // ================ CARD =====================

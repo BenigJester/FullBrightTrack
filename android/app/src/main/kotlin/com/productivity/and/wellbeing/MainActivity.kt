@@ -38,6 +38,14 @@ class MainActivity : FlutterActivity() {
                     StepCounterService.seedState(this, args)
                     result.success(true)
                 }
+                "scheduleReminders" -> {
+                    StepReminderReceiver.schedule(this)
+                    result.success(true)
+                }
+                "cancelReminders" -> {
+                    StepReminderReceiver.cancel(this)
+                    result.success(true)
+                }
                 else -> result.notImplemented()
             }
         }

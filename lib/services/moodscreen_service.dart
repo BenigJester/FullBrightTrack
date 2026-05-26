@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'streak_service.dart';
 import '../models/app_data.dart';
 import 'leaderboard_service.dart';
+import 'wellness_signal_service.dart';
 
 class MoodService {
   // ================= SINGLETON =================
@@ -137,6 +138,7 @@ class MoodService {
       await LeaderboardService.publishCurrentUserSummary(
         todaySteps: _appData!.stepsToday,
       );
+      await WellnessSignalService.publishCurrentUserSignals();
     });
   }
 

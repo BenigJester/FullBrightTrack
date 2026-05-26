@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/app_data.dart';
 import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
+import '../services/wellness_signal_service.dart';
 import '../services/moodscreen_service.dart';
 import '../services/journal_service.dart';
 import '../services/auth_service.dart';
@@ -112,6 +113,7 @@ class _LoadingScreenState extends State<LoadingScreen>
         JournalService.initialize(appData),
         StreakService.preload(appData),
       ]);
+      await WellnessSignalService.publishCurrentUserSignals();
 
       _setLoadingText("Preparing dashboard...");
 

@@ -3,17 +3,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:workmanager/workmanager.dart';
+import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
-import '../services/hourly_worker.dart';
+import '../services/display_name_service.dart';
 import '../services/notification_service.dart';
+import '../services/reminder_scheduler_service.dart';
 import '../services/steps_service.dart';
+import 'admin_monitoring_screen.dart';
 
 String _firstName(String? name) {
-  final trimmed = name?.trim() ?? "";
-  if (trimmed.isEmpty) return "User";
-
-  return trimmed.split(RegExp(r'\s+')).first;
+  return DisplayNameService.firstName(name);
 }
 
 class MoreScreen extends StatefulWidget {
@@ -102,122 +101,148 @@ class _MoreScreenState extends State<MoreScreen> {
                 padding: const EdgeInsets.all(20),
 
                 child: Column(
-                children: [
-                  // ================= PROFILE CARD =================
-                  Container(
-                    padding: const EdgeInsets.all(20),
+                  children: [
+                    // ================= PROFILE CARD =================
+                    Container(
+                      padding: const EdgeInsets.all(20),
 
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
 
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+
+                      child: Column(
+                        children: [
+                          Hero(
+                            tag: "profile",
+
+                            child: CircleAvatar(
+                              radius: 42,
+                              backgroundImage: user?.photoURL != null
+                                  ? NetworkImage(user!.photoURL!)
+                                  : null,
+
+                              child: user?.photoURL == null
+                                  ? const Icon(Icons.person, size: 42)
+                                  : null,
+                            ),
+                          ),
+
+                          const SizedBox(height: 14),
+
+                          Text(
+                            firstName,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            user?.email ?? "",
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
                     ),
 
-                    child: Column(
-                      children: [
-                        Hero(
-                          tag: "profile",
+                    const SizedBox(height: 24),
 
-                          child: CircleAvatar(
-                            radius: 42,
-                            backgroundImage: user?.photoURL != null
-                                ? NetworkImage(user!.photoURL!)
-                                : null,
-
-                            child: user?.photoURL == null
-                                ? const Icon(Icons.person, size: 42)
-                                : null,
+                    // ================= MENU =================
+                    _tile(
+                      icon: Icons.person_outline_rounded,
+                      title: "Account Information",
+                      subtitle: "Manage your account details",
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AccountInformationScreen(),
                           ),
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        Text(
-                          firstName,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-
-                        const SizedBox(height: 4),
-
-                        Text(
-                          user?.email ?? "",
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ],
+                        );
+                        await _refreshProfile();
+                      },
                     ),
-                  ),
 
-                  const SizedBox(height: 24),
+                    _tile(
+                      icon: Icons.notifications_none_rounded,
+                      title: "Notifications",
+                      subtitle: "Manage reminders and alerts",
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationSettingsScreen(),
+                          ),
+                        );
+                      },
+                    ),
 
-                  // ================= MENU =================
-                  _tile(
-                    icon: Icons.person_outline_rounded,
-                    title: "Account Information",
-                    subtitle: "Manage your account details",
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AccountInformationScreen(),
-                        ),
-                      );
-                    },
-                  ),
+                    FutureBuilder<bool>(
+                      future: AdminAccessService.isCurrentUserAdmin(),
+                      builder: (context, snapshot) {
+                        if (snapshot.data != true) {
+                          return const SizedBox.shrink();
+                        }
 
-                  _tile(
-                    icon: Icons.notifications_none_rounded,
-                    title: "Notifications",
-                    subtitle: "Manage reminders and alerts",
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const NotificationSettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
+                        return _tile(
+                          icon: Icons.admin_panel_settings_rounded,
+                          title: "Admin Monitoring",
+                          subtitle: "Review wellness signals and stress ranks",
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AdminMonitoringScreen(),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
 
-                  _tile(
-                    icon: Icons.info_outline_rounded,
-                    title: "About",
-                    subtitle: "Application information",
-                    onTap: () {
-                      showAboutDialog(
-                        context: context,
-                        applicationName: "Productivity and Wellbeing",
-                        applicationVersion: "0.3.0-alpha",
-                      );
-                    },
-                  ),
+                    _tile(
+                      icon: Icons.info_outline_rounded,
+                      title: "About",
+                      subtitle: "Application information",
+                      onTap: () {
+                        showAboutDialog(
+                          context: context,
+                          applicationName: "Productivity and Wellbeing",
+                          applicationVersion: "0.3.0-alpha",
+                        );
+                      },
+                    ),
 
-                  _tile(
-                    icon: Icons.logout_rounded,
-                    title: _loggingOut ? "Logging out..." : "Logout",
-                    subtitle: _loggingOut
-                        ? "Saving your latest steps before signing out"
-                        : "Sign out from your account",
-                    isLogout: true,
-                    trailing: _loggingOut
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2.4),
-                          )
-                        : null,
-                    onTap: _logout,
-                  ),
-                ],
+                    _tile(
+                      icon: Icons.logout_rounded,
+                      title: _loggingOut ? "Logging out..." : "Logout",
+                      subtitle: _loggingOut
+                          ? "Saving your latest steps before signing out"
+                          : "Sign out from your account",
+                      isLogout: true,
+                      trailing: _loggingOut
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                              ),
+                            )
+                          : null,
+                      onTap: _logout,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -390,13 +415,15 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final name = _nameController.text.trim();
+    final name = DisplayNameService.normalize(_nameController.text);
+    final error = DisplayNameService.validationError(name);
 
-    if (name.isEmpty) {
-      _showMessage("Name cannot be empty");
+    if (error != null) {
+      _showMessage(error);
       return;
     }
 
+    _nameController.text = name;
     setState(() => _saving = true);
 
     try {
@@ -681,9 +708,6 @@ class NotificationSettingsScreen extends StatefulWidget {
 
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
-  static const _enabledKey = 'hourly_step_reminders_enabled';
-  static const _intervalKey = 'step_reminder_interval_hours';
-
   bool _enabled = true;
   int _intervalHours = 2;
   bool _loading = true;
@@ -701,8 +725,8 @@ class _NotificationSettingsScreenState
     if (!mounted) return;
 
     setState(() {
-      _enabled = prefs.getBool(_enabledKey) ?? true;
-      _intervalHours = prefs.getInt(_intervalKey) ?? 2;
+      _enabled = prefs.getBool(ReminderSchedulerService.enabledKey) ?? true;
+      _intervalHours = prefs.getInt(ReminderSchedulerService.intervalKey) ?? 2;
       _loading = false;
     });
   }
@@ -715,20 +739,16 @@ class _NotificationSettingsScreenState
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_enabledKey, nextEnabled);
-      await prefs.setInt(_intervalKey, nextInterval);
-
-      await Workmanager().cancelByUniqueName('hourly-reminder');
+      await prefs.setBool(ReminderSchedulerService.enabledKey, nextEnabled);
+      await prefs.setInt(ReminderSchedulerService.intervalKey, nextInterval);
 
       if (nextEnabled) {
         await _requestNotificationPermission();
       }
 
-      await Workmanager().registerPeriodicTask(
-        'hourly-reminder',
-        HourlyWorker.taskName,
-        frequency: Duration(hours: nextInterval),
-        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+      await ReminderSchedulerService.schedule(
+        enabled: nextEnabled,
+        intervalHours: nextInterval,
       );
 
       if (!mounted) return;
@@ -835,7 +855,7 @@ class _NotificationSettingsScreenState
                   const Divider(height: 28),
                   _intervalOption(1, "Every hour"),
                   _intervalOption(2, "Every 2 hours"),
-                  _intervalOption(4, "Every 4 hours"),
+                  _intervalOption(3, "Every 3 hours"),
                 ],
               ),
             ),
@@ -895,7 +915,10 @@ PreferredSizeWidget _settingsAppBar(String title) {
     centerTitle: true,
     title: Text(
       title,
-      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+      style: const TextStyle(
+        color: Colors.black87,
+        fontWeight: FontWeight.bold,
+      ),
     ),
   );
 }
@@ -949,10 +972,7 @@ Widget _infoRow(String label, String value) {
       Expanded(
         child: Text(label, style: TextStyle(color: Colors.grey.shade600)),
       ),
-      Text(
-        value,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
+      Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
     ],
   );
 }

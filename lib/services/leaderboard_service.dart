@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'display_name_service.dart';
 
 class LeaderboardEntry {
   LeaderboardEntry({
@@ -75,7 +76,7 @@ class LeaderboardService {
       final data = doc.data();
       if (data['monthKey'] != monthKey) continue;
 
-      final entry = _entryFromDoc(doc, currentUser?.uid);
+      final entry = await _entryFromDoc(doc, currentUser?.uid);
       if (entry != null) {
         entries.add(entry);
       }
@@ -117,7 +118,9 @@ class LeaderboardService {
     );
   }
 
-  static Future<void> publishCurrentUserSummary({required int todaySteps}) async {
+  static Future<void> publishCurrentUserSummary({
+    required int todaySteps,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -145,14 +148,8 @@ class LeaderboardService {
 
     await _firestore.collection('leaderboard').doc(user.uid).set({
       'uid': user.uid,
-      'name': _firstName(
-        _displayName({
-          ...profileData,
-          'name': profileData['name'] ?? user.displayName,
-          'email': profileData['email'] ?? user.email,
-        }),
-      ),
-      'photoUrl': user.photoURL ?? profileData['photoUrl'],
+      'name': _firstName(_displayName(profileData)),
+      'photoUrl': _photoUrl(profileData),
       'monthlySteps': monthlySteps,
       'todaySteps': steps[_dateKey(now)] ?? todaySteps,
       'currentStreak': stepStreak,
@@ -164,11 +161,19 @@ class LeaderboardService {
     }, SetOptions(merge: true));
   }
 
-  static LeaderboardEntry? _entryFromDoc(
+  static Future<LeaderboardEntry?> _entryFromDoc(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
     String? currentUid,
-  ) {
+  ) async {
     final data = doc.data();
+    var profileData = <String, dynamic>{};
+    try {
+      final profile = await _firestore.collection('users').doc(doc.id).get();
+      profileData = profile.data() ?? <String, dynamic>{};
+    } catch (_) {
+      profileData = <String, dynamic>{};
+    }
+
     final monthlySteps = (data['monthlySteps'] as num?)?.toInt() ?? 0;
     final todaySteps = (data['todaySteps'] as num?)?.toInt() ?? 0;
     final stepStreak =
@@ -185,8 +190,8 @@ class LeaderboardService {
 
     return LeaderboardEntry(
       uid: doc.id,
-      name: _firstName(_displayName(data)),
-      photoUrl: data['photoUrl'] as String?,
+      name: _firstName(_displayName({...data, ...profileData})),
+      photoUrl: _photoUrl({...data, ...profileData}),
       monthlySteps: monthlySteps,
       todaySteps: todaySteps,
       stepStreak: stepStreak,
@@ -288,20 +293,22 @@ class LeaderboardService {
   }
 
   static String _displayName(Map<String, dynamic> data) {
-    final name = (data['name'] as String?)?.trim();
-    if (name != null && name.isNotEmpty) return name;
+    final name = DisplayNameService.normalize(data['name'] as String?);
+    if (name.isNotEmpty) return name;
 
-    final email = (data['email'] as String?)?.trim();
-    if (email != null && email.isNotEmpty) return email.split('@').first;
+    final email = DisplayNameService.normalize(data['email'] as String?);
+    if (email.isNotEmpty) return email.split('@').first;
 
     return 'Student';
   }
 
-  static String _firstName(String name) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return 'Student';
+  static String? _photoUrl(Map<String, dynamic> data) {
+    final photoUrl = (data['photoUrl'] as String?)?.trim();
+    return photoUrl == null || photoUrl.isEmpty ? null : photoUrl;
+  }
 
-    return trimmed.split(RegExp(r'\s+')).first;
+  static String _firstName(String name) {
+    return DisplayNameService.firstName(name, fallback: 'Student');
   }
 
   static String _dateKey(DateTime date) {
