@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/app_data.dart';
+import '../services/journal_service.dart';
 
 class JournalHistoryScreen extends StatefulWidget {
   const JournalHistoryScreen({super.key});
@@ -25,6 +26,10 @@ class _JournalHistoryScreenState extends State<JournalHistoryScreen> {
     "Tired",
     "Motivated",
   ];
+
+  Future<void> _refreshHistory() async {
+    await JournalService.initialize(context.read<AppData>());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -74,82 +79,93 @@ class _JournalHistoryScreenState extends State<JournalHistoryScreen> {
         centerTitle: false,
       ),
 
-      body: Column(
-        children: [
-          // ================= FILTERS =================
-          SizedBox(
-            height: 54,
+      body: RefreshIndicator(
+        color: primaryColor,
+        onRefresh: _refreshHistory,
+        child: CustomScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          slivers: [
+            // ================= FILTERS =================
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 54,
 
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
 
-              scrollDirection: Axis.horizontal,
+                  scrollDirection: Axis.horizontal,
 
-              itemBuilder: (_, index) {
-                final filter = filters[index];
+                  itemBuilder: (_, index) {
+                    final filter = filters[index];
 
-                final isSelected = selectedFilter == filter;
+                    final isSelected = selectedFilter == filter;
 
-                return ChoiceChip(
-                  label: Text(filter),
+                    return ChoiceChip(
+                      label: Text(filter),
 
-                  selected: isSelected,
+                      selected: isSelected,
 
-                  onSelected: (_) {
-                    setState(() {
-                      selectedFilter = filter;
-                    });
+                      onSelected: (_) {
+                        setState(() {
+                          selectedFilter = filter;
+                        });
+                      },
+
+                      selectedColor: const Color(0xFFFFD8CC),
+
+                      backgroundColor: Colors.white,
+
+                      side: BorderSide(
+                        color: isSelected
+                            ? primaryColor
+                            : Colors.orange.shade100,
+                      ),
+
+                      labelStyle: TextStyle(
+                        color: isSelected ? primaryColor : Colors.grey.shade700,
+
+                        fontWeight: FontWeight.w600,
+                      ),
+
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                    );
                   },
 
-                  selectedColor: const Color(0xFFFFD8CC),
+                  separatorBuilder: (_, _) => const SizedBox(width: 10),
 
-                  backgroundColor: Colors.white,
-
-                  side: BorderSide(
-                    color: isSelected ? primaryColor : Colors.orange.shade100,
-                  ),
-
-                  labelStyle: TextStyle(
-                    color: isSelected ? primaryColor : Colors.grey.shade700,
-
-                    fontWeight: FontWeight.w600,
-                  ),
-
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                );
-              },
-
-              separatorBuilder: (_, _) => const SizedBox(width: 10),
-
-              itemCount: filters.length,
+                  itemCount: filters.length,
+                ),
+              ),
             ),
-          ),
 
-          const SizedBox(height: 14),
+            const SliverToBoxAdapter(child: SizedBox(height: 14)),
 
-          // ================= BODY =================
-          Expanded(
-            child: appData.journalLoading
-                ? const Center(child: CircularProgressIndicator())
-                : journals.isEmpty
-                ? _emptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
+            // ================= BODY =================
+            if (appData.journalLoading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (journals.isEmpty)
+              SliverFillRemaining(hasScrollBody: false, child: _emptyState())
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 30),
+                sliver: SliverList.builder(
+                  itemCount: journals.length,
+                  itemBuilder: (context, index) {
+                    final journal = journals[index];
 
-                    physics: const BouncingScrollPhysics(),
-
-                    itemCount: journals.length,
-
-                    itemBuilder: (context, index) {
-                      final journal = journals[index];
-
-                      return _journalCard(journal);
-                    },
-                  ),
-          ),
-        ],
+                    return _journalCard(journal);
+                  },
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

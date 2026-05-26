@@ -4,6 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'other_screen.dart';
 import 'leaderboards_screen.dart';
 
+String _firstName(String? name) {
+  final trimmed = name?.trim() ?? "";
+  if (trimmed.isEmpty) return "User";
+
+  return trimmed.split(RegExp(r'\s+')).first;
+}
+
 class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
   const HomeAppBar({super.key});
 
@@ -11,11 +18,7 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
 
-    var firstName = "User";
-
-    if (user?.displayName != null && user!.displayName!.trim().isNotEmpty) {
-      firstName = user.displayName!.split(" ").first;
-    }
+    final firstName = _firstName(user?.displayName);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -105,7 +108,7 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    "Hi, $firstName",
+                    "Hi, $firstName ðŸ‘‹",
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,

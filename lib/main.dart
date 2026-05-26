@@ -5,6 +5,7 @@ import 'package:workmanager/workmanager.dart';
 import 'services/hourly_worker.dart';
 import 'services/notification_service.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'models/app_data.dart';
 
 void main() async {
@@ -16,11 +17,21 @@ void main() async {
 
   Workmanager().initialize(HourlyWorker.callbackDispatcher);
 
-  Workmanager().registerPeriodicTask(
-    'hourly-reminder',
-    HourlyWorker.taskName,
-    frequency: const Duration(hours: 1),
-  );
+  final prefs = await SharedPreferences.getInstance();
+  final remindersEnabled =
+      prefs.getBool('hourly_step_reminders_enabled') ?? true;
+  final reminderInterval = prefs.getInt('step_reminder_interval_hours') ?? 2;
+
+  if (remindersEnabled) {
+    await Workmanager().registerPeriodicTask(
+      'hourly-reminder',
+      HourlyWorker.taskName,
+      frequency: Duration(hours: reminderInterval),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+    );
+  } else {
+    await Workmanager().cancelByUniqueName('hourly-reminder');
+  }
 
   runApp(
     MultiProvider(

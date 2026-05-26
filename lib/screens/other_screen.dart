@@ -1,13 +1,80 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmanager/workmanager.dart';
+import '../services/auth_service.dart';
+import '../services/hourly_worker.dart';
+import '../services/notification_service.dart';
 import '../services/steps_service.dart';
 
-class MoreScreen extends StatelessWidget {
+String _firstName(String? name) {
+  final trimmed = name?.trim() ?? "";
+  if (trimmed.isEmpty) return "User";
+
+  return trimmed.split(RegExp(r'\s+')).first;
+}
+
+class MoreScreen extends StatefulWidget {
   const MoreScreen({super.key});
+
+  @override
+  State<MoreScreen> createState() => _MoreScreenState();
+}
+
+class _MoreScreenState extends State<MoreScreen> {
+  bool _loggingOut = false;
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+
+    setState(() => _loggingOut = true);
+
+    try {
+      await StepsService.instance.fullLogoutCleanup();
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint("Logout error: $e");
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text("Could not log out. Please try again."),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() => _loggingOut = false);
+      }
+    }
+  }
+
+  Future<void> _refreshProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    await user?.reload();
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final firstName = _firstName(user?.displayName);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
@@ -23,115 +90,165 @@ class MoreScreen extends StatelessWidget {
         ),
       ),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+      body: Stack(
+        children: [
+          IgnorePointer(
+            ignoring: _loggingOut,
+            child: RefreshIndicator(
+              color: Colors.deepOrange,
+              onRefresh: _refreshProfile,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(20),
 
-        child: Column(
-          children: [
-            // ================= PROFILE CARD =================
-            Container(
-              padding: const EdgeInsets.all(20),
-
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-
-              child: Column(
+                child: Column(
                 children: [
-                  Hero(
-                    tag: "profile",
+                  // ================= PROFILE CARD =================
+                  Container(
+                    padding: const EdgeInsets.all(20),
 
-                    child: CircleAvatar(
-                      radius: 42,
-                      backgroundImage: user?.photoURL != null
-                          ? NetworkImage(user!.photoURL!)
-                          : null,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
 
-                      child: user?.photoURL == null
-                          ? const Icon(Icons.person, size: 42)
-                          : null,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+
+                    child: Column(
+                      children: [
+                        Hero(
+                          tag: "profile",
+
+                          child: CircleAvatar(
+                            radius: 42,
+                            backgroundImage: user?.photoURL != null
+                                ? NetworkImage(user!.photoURL!)
+                                : null,
+
+                            child: user?.photoURL == null
+                                ? const Icon(Icons.person, size: 42)
+                                : null,
+                          ),
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        Text(
+                          firstName,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          user?.email ?? "",
+                          style: TextStyle(color: Colors.grey.shade600),
+                        ),
+                      ],
                     ),
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 24),
 
-                  Text(
-                    user?.displayName ?? "Guest User",
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  // ================= MENU =================
+                  _tile(
+                    icon: Icons.person_outline_rounded,
+                    title: "Account Information",
+                    subtitle: "Manage your account details",
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AccountInformationScreen(),
+                        ),
+                      );
+                    },
                   ),
 
-                  const SizedBox(height: 4),
+                  _tile(
+                    icon: Icons.notifications_none_rounded,
+                    title: "Notifications",
+                    subtitle: "Manage reminders and alerts",
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationSettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
 
-                  Text(
-                    user?.email ?? "",
-                    style: TextStyle(color: Colors.grey.shade600),
+                  _tile(
+                    icon: Icons.info_outline_rounded,
+                    title: "About",
+                    subtitle: "Application information",
+                    onTap: () {
+                      showAboutDialog(
+                        context: context,
+                        applicationName: "Productivity and Wellbeing",
+                        applicationVersion: "0.2.0-alpha",
+                      );
+                    },
+                  ),
+
+                  _tile(
+                    icon: Icons.logout_rounded,
+                    title: _loggingOut ? "Logging out..." : "Logout",
+                    subtitle: _loggingOut
+                        ? "Saving your latest steps before signing out"
+                        : "Sign out from your account",
+                    isLogout: true,
+                    trailing: _loggingOut
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          )
+                        : null,
+                    onTap: _logout,
                   ),
                 ],
+                ),
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            // ================= MENU =================
-            _tile(
-              icon: Icons.person_outline_rounded,
-              title: "Account Information",
-              subtitle: "Manage your account details",
-              onTap: () {},
+          ),
+          if (_loggingOut)
+            Container(
+              color: Colors.black.withValues(alpha: 0.12),
+              child: const Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.all(Radius.circular(18)),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(22),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Colors.deepOrange),
+                        SizedBox(height: 14),
+                        Text(
+                          "Logging out...",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
-
-            _tile(
-              icon: Icons.notifications_none_rounded,
-              title: "Notifications",
-              subtitle: "Manage reminders and alerts",
-              onTap: () {},
-            ),
-
-            _tile(
-              icon: Icons.info_outline_rounded,
-              title: "About",
-              subtitle: "Application information",
-              onTap: () {
-                showAboutDialog(
-                  context: context,
-                  applicationName: "Wellness App",
-                  applicationVersion: "1.0.0",
-                );
-              },
-            ),
-
-            _tile(
-              icon: Icons.logout_rounded,
-              title: "Logout",
-              subtitle: "Sign out from your account",
-              isLogout: true,
-              onTap: () async {
-                try {
-                  await StepsService.instance.fullLogoutCleanup();
-                  await FirebaseAuth.instance.signOut();
-
-                  if (!context.mounted) return;
-
-                  Navigator.pop(context);
-                } catch (e) {
-                  debugPrint("Logout error: $e");
-                }
-              },
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -144,6 +261,7 @@ class MoreScreen extends StatelessWidget {
     required String subtitle,
     required VoidCallback onTap,
     bool isLogout = false,
+    Widget? trailing,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -220,11 +338,12 @@ class MoreScreen extends StatelessWidget {
                   ),
                 ),
 
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 18,
-                  color: Colors.grey.shade400,
-                ),
+                trailing ??
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 18,
+                      color: Colors.grey.shade400,
+                    ),
               ],
             ),
           ),
@@ -232,4 +351,599 @@ class MoreScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class AccountInformationScreen extends StatefulWidget {
+  const AccountInformationScreen({super.key});
+
+  @override
+  State<AccountInformationScreen> createState() =>
+      _AccountInformationScreenState();
+}
+
+class _AccountInformationScreenState extends State<AccountInformationScreen> {
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    final user = FirebaseAuth.instance.currentUser;
+    _nameController.text = _firstName(user?.displayName);
+    _emailController.text = user?.email ?? "";
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final name = _nameController.text.trim();
+
+    if (name.isEmpty) {
+      _showMessage("Name cannot be empty");
+      return;
+    }
+
+    setState(() => _saving = true);
+
+    try {
+      await user.updateDisplayName(name);
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': name,
+        'email': user.email,
+        'photoUrl': user.photoURL,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await user.reload();
+
+      if (!mounted) return;
+      _showMessage("Account information updated");
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage("Could not update account information");
+      debugPrint("Profile update error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final email = FirebaseAuth.instance.currentUser?.email;
+    if (email == null || email.isEmpty) {
+      _showMessage("No email address is linked to this account");
+      return;
+    }
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (!mounted) return;
+      _showMessage("Password reset email sent");
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage("Could not send password reset email");
+      debugPrint("Password reset error: $e");
+    }
+  }
+
+  Future<void> _addPasswordSignIn() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+
+    if (email == null || email.isEmpty) {
+      _showMessage("No email address is linked to this account");
+      return;
+    }
+
+    final password = await _showPasswordDialog();
+    if (password == null) return;
+
+    setState(() => _saving = true);
+
+    try {
+      await AuthService().linkPasswordToCurrentUser(email, password);
+      await user!.reload();
+
+      if (!mounted) return;
+      _showMessage("Password sign-in added");
+      setState(() {});
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      if (e.code == 'provider-already-linked') {
+        _showMessage("Password sign-in is already enabled");
+      } else if (e.code == 'requires-recent-login') {
+        _showMessage("Please log out, sign in with Google again, then retry");
+      } else if (e.code == 'weak-password') {
+        _showMessage("Password must be at least 6 characters");
+      } else {
+        _showMessage(e.message ?? "Could not add password sign-in");
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage("Could not add password sign-in");
+      debugPrint("Add password sign-in error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<String?> _showPasswordDialog() async {
+    _passwordController.clear();
+    _confirmPasswordController.clear();
+
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Add Password Sign-in"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _input(
+                controller: _passwordController,
+                label: "Password",
+                icon: Icons.lock_outline_rounded,
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              _input(
+                controller: _confirmPasswordController,
+                label: "Confirm password",
+                icon: Icons.lock_person_outlined,
+                obscureText: true,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () {
+                final password = _passwordController.text.trim();
+                final confirm = _confirmPasswordController.text.trim();
+
+                if (password.length < 6) {
+                  _showMessage("Password must be at least 6 characters");
+                  return;
+                }
+
+                if (password != confirm) {
+                  _showMessage("Passwords do not match");
+                  return;
+                }
+
+                Navigator.pop(context, password);
+              },
+              child: const Text("Add"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+    final provider = user?.providerData.isNotEmpty == true
+        ? user!.providerData.first.providerId
+        : "password";
+    final providers =
+        user?.providerData.map((info) => info.providerId).toSet() ?? {};
+    final hasPassword = providers.contains('password');
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FC),
+      appBar: _settingsAppBar("Account Information"),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _settingsCard(
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 42,
+                    backgroundImage: user?.photoURL != null
+                        ? NetworkImage(user!.photoURL!)
+                        : null,
+                    child: user?.photoURL == null
+                        ? const Icon(Icons.person, size: 42)
+                        : null,
+                  ),
+                  const SizedBox(height: 18),
+                  _input(
+                    controller: _nameController,
+                    label: "Display name",
+                    icon: Icons.badge_outlined,
+                  ),
+                  const SizedBox(height: 14),
+                  _input(
+                    controller: _emailController,
+                    label: "Email",
+                    icon: Icons.email_outlined,
+                    enabled: false,
+                  ),
+                  const SizedBox(height: 14),
+                  _infoRow("Sign-in method", provider),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _primaryButton(
+              label: _saving ? "Saving..." : "Save Changes",
+              icon: Icons.save_rounded,
+              onPressed: _saving ? null : _saveProfile,
+            ),
+            const SizedBox(height: 12),
+            _secondaryButton(
+              label: hasPassword ? "Send Password Reset" : "Add Password",
+              icon: hasPassword
+                  ? Icons.lock_reset_rounded
+                  : Icons.add_moderator_outlined,
+              onPressed: hasPassword ? _sendPasswordReset : _addPasswordSignIn,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class NotificationSettingsScreen extends StatefulWidget {
+  const NotificationSettingsScreen({super.key});
+
+  @override
+  State<NotificationSettingsScreen> createState() =>
+      _NotificationSettingsScreenState();
+}
+
+class _NotificationSettingsScreenState
+    extends State<NotificationSettingsScreen> {
+  static const _enabledKey = 'hourly_step_reminders_enabled';
+  static const _intervalKey = 'step_reminder_interval_hours';
+
+  bool _enabled = true;
+  int _intervalHours = 2;
+  bool _loading = true;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (!mounted) return;
+
+    setState(() {
+      _enabled = prefs.getBool(_enabledKey) ?? true;
+      _intervalHours = prefs.getInt(_intervalKey) ?? 2;
+      _loading = false;
+    });
+  }
+
+  Future<void> _saveSettings({bool? enabled, int? intervalHours}) async {
+    setState(() => _saving = true);
+
+    final nextEnabled = enabled ?? _enabled;
+    final nextInterval = intervalHours ?? _intervalHours;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_enabledKey, nextEnabled);
+      await prefs.setInt(_intervalKey, nextInterval);
+
+      await Workmanager().cancelByUniqueName('hourly-reminder');
+
+      if (nextEnabled) {
+        await _requestNotificationPermission();
+        await Workmanager().registerPeriodicTask(
+          'hourly-reminder',
+          HourlyWorker.taskName,
+          frequency: Duration(hours: nextInterval),
+          existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _enabled = nextEnabled;
+        _intervalHours = nextInterval;
+      });
+
+      _showMessage("Notification settings updated");
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage("Could not update notification settings");
+      debugPrint("Notification settings error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    final plugin = FlutterLocalNotificationsPlugin();
+
+    await plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
+  }
+
+  Future<void> _sendTestNotification() async {
+    await _requestNotificationPermission();
+    await StepsService.instance.refreshNow();
+
+    final prefs = await SharedPreferences.getInstance();
+    final steps = prefs.getInt('bg_steps') ?? 0;
+
+    const androidDetails = AndroidNotificationDetails(
+      'hourly_steps',
+      'Hourly Step Reminder',
+      channelDescription: 'Hourly wellness reminders',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      onlyAlertOnce: true,
+    );
+
+    await NotificationService.notifications.show(
+      id: 101,
+      title: 'Step Reminder',
+      body: '$steps steps today',
+      notificationDetails: const NotificationDetails(android: androidDetails),
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF7F8FC),
+        appBar: _settingsAppBar("Notifications"),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FC),
+      appBar: _settingsAppBar("Notifications"),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            _settingsCard(
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    value: _enabled,
+                    onChanged: _saving
+                        ? null
+                        : (value) => _saveSettings(enabled: value),
+                    activeThumbColor: Colors.deepOrange,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      "Step reminders",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text(
+                      "Show a reminder notification while step tracking is active",
+                    ),
+                  ),
+                  const Divider(height: 28),
+                  _intervalOption(1, "Every hour"),
+                  _intervalOption(2, "Every 2 hours"),
+                  _intervalOption(4, "Every 4 hours"),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _secondaryButton(
+              label: "Send Test Notification",
+              icon: Icons.notifications_active_outlined,
+              onPressed: _sendTestNotification,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _intervalOption(int hours, String label) {
+    final selected = _intervalHours == hours;
+    final disabled = !_enabled || _saving;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: disabled ? null : () => _saveSettings(intervalHours: hours),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: disabled
+                  ? Colors.grey.shade400
+                  : selected
+                  ? Colors.deepOrange
+                  : Colors.grey.shade500,
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: disabled ? Colors.grey.shade500 : Colors.black87,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+PreferredSizeWidget _settingsAppBar(String title) {
+  return AppBar(
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    surfaceTintColor: Colors.transparent,
+    centerTitle: true,
+    title: Text(
+      title,
+      style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+    ),
+  );
+}
+
+Widget _settingsCard({required Widget child}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.04),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    ),
+    child: child,
+  );
+}
+
+Widget _input({
+  required TextEditingController controller,
+  required String label,
+  required IconData icon,
+  bool enabled = true,
+  bool obscureText = false,
+}) {
+  return TextField(
+    controller: controller,
+    enabled: enabled,
+    obscureText: obscureText,
+    decoration: InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon),
+      filled: true,
+      fillColor: enabled ? const Color(0xFFF7F8FC) : const Color(0xFFEDEFF5),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide.none,
+      ),
+    ),
+  );
+}
+
+Widget _infoRow(String label, String value) {
+  return Row(
+    children: [
+      Expanded(
+        child: Text(label, style: TextStyle(color: Colors.grey.shade600)),
+      ),
+      Text(
+        value,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+    ],
+  );
+}
+
+Widget _primaryButton({
+  required String label,
+  required IconData icon,
+  required VoidCallback? onPressed,
+}) {
+  return ElevatedButton.icon(
+    onPressed: onPressed,
+    icon: Icon(icon),
+    label: Text(label),
+    style: ElevatedButton.styleFrom(
+      backgroundColor: Colors.deepOrange,
+      foregroundColor: Colors.white,
+      minimumSize: const Size.fromHeight(54),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+  );
+}
+
+Widget _secondaryButton({
+  required String label,
+  required IconData icon,
+  required VoidCallback onPressed,
+}) {
+  return OutlinedButton.icon(
+    onPressed: onPressed,
+    icon: Icon(icon),
+    label: Text(label),
+    style: OutlinedButton.styleFrom(
+      foregroundColor: Colors.deepOrange,
+      minimumSize: const Size.fromHeight(54),
+      side: BorderSide(color: Colors.deepOrange.withValues(alpha: 0.35)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    ),
+  );
 }

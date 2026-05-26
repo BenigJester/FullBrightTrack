@@ -9,12 +9,16 @@ class HourlyWorker {
     Workmanager().executeTask((task, inputData) async {
       final prefs = await SharedPreferences.getInstance();
 
+      final enabled = prefs.getBool('hourly_step_reminders_enabled') ?? true;
+      if (!enabled) {
+        return Future.value(true);
+      }
+
       final steps = prefs.getInt('bg_steps') ?? 0;
 
       await NotificationService.initialize();
 
       await NotificationService.showHourlySteps(steps);
-
 
       return Future.value(true);
     });

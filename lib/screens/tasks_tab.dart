@@ -106,6 +106,11 @@ class _TasksTabState extends State<TasksTab> {
     });
   }
 
+  Future<void> _refreshTasks() async {
+    setState(() {});
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
+
   // ================= UI =================
 
   @override
@@ -129,15 +134,26 @@ class _TasksTabState extends State<TasksTab> {
       ),
 
       body: SafeArea(
-        child: StreamBuilder<List<Task>>(
-          stream: tasksStream,
+        child: RefreshIndicator(
+          color: Colors.deepOrange,
+          onRefresh: _refreshTasks,
+          child: StreamBuilder<List<Task>>(
+            stream: tasksStream,
 
-          builder: (context, snapshot) {
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  children: const [
+                    SizedBox(height: 260),
+                    Center(child: CircularProgressIndicator()),
+                  ],
+                );
+              }
 
-            final tasks = snapshot.data!;
+              final tasks = snapshot.data!;
 
             final activeTasks = tasks
                 .where((t) => !t.isCompleted && !t.isOverdue)
@@ -149,8 +165,10 @@ class _TasksTabState extends State<TasksTab> {
 
             final completedTasks = tasks.where((t) => t.isCompleted).toList();
 
-            return ListView(
-              physics: const BouncingScrollPhysics(),
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
 
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
 
@@ -201,8 +219,9 @@ class _TasksTabState extends State<TasksTab> {
                   onTap: () => _toggleSection('completed'),
                 ),
               ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

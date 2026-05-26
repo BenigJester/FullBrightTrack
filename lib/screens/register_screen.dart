@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 
 class RegisterTab extends StatefulWidget {
@@ -98,15 +99,124 @@ class _RegisterTabState extends State<RegisterTab> {
       if (!mounted) return;
 
       Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'email-already-in-use') {
+        await _confirmAndMergeGoogleAccount(email, password);
+      } else {
+        _showSnackBar(_authErrorMessage(e));
+      }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      _showSnackBar(e.toString());
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
       }
     }
+  }
+
+  Future<void> _confirmAndMergeGoogleAccount(
+    String email,
+    String password,
+  ) async {
+    final shouldMerge = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Account already exists"),
+          content: Text(
+            "$email is already used by another sign-in method. "
+            "Sign in with Google to add this password to the same account?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Continue"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldMerge != true) return;
+
+    try {
+      final success = await auth.signInWithGoogle();
+
+      if (!mounted) return;
+
+      if (!success) {
+        _showSnackBar("Google sign-in was cancelled");
+        return;
+      }
+
+      final user = FirebaseAuth.instance.currentUser;
+
+      if (user?.email?.toLowerCase() != email.toLowerCase()) {
+        await FirebaseAuth.instance.signOut();
+        if (!mounted) return;
+        _showSnackBar("Please choose the Google account that uses $email");
+        return;
+      }
+
+      final hasPassword =
+          user?.providerData.any((info) => info.providerId == 'password') ??
+          false;
+
+      if (!hasPassword) {
+        await auth.linkPasswordToCurrentUser(email, password);
+        await user?.reload();
+      }
+
+      if (!mounted) return;
+
+      _showSnackBar(
+        "Account merged. You can now sign in with Google or password",
+      );
+      Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      _showSnackBar(_authErrorMessage(e));
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar("Could not merge account");
+      debugPrint("Account merge error: $e");
+    }
+  }
+
+  String _authErrorMessage(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'weak-password':
+        return 'Password is too weak';
+      case 'invalid-email':
+        return 'Invalid email address';
+      case 'network-request-failed':
+        return 'No internet connection';
+      case 'provider-already-linked':
+        return 'Password sign-in is already enabled';
+      case 'requires-recent-login':
+        return 'Please sign in with Google again, then retry';
+      default:
+        return e.message ?? 'Unable to create account';
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      );
   }
 
   @override

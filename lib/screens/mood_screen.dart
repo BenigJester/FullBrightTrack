@@ -17,11 +17,19 @@ class _MoodScreenState extends State<MoodScreen> {
 
     final moodService = MoodService.instance;
 
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          const SizedBox(height: 20),
+    return RefreshIndicator(
+      color: Colors.deepOrange,
+      onRefresh: moodService.loadTodayMood,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 40),
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
 
           // ================= BIG EMOJI =================
           AnimatedSwitcher(
@@ -96,12 +104,16 @@ class _MoodScreenState extends State<MoodScreen> {
           const SizedBox(height: 20),
 
           // ================= INSIGHT =================
-          Text(
-            moodService.getMoodInsight(),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-        ],
+                  Text(
+                    moodService.getMoodInsight(),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

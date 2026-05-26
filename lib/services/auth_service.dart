@@ -23,6 +23,19 @@ class AuthService {
     return result.user;
   }
 
+  Future<User?> linkPasswordToCurrentUser(String email, String password) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+
+    final result = await user.linkWithCredential(credential);
+    return result.user;
+  }
+
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   Future<bool> signInWithGoogle() async {

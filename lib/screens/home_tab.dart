@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
+import '../services/hometab_service.dart';
+import '../services/journal_service.dart';
+import '../services/moodscreen_service.dart';
+import '../services/steps_service.dart';
 import 'mood_popup_card.dart';
 
 class HomeTab extends StatefulWidget {
@@ -16,9 +20,75 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showMoodPopupIfNeeded(context);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await showDailyMotivation(context);
+      if (!mounted) return;
+      await showMoodPopupIfNeeded(context);
     });
+  }
+
+  Future<void> showDailyMotivation(BuildContext context) async {
+    final data = context.read<AppData>();
+    final quote = data.dailyQuote?["quote"] ?? "Keep going one step at a time.";
+    final author = data.dailyQuote?["author"] ?? "Unknown";
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+          contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          title: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: Colors.orange.shade700),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  "Daily Motivation",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '"$quote"',
+                style: const TextStyle(
+                  fontSize: 16,
+                  height: 1.5,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  "- $author",
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Continue"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // ================= DAILY MOOD POPUP =================
@@ -43,6 +113,13 @@ class _HomeTabState extends State<HomeTab> {
 
       builder: (_) => const MoodPopupCard(),
     );
+  }
+
+  Future<void> _refreshHome(AppData data) async {
+    await HomeTabService.preload(data);
+    await StepsService.instance.refreshNow();
+    await MoodService.instance.loadTodayMood();
+    await JournalService.initialize(data);
   }
 
   String moodLabel(int mood) {
@@ -84,69 +161,20 @@ class _HomeTabState extends State<HomeTab> {
     final remaining = (data.stepGoal - data.stepsToday).clamp(0, data.stepGoal);
 
     return SafeArea(
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
+      child: RefreshIndicator(
+        color: Colors.deepOrange,
+        onRefresh: () => _refreshHome(data),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
 
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 30),
 
-        child: Column(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
 
           children: [
-            _glassCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.auto_awesome_rounded,
-                        color: Colors.orange.shade700,
-                      ),
-
-                      const SizedBox(width: 8),
-
-                      const Text(
-                        "Daily Motivation",
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  Text(
-                    '"${data.dailyQuote?["quote"] ?? "Keep going one step at a time."}"',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      height: 1.5,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-
-                  const SizedBox(height: 14),
-
-                  Align(
-                    alignment: Alignment.bottomRight,
-
-                    child: Text(
-                      "- ${data.dailyQuote?["author"] ?? "Unknown"}",
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
             // ================= HERO CARD =================
             Container(
               width: double.infinity,
@@ -375,6 +403,7 @@ class _HomeTabState extends State<HomeTab> {
               ),
             ),
           ],
+          ),
         ),
       ),
     );
@@ -447,26 +476,4 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  // ================= GLASS CARD =================
-  Widget _glassCard({required Widget child}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-
-      child: child,
-    );
-  }
 }

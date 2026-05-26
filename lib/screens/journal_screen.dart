@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import '../models/app_data.dart';
+import '../services/journal_service.dart';
 import 'journal_history.dart';
 
 class JournalScreen extends StatefulWidget {
@@ -45,6 +48,16 @@ class _JournalScreenState extends State<JournalScreen> {
     );
   }
 
+  Future<void> _refreshJournal() async {
+    final appData = context.read<AppData>();
+
+    setState(() {
+      currentPrompt = _getPrompt();
+    });
+
+    await JournalService.initialize(appData);
+  }
+
   // ================= MAIN UI =================
 
   @override
@@ -75,10 +88,15 @@ class _JournalScreenState extends State<JournalScreen> {
 
         padding: EdgeInsets.only(bottom: keyboard),
 
-        child: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
+        child: RefreshIndicator(
+          color: primaryColor,
+          onRefresh: _refreshJournal,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: ClampingScrollPhysics(),
+            ),
 
-          child: ConstrainedBox(
+            child: ConstrainedBox(
             constraints: BoxConstraints(
               minHeight: MediaQuery.of(context).size.height - 120,
             ),
@@ -308,6 +326,7 @@ class _JournalScreenState extends State<JournalScreen> {
                   const SizedBox(height: 24),
                 ],
               ),
+            ),
             ),
           ),
         ),
