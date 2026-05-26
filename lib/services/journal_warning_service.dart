@@ -61,7 +61,7 @@ class JournalWarningService {
   }
 
   static JournalWarningFinding? _findingForLine(String line) {
-    final lower = line.toLowerCase();
+    final lower = _normalizeForMatching(line);
 
     final critical = _matchedTerms(lower, _criticalTerms);
     if (critical.isNotEmpty) {
@@ -97,7 +97,18 @@ class JournalWarningService {
   }
 
   static List<String> _matchedTerms(String lower, List<String> terms) {
-    return terms.where(lower.contains).take(3).toList();
+    return terms
+        .where((term) => lower.contains(_normalizeForMatching(term)))
+        .take(3)
+        .toList();
+  }
+
+  static String _normalizeForMatching(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   static String _limitSnippet(String value) {

@@ -190,9 +190,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       builder: (context) {
         return Padding(
           padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: ListView(
+            shrinkWrap: true,
             children: [
               const Text(
                 "Stress rank guide",
@@ -211,9 +210,45 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 color: Colors.amber.shade700,
               ),
               const _GuideRow(label: "<25", value: "Low", color: Colors.green),
-              const SizedBox(height: 12),
+              const SizedBox(height: 18),
+              const Text(
+                "Journal warning guide",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
+              _GuideRow(
+                label: "1.0",
+                value: "Critical warning",
+                color: Colors.red,
+              ),
+              _GuideRow(
+                label: "0.65",
+                value: "Elevated concern",
+                color: Colors.deepOrange,
+              ),
+              _GuideRow(
+                label: "0.3",
+                value: "Normal stress day",
+                color: Colors.amber.shade700,
+              ),
+              const SizedBox(height: 6),
               Text(
-                "Current score is produced by a local, minimized AI-style model. It does not send journal text or personal data to a cloud API and should be reviewed by a human.",
+                "Critical phrases include self-harm or death-intent language such as wanting to die. Elevated phrases include hopelessness, panic, depression, breakdown, or giving up. Normal stress phrases include tired, drained, burnout, overwhelmed, or stress.",
+                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                "Mood signal guide",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Mood index 0 means sad/high stress risk, while 3 means happy/lower stress risk. High intensity strengthens the selected mood, so sad with max intensity should increase the stress estimate.",
+                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                "Scores use minimized mood, steps, journal warning weight, and task signals. AI output is an estimate and requires human review before action.",
                 style: TextStyle(color: Colors.grey.shade700, height: 1.4),
               ),
             ],

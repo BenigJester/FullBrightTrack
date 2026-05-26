@@ -166,9 +166,10 @@ Future<Map<String, dynamic>> _scoreWithGroq(
       return local..['fallbackReason'] = 'groq_non_json_response';
     }
 
-    final score = (_asDouble(parsed['score']) ?? local['score'] as double)
+    final rawScore = (_asDouble(parsed['score']) ?? local['score'] as double)
         .clamp(0, 100)
         .toDouble();
+    final score = max(rawScore, _safetyFloor(input)).clamp(0, 100).toDouble();
     final confidence =
         (_asDouble(parsed['confidence']) ?? local['confidence'] as double)
             .clamp(0, 1)
@@ -207,7 +208,11 @@ The JSON object must use exactly these keys:
 
 Use only the minimized numeric signals and short warning snippets below.
 Do not diagnose. Do not mention medical certainty.
+Mood scale is important: avgMoodIndex 0 = sad/high stress risk, 1 = low mood, 2 = okay, 3 = happy/low stress risk.
+avgMoodIntensity is 0 to 1. High intensity amplifies the current mood. High intensity with sad/low mood increases stress risk.
 Treat journalWarningWeight as numeric severity: 0 normal, about 0.3 normal stress day, about 0.65 elevated concern, 1.0 critical danger/self-harm concern.
+Never return Low if avgMoodIndex is 0 and avgMoodIntensity is 0.8 or higher. That should be at least Elevated.
+Never return below High if journalWarningWeight is 1.0.
 score must be a number from 0 to 100.
 confidence must be a number from 0 to 1.
 rationale must be an array of 1 to 3 short signal labels.
@@ -299,6 +304,22 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
     'modelVersion': _fallbackVersion,
     'rationale': rationale.take(3).toList(),
   };
+}
+
+double _safetyFloor(Map<String, dynamic> input) {
+  final avgMoodIndex = input['avgMoodIndex'] as double;
+  final avgMoodIntensity = input['avgMoodIntensity'] as double;
+  final journalWarningWeight = (input['journalWarningWeight'] as double).clamp(
+    0,
+    1,
+  );
+
+  if (journalWarningWeight >= 1.0) return 70;
+  if (journalWarningWeight >= 0.65) return 45;
+  if (avgMoodIndex <= 0.5 && avgMoodIntensity >= 0.8) return 45;
+  if (journalWarningWeight >= 0.3) return 25;
+
+  return 0;
 }
 
 String _groqModel() {
