@@ -14,6 +14,7 @@ class LeaderboardEntry {
     required this.streakPoints,
     required this.rank,
     required this.isCurrentUser,
+    required this.isAdmin,
   });
 
   final String uid;
@@ -26,6 +27,7 @@ class LeaderboardEntry {
   final int streakPoints;
   final int rank;
   final bool isCurrentUser;
+  final bool isAdmin;
 
   LeaderboardEntry copyWith({int? rank}) {
     return LeaderboardEntry(
@@ -39,6 +41,7 @@ class LeaderboardEntry {
       streakPoints: streakPoints,
       rank: rank ?? this.rank,
       isCurrentUser: isCurrentUser,
+      isAdmin: isAdmin,
     );
   }
 }
@@ -156,6 +159,7 @@ class LeaderboardService {
       'stepStreak': stepStreak,
       'moodStreak': moodStreak,
       'streakPoints': streakPoints,
+      'isAdmin': profileData['isAdmin'] == true,
       'monthKey': _monthKey(now),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -199,6 +203,7 @@ class LeaderboardService {
       streakPoints: streakPoints,
       rank: 0,
       isCurrentUser: doc.id == currentUid || data['uid'] == currentUid,
+      isAdmin: data['isAdmin'] == true || profileData['isAdmin'] == true,
     );
   }
 

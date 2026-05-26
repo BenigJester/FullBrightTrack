@@ -36,56 +36,112 @@ class _HomeTabState extends State<HomeTab> {
       context: context,
       barrierDismissible: true,
       builder: (_) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-          contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          title: Row(
-            children: [
-              Icon(Icons.auto_awesome_rounded, color: Colors.orange.shade700),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  "Daily Motivation",
-                  style: TextStyle(fontWeight: FontWeight.bold),
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+          backgroundColor: Colors.transparent,
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.16),
+                  blurRadius: 28,
+                  offset: const Offset(0, 14),
                 ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '"$quote"',
-                style: const TextStyle(
-                  fontSize: 16,
-                  height: 1.5,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  "- $author",
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600,
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+                  color: const Color(0xFFFF7A59),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          "Daily Motivation",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 19,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Continue"),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.format_quote_rounded,
+                        color: Colors.orange.shade300,
+                        size: 34,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        quote,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          height: 1.45,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF222222),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          author,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF7A59),
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      "Continue",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );

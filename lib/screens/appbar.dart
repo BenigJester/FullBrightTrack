@@ -130,14 +130,33 @@ class _HomeAppBarContent extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  Text(
-                    "Hi, $firstName",
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          firstName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      FutureBuilder<bool>(
+                        future: AdminAccessService.isCurrentUserAdmin(),
+                        builder: (context, snapshot) {
+                          if (snapshot.data != true) {
+                            return const SizedBox.shrink();
+                          }
+
+                          return const Padding(
+                            padding: EdgeInsets.only(left: 8),
+                            child: _AdminBadge(),
+                          );
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -201,6 +220,44 @@ class _HomeAppBarContent extends StatelessWidget {
           ],
         ),
         child: Icon(icon, color: Colors.black87, size: 24),
+      ),
+    );
+  }
+}
+
+class _AdminBadge extends StatelessWidget {
+  const _AdminBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: "Admin account",
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.admin_panel_settings_rounded,
+              size: 13,
+              color: Colors.white,
+            ),
+            SizedBox(width: 4),
+            Text(
+              "ADMIN",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

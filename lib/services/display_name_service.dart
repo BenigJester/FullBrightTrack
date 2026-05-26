@@ -1,7 +1,8 @@
 class DisplayNameService {
   const DisplayNameService._();
 
-  static const maxLength = 24;
+  static const minLength = 3;
+  static const maxLength = 6;
   static final _spacePattern = RegExp(r'\s+');
 
   static String normalize(String? value) {
@@ -31,6 +32,10 @@ class DisplayNameService {
 
     if (normalized.isEmpty) {
       return 'Name cannot be empty';
+    }
+
+    if (normalized.length < minLength) {
+      return 'Name must be at least $minLength characters';
     }
 
     if (normalized.length > maxLength) {

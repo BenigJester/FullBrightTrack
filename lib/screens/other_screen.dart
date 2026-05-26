@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_access_service.dart';
@@ -664,6 +665,8 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                     controller: _nameController,
                     label: "Display name",
                     icon: Icons.badge_outlined,
+                    helperText: "3-6 characters",
+                    maxLength: DisplayNameService.maxLength,
                   ),
                   const SizedBox(height: 14),
                   _input(
@@ -948,13 +951,20 @@ Widget _input({
   required IconData icon,
   bool enabled = true,
   bool obscureText = false,
+  String? helperText,
+  int? maxLength,
 }) {
   return TextField(
     controller: controller,
     enabled: enabled,
     obscureText: obscureText,
+    inputFormatters: maxLength == null
+        ? null
+        : [LengthLimitingTextInputFormatter(maxLength)],
     decoration: InputDecoration(
       labelText: label,
+      helperText: helperText,
+      counterText: maxLength == null ? null : '',
       prefixIcon: Icon(icon),
       filled: true,
       fillColor: enabled ? const Color(0xFFF7F8FC) : const Color(0xFFEDEFF5),

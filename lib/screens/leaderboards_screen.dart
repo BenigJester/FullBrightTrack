@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/display_name_service.dart';
 import '../services/leaderboard_service.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -142,7 +143,10 @@ class _HeaderCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       "Your wellness streak standing this ${data.monthLabel}",
-                      style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
                     ),
                   ],
                 ),
@@ -153,7 +157,10 @@ class _HeaderCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _headerStat("Your Rank", current == null ? "-" : "#${current.rank}"),
+              _headerStat(
+                "Your Rank",
+                current == null ? "-" : "#${current.rank}",
+              ),
               _headerStat("Points", _compact(current?.streakPoints ?? 0)),
               _headerStat("Step Streak", "${current?.stepStreak ?? 0}"),
               _headerStat("Mood Streak", "${current?.moodStreak ?? 0}"),
@@ -200,11 +207,7 @@ class _Podium extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        _PodiumBlock(
-          entry: second,
-          height: 120,
-          color: Colors.grey.shade400,
-        ),
+        _PodiumBlock(entry: second, height: 120, color: Colors.grey.shade400),
         const SizedBox(width: 14),
         _PodiumBlock(
           entry: first,
@@ -213,11 +216,7 @@ class _Podium extends StatelessWidget {
           crown: true,
         ),
         const SizedBox(width: 14),
-        _PodiumBlock(
-          entry: third,
-          height: 100,
-          color: Colors.brown.shade300,
-        ),
+        _PodiumBlock(entry: third, height: 100, color: Colors.brown.shade300),
       ],
     );
   }
@@ -248,7 +247,7 @@ class _PodiumBlock extends StatelessWidget {
             padding: EdgeInsets.only(bottom: 6),
             child: Icon(Icons.workspace_premium_rounded, color: Colors.orange),
           ),
-        _Avatar(entry: entry, radius: 30, color: color),
+        _PodiumAvatar(entry: entry, color: color),
         const SizedBox(height: 10),
         SizedBox(
           width: 86,
@@ -311,6 +310,13 @@ class _RankingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final displayName = DisplayNameService.cleanForDisplay(
+      entry.name,
+      fallback: 'User',
+    );
+    final rankColor = _rankingColor(entry.rank);
+    final isTopRank = entry.rank >= 1 && entry.rank <= 3;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -335,32 +341,45 @@ class _RankingTile extends StatelessWidget {
             height: 42,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: Colors.orange.shade50,
+              color: isTopRank ? rankColor : Colors.orange.shade50,
               shape: BoxShape.circle,
             ),
             child: Text(
               '#${entry.rank}',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
-                color: Colors.orange.shade800,
+                color: isTopRank ? Colors.white : Colors.orange.shade800,
               ),
             ),
           ),
           const SizedBox(width: 14),
-          _Avatar(entry: entry, radius: 24, color: Colors.orange.shade300),
+          _RankingAvatar(entry: entry),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  entry.isCurrentUser ? "${entry.name} (You)" : entry.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        children: [
+                          Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (entry.isCurrentUser) const _InlineYouBadge(),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -400,6 +419,108 @@ class _RankingTile extends StatelessWidget {
   }
 }
 
+class _InlineYouBadge extends StatelessWidget {
+  const _InlineYouBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.deepOrange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.22)),
+      ),
+      child: const Text(
+        "YOU",
+        style: TextStyle(
+          color: Colors.deepOrange,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _PodiumAvatar extends StatelessWidget {
+  const _PodiumAvatar({required this.entry, required this.color});
+
+  final LeaderboardEntry? entry;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 66,
+      height: 66,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: _Avatar(entry: entry, radius: 30, color: color),
+          ),
+          if (entry?.isAdmin == true)
+            const Positioned(left: 2, top: 2, child: _AdminAvatarMarker()),
+        ],
+      ),
+    );
+  }
+}
+
+class _RankingAvatar extends StatelessWidget {
+  const _RankingAvatar({required this.entry});
+
+  final LeaderboardEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 52,
+      height: 52,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Center(
+            child: _Avatar(
+              entry: entry,
+              radius: 24,
+              color: Colors.orange.shade300,
+            ),
+          ),
+          if (entry.isAdmin)
+            const Positioned(left: 0, top: 0, child: _AdminAvatarMarker()),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminAvatarMarker extends StatelessWidget {
+  const _AdminAvatarMarker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: "Admin account",
+      child: Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: Colors.deepOrange,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: const Icon(
+          Icons.admin_panel_settings_rounded,
+          color: Colors.white,
+          size: 12,
+        ),
+      ),
+    );
+  }
+}
+
 class _Avatar extends StatelessWidget {
   const _Avatar({
     required this.entry,
@@ -433,6 +554,13 @@ class _Avatar extends StatelessWidget {
           : null,
     );
   }
+}
+
+Color _rankingColor(int rank) {
+  if (rank == 1) return Colors.orange;
+  if (rank == 2) return Colors.grey.shade400;
+  if (rank == 3) return Colors.brown.shade300;
+  return Colors.orange.shade50;
 }
 
 class _EmptyState extends StatelessWidget {

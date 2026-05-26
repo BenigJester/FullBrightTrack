@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
+import '../services/display_name_service.dart';
 import '../services/local_stress_model_service.dart';
 
 class AdminMonitoringScreen extends StatefulWidget {
@@ -298,7 +299,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
               ),
               _GuideRow(
                 label: "Green",
-                value: "Balanced or positive contribution",
+                value: "Balanced or highly positive contribution",
                 color: Colors.green,
               ),
               _GuideRow(
@@ -334,6 +335,11 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
               const SizedBox(height: 8),
               Text(
                 "Mood index 0 means sad/high stress risk, while 3 means happy/lower stress risk. High intensity strengthens the selected mood, so sad with max intensity should increase the stress estimate.",
+                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                "Step activity uses 4000 steps as the daily goal. Reaching 4000 or more steps is highly positive and should reduce the activity-related stress signal.",
                 style: TextStyle(color: Colors.grey.shade700, height: 1.4),
               ),
               const SizedBox(height: 14),
@@ -1213,7 +1219,7 @@ class _PersonalMlFeatures {
     if (!hasStepSignal) return 'No data';
     if (avgDailySteps < 1500) return 'Highly negative';
     if (avgDailySteps < 4000) return 'A bit negative';
-    return 'Balanced';
+    return 'Highly positive';
   }
 
   Color get stepsContributionColor {
@@ -1335,11 +1341,19 @@ Color _stressColor(double score) {
 }
 
 String _displayName(Map<String, dynamic> data) {
-  final name = (data['name'] as String?)?.trim();
-  if (name != null && name.isNotEmpty) return name;
+  final name = DisplayNameService.cleanForDisplay(
+    data['name'] as String?,
+    fallback: '',
+  );
+  if (name.isNotEmpty) return name;
 
-  final email = (data['email'] as String?)?.trim();
-  if (email != null && email.isNotEmpty) return email.split('@').first;
+  final email = DisplayNameService.normalize(data['email'] as String?);
+  if (email.isNotEmpty) {
+    return DisplayNameService.cleanForDisplay(
+      email.split('@').first,
+      fallback: 'Student',
+    );
+  }
 
   return 'Student';
 }
