@@ -6,7 +6,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -15,6 +20,9 @@ import java.time.LocalDate
 
 class MainActivity : FlutterActivity() {
     private val channelName = "fullbright_track/step_service"
+    private val deviceReadinessChannelName = "fullbright_track/device_readiness"
+    private var activityPermissionResult: MethodChannel.Result? = null
+    private var notificationPermissionResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -48,6 +56,138 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, deviceReadinessChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "androidSdkVersion" -> result.success(Build.VERSION.SDK_INT)
+                "isIgnoringBatteryOptimizations" -> result.success(isIgnoringBatteryOptimizations())
+                "openBatteryOptimizationSettings" -> {
+                    openBatteryOptimizationSettings()
+                    result.success(true)
+                }
+                "requestIgnoreBatteryOptimizations" -> {
+                    requestIgnoreBatteryOptimizations()
+                    result.success(true)
+                }
+                "permissionDiagnostics" -> result.success(permissionDiagnostics())
+                "requestActivityRecognition" -> requestActivityRecognition(result)
+                "requestPostNotifications" -> requestPostNotifications(result)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun requestActivityRecognition(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || hasActivityPermission()) {
+            result.success(true)
+            return
+        }
+
+        if (!canRequestPermission(Manifest.permission.ACTIVITY_RECOGNITION)) {
+            Log.w("FullBrightTrack", "Cannot request activity permission: ${permissionDiagnostics()}")
+            result.success(false)
+            return
+        }
+
+        if (activityPermissionResult != null) {
+            result.success(false)
+            return
+        }
+
+        activityPermissionResult = result
+        Log.d("FullBrightTrack", "Requesting activity permission: ${permissionDiagnostics()}")
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.ACTIVITY_RECOGNITION),
+            ACTIVITY_RECOGNITION_REQUEST_CODE
+        )
+    }
+
+    private fun requestPostNotifications(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasNotificationPermission()) {
+            result.success(true)
+            return
+        }
+
+        if (!canRequestPermission(Manifest.permission.POST_NOTIFICATIONS)) {
+            Log.w("FullBrightTrack", "Cannot request notification permission: ${permissionDiagnostics()}")
+            result.success(false)
+            return
+        }
+
+        if (notificationPermissionResult != null) {
+            result.success(false)
+            return
+        }
+
+        notificationPermissionResult = result
+        Log.d("FullBrightTrack", "Requesting notification permission: ${permissionDiagnostics()}")
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+            POST_NOTIFICATIONS_REQUEST_CODE
+        )
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == ACTIVITY_RECOGNITION_REQUEST_CODE) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            activityPermissionResult?.success(granted)
+            activityPermissionResult = null
+        } else if (requestCode == POST_NOTIFICATIONS_REQUEST_CODE) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            notificationPermissionResult?.success(granted)
+            notificationPermissionResult = null
+        }
+    }
+
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivitySafely(intent)
+    }
+
+    private fun requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || isIgnoringBatteryOptimizations()) {
+            return
+        }
+
+        val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        intent.data = Uri.parse("package:$packageName")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivityForBatteryRequest(intent)
+    }
+
+    private fun startActivitySafely(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (_: Exception) {
+            val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+            fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(fallback)
+        }
+    }
+
+    private fun startActivityForBatteryRequest(intent: Intent) {
+        try {
+            startActivity(intent)
+        } catch (error: Exception) {
+            Log.w("FullBrightTrack", "Could not open direct battery allow dialog", error)
         }
     }
 
@@ -106,5 +246,65 @@ class MainActivity : FlutterActivity() {
             "hasStepDetector" to hasStepDetector,
             "nativeRunning" to StepCounterService.isMarkedRunning(this)
         )
+    }
+
+    private fun hasActivityPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun isPermissionDeclared(permission: String): Boolean {
+        return try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong())
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
+            }
+            packageInfo.requestedPermissions?.contains(permission) == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun canRequestPermission(permission: String): Boolean {
+        return isPermissionDeclared(permission) &&
+            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun permissionDiagnostics(): Map<String, Any> {
+        val targetSdk = try {
+            packageManager.getApplicationInfo(packageName, 0).targetSdkVersion
+        } catch (_: Exception) {
+            -1
+        }
+
+        return mapOf(
+            "sdk" to Build.VERSION.SDK_INT,
+            "targetSdk" to targetSdk,
+            "activityDeclared" to isPermissionDeclared(Manifest.permission.ACTIVITY_RECOGNITION),
+            "activityGranted" to hasActivityPermission(),
+            "activityCanRequest" to canRequestPermission(Manifest.permission.ACTIVITY_RECOGNITION),
+            "activityShouldShowRationale" to shouldShowRequestPermissionRationale(Manifest.permission.ACTIVITY_RECOGNITION),
+            "notificationDeclared" to isPermissionDeclared(Manifest.permission.POST_NOTIFICATIONS),
+            "notificationGranted" to hasNotificationPermission(),
+            "notificationCanRequest" to canRequestPermission(Manifest.permission.POST_NOTIFICATIONS),
+            "notificationShouldShowRationale" to shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        )
+    }
+
+    companion object {
+        private const val ACTIVITY_RECOGNITION_REQUEST_CODE = 7104
+        private const val POST_NOTIFICATIONS_REQUEST_CODE = 7105
     }
 }

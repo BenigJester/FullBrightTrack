@@ -6,8 +6,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
+import '../services/device_readiness_service.dart';
 import '../services/display_name_service.dart';
 import '../services/notification_service.dart';
+import '../services/notification_history_service.dart';
 import '../services/reminder_scheduler_service.dart';
 import '../services/steps_service.dart';
 import 'admin_monitoring_screen.dart';
@@ -189,6 +191,21 @@ class _MoreScreenState extends State<MoreScreen> {
                       },
                     ),
 
+                    _tile(
+                      icon: Icons.verified_user_outlined,
+                      title: "Permissions",
+                      subtitle:
+                          "Review steps, notifications, and battery access",
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const PermissionManagerScreen(),
+                          ),
+                        );
+                      },
+                    ),
+
                     FutureBuilder<bool>(
                       future: AdminAccessService.isCurrentUserAdmin(),
                       builder: (context, snapshot) {
@@ -196,18 +213,38 @@ class _MoreScreenState extends State<MoreScreen> {
                           return const SizedBox.shrink();
                         }
 
-                        return _tile(
-                          icon: Icons.admin_panel_settings_rounded,
-                          title: "Admin Monitoring",
-                          subtitle: "Review wellness signals and stress ranks",
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const AdminMonitoringScreen(),
-                              ),
-                            );
-                          },
+                        return Column(
+                          children: [
+                            _tile(
+                              icon: Icons.history_rounded,
+                              title: "Notification History",
+                              subtitle: "View and clear admin safety alerts",
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const NotificationHistoryScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                            _tile(
+                              icon: Icons.admin_panel_settings_rounded,
+                              title: "Admin Monitoring",
+                              subtitle:
+                                  "Review wellness signals and stress ranks",
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const AdminMonitoringScreen(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                         );
                       },
                     ),
@@ -220,7 +257,7 @@ class _MoreScreenState extends State<MoreScreen> {
                         showAboutDialog(
                           context: context,
                           applicationName: "Productivity and Wellbeing",
-                          applicationVersion: "0.4.0-alpha",
+                          applicationVersion: "0.4.0-alpha+5",
                         );
                       },
                     ),
@@ -774,13 +811,7 @@ class _NotificationSettingsScreenState
   }
 
   Future<void> _requestNotificationPermission() async {
-    final plugin = FlutterLocalNotificationsPlugin();
-
-    await plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
+    await DeviceReadinessService.requestNotificationPermission();
   }
 
   Future<void> _sendTestNotification() async {
@@ -904,6 +935,602 @@ class _NotificationSettingsScreenState
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class NotificationHistoryScreen extends StatefulWidget {
+  const NotificationHistoryScreen({super.key});
+
+  @override
+  State<NotificationHistoryScreen> createState() =>
+      _NotificationHistoryScreenState();
+}
+
+class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
+  late Future<List<NotificationHistoryItem>> _historyFuture;
+  late Future<bool> _adminFuture;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _adminFuture = AdminAccessService.isCurrentUserAdmin();
+    _historyFuture = NotificationHistoryService.load();
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _historyFuture = NotificationHistoryService.load();
+    });
+
+    await _historyFuture;
+  }
+
+  Future<void> _delete(String id) async {
+    if (_busy) return;
+
+    setState(() => _busy = true);
+    await NotificationHistoryService.delete(id);
+    await _refresh();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  Future<void> _clearAll() async {
+    if (_busy) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text("Clear notification history?"),
+          content: const Text(
+            "This removes saved alert history from this device only.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Clear all"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _busy = true);
+    await NotificationHistoryService.clearAll();
+    await _refresh();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FC),
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: true,
+        title: const Text(
+          "Notification History",
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+        ),
+        actions: [
+          IconButton(
+            tooltip: "Clear all",
+            onPressed: _busy ? null : _clearAll,
+            icon: const Icon(Icons.delete_sweep_outlined),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ),
+      body: FutureBuilder<bool>(
+        future: _adminFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snapshot.data != true) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  "Notification history is available for admins only.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+                ),
+              ),
+            );
+          }
+
+          return FutureBuilder<List<NotificationHistoryItem>>(
+            future: _historyFuture,
+            builder: (context, historySnapshot) {
+              if (historySnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final items =
+                  historySnapshot.data ?? const <NotificationHistoryItem>[];
+
+              return RefreshIndicator(
+                color: Colors.deepOrange,
+                onRefresh: _refresh,
+                child: items.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(24),
+                        children: [
+                          const SizedBox(height: 120),
+                          Icon(
+                            Icons.notifications_off_outlined,
+                            color: Colors.grey.shade500,
+                            size: 54,
+                          ),
+                          const SizedBox(height: 12),
+                          const Center(
+                            child: Text(
+                              "No admin alerts yet",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            "Critical warning alerts will appear here after they are received on this admin account.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      )
+                    : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          return _NotificationHistoryTile(
+                            item: item,
+                            busy: _busy,
+                            onDelete: () => _delete(item.id),
+                          );
+                        },
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemCount: items.length,
+                      ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _NotificationHistoryTile extends StatelessWidget {
+  const _NotificationHistoryTile({
+    required this.item,
+    required this.busy,
+    required this.onDelete,
+  });
+
+  final NotificationHistoryItem item;
+  final bool busy;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return _settingsCard(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const Icon(Icons.warning_amber_rounded, color: Colors.red),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.title,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  item.body,
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatHistoryTime(item.createdAt),
+                  style: TextStyle(
+                    color: Colors.grey.shade500,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: "Delete",
+            onPressed: busy ? null : onDelete,
+            icon: const Icon(Icons.delete_outline_rounded),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatHistoryTime(DateTime value) {
+    final hour = value.hour > 12
+        ? value.hour - 12
+        : value.hour == 0
+        ? 12
+        : value.hour;
+    final minute = value.minute.toString().padLeft(2, '0');
+    final period = value.hour >= 12 ? 'PM' : 'AM';
+    return '${value.month}/${value.day}/${value.year} $hour:$minute $period';
+  }
+}
+
+class PermissionManagerScreen extends StatefulWidget {
+  const PermissionManagerScreen({super.key});
+
+  @override
+  State<PermissionManagerScreen> createState() =>
+      _PermissionManagerScreenState();
+}
+
+class _PermissionManagerScreenState extends State<PermissionManagerScreen> {
+  late Future<DeviceReadinessStatus> _statusFuture;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusFuture = DeviceReadinessService.checkStatus();
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _statusFuture = DeviceReadinessService.checkStatus();
+    });
+
+    await _statusFuture;
+  }
+
+  Future<void> _runAction(Future<void> Function() action) async {
+    if (_busy) return;
+
+    setState(() => _busy = true);
+
+    try {
+      await action();
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FC),
+      appBar: _settingsAppBar("Permissions"),
+      body: FutureBuilder<DeviceReadinessStatus>(
+        future: _statusFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final status =
+              snapshot.data ??
+              const DeviceReadinessStatus(
+                activityRecognitionGranted: false,
+                notificationGranted: false,
+                unrestrictedBattery: true,
+              );
+
+          return RefreshIndicator(
+            color: Colors.deepOrange,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              children: [
+                _settingsCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: Colors.deepOrange.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.verified_user_outlined,
+                              color: Colors.deepOrange,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              "App permission manager",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        "These settings help FullBrightTrack keep step tracking, reminders, and safety alerts reliable.",
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _PermissionAccessTile(
+                  icon: Icons.directions_walk_rounded,
+                  title: "Physical Activity",
+                  description:
+                      "Allows daily step tracking and wellness summaries.",
+                  statusLabel: status.activityRecognitionGranted
+                      ? "Allowed"
+                      : "Not allowed",
+                  allowed: status.activityRecognitionGranted,
+                  buttonLabel: "Allow steps",
+                  manageLabel: "Manage / disable",
+                  busy: _busy,
+                  onPressed: () => _runAction(() async {
+                    await DeviceReadinessService.requestActivityRecognition();
+                  }),
+                  onManagePressed: () => _runAction(() async {
+                    await DeviceReadinessService.openPermissionSettings();
+                  }),
+                ),
+                _PermissionAccessTile(
+                  icon: Icons.notifications_active_outlined,
+                  title: "Notifications",
+                  description:
+                      "Allows reminders and admin safety alerts to appear.",
+                  statusLabel: status.notificationGranted
+                      ? "Allowed"
+                      : "Not allowed",
+                  allowed: status.notificationGranted,
+                  buttonLabel: "Allow alerts",
+                  manageLabel: "Manage / disable",
+                  busy: _busy,
+                  onPressed: () => _runAction(() async {
+                    await DeviceReadinessService.requestNotificationPermission();
+                  }),
+                  onManagePressed: () => _runAction(() async {
+                    await DeviceReadinessService.openPermissionSettings();
+                  }),
+                ),
+                _PermissionAccessTile(
+                  icon: Icons.battery_charging_full_rounded,
+                  title: "Battery usage",
+                  description:
+                      "Android may show Restricted, Optimized, or Unrestricted. Choose Unrestricted for best boot and background tracking.",
+                  statusLabel: status.unrestrictedBattery
+                      ? "Unrestricted"
+                      : "Optimized / Restricted",
+                  allowed: status.unrestrictedBattery,
+                  buttonLabel: "Set unrestricted",
+                  manageLabel: "Choose battery mode",
+                  busy: _busy,
+                  onPressed: () => _runAction(
+                    DeviceReadinessService.requestUnrestrictedBattery,
+                  ),
+                  onManagePressed: () => _runAction(
+                    DeviceReadinessService.openBatteryOptimizationSettings,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _secondaryButton(
+                  label: "Refresh Status",
+                  icon: Icons.refresh_rounded,
+                  onPressed: _busy ? () {} : _refresh,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Tip: On some Android phones, choose Battery > Unrestricted or Don't optimize for FullBrightTrack.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade600, height: 1.4),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PermissionAccessTile extends StatelessWidget {
+  const _PermissionAccessTile({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.statusLabel,
+    required this.allowed,
+    required this.buttonLabel,
+    required this.manageLabel,
+    required this.busy,
+    required this.onPressed,
+    required this.onManagePressed,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final String statusLabel;
+  final bool allowed;
+  final String buttonLabel;
+  final String manageLabel;
+  final bool busy;
+  final VoidCallback onPressed;
+  final VoidCallback onManagePressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = allowed ? Colors.green : Colors.deepOrange;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: _settingsCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _PermissionStatusBadge(
+                        allowed: allowed,
+                        label: statusLabel,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    description,
+                    style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                  ),
+                  const SizedBox(height: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!allowed)
+                        OutlinedButton.icon(
+                          onPressed: busy ? null : onPressed,
+                          icon: const Icon(Icons.check_circle_outline_rounded),
+                          label: Text(buttonLabel),
+                        )
+                      else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            "Ready",
+                            style: TextStyle(
+                              color: Colors.green.shade700,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: busy ? null : onManagePressed,
+                        icon: const Icon(Icons.tune_rounded),
+                        label: Text(manageLabel),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PermissionStatusBadge extends StatelessWidget {
+  const _PermissionStatusBadge({required this.allowed, required this.label});
+
+  final bool allowed;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = allowed ? Colors.green : Colors.orange.shade800;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w800,
+          fontSize: 11,
         ),
       ),
     );

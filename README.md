@@ -2,7 +2,7 @@
 
 FullBrightTrack is a Flutter productivity and wellbeing app for students. It combines step tracking, mood check-ins, journaling, task management, streak tracking, and Firestore leaderboards in one mobile experience.
 
-Current app version: `0.4.0-alpha+4`
+Current app version: `0.4.0-alpha+5`
 
 ## Features
 
@@ -19,7 +19,7 @@ Current app version: `0.4.0-alpha+4`
 - Admin warning resolution workflow and daily stress history charting.
 - Groq-backed AI stress estimate endpoint with local fallback scoring.
 - Account flows for email/password and Google sign-in.
-- App Check support for Firebase protection.
+- App Check support for Firebase protection with debug-token support for development builds.
 - Step reminder notification support with 1, 2, or 3 hour intervals.
 - Daily motivation popup.
 
@@ -121,6 +121,7 @@ flutter pub get
   - Google
 - Enable Cloud Firestore.
 - Configure Firebase App Check for Android. Use debug provider only for debug builds and Play Integrity for release.
+- When running a debug build, check the Flutter console for `Firebase App Check debug token to register: ...`, then add that token in Firebase Console under App Check > your Android app > Manage debug tokens.
 
 3. Configure the AI backend:
 
@@ -168,6 +169,15 @@ admin_monitoring/{uid}
 
 These summaries contain numeric wellbeing signals, weighted journal warning severity, AI/local stress score, rank, confidence, daily stress history, and privacy-safe critical warning labels. Raw journal text and task titles are not copied into admin monitoring.
 
+Privacy-safe admin alert records are stored under:
+
+```text
+admin_alerts/{alertId}
+admin_fcm_tokens/{adminUid}/tokens/{token}
+```
+
+`admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, and warning signature. It does not store raw journal text. `admin_fcm_tokens` stores verified admin device tokens so a trusted backend or Cloud Function can send FCM push notifications for active alerts.
+
 ## Suggested Firestore Rules
 
 This app expects users to access their own private data, read public leaderboard summaries, and write only their own minimized admin monitoring summary. Admin access is controlled by `users/{uid}.isAdmin == true`.
@@ -208,6 +218,24 @@ service cloud.firestore {
           .hasOnly(['resolvedWarningSignature', 'resolvedWarningAt']);
       allow delete: if false;
     }
+
+    match /admin_alerts/{alertId} {
+      allow read: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId;
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['status', 'resolvedAt', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    match /admin_fcm_tokens/{adminUid}/tokens/{tokenId} {
+      allow read: if false;
+      allow create, update, delete: if isOwner(adminUid) && isAdmin();
+    }
   }
 }
 ```
@@ -230,8 +258,13 @@ Important Android permissions:
 - `POST_NOTIFICATIONS`
 - `RECEIVE_BOOT_COMPLETED`
 - `WAKE_LOCK`
+- `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
 
 The app also includes `StepBootReceiver.kt` so the service can restart after boot/package update when Android allows it.
+
+After login, the app checks notification, physical activity, and battery optimization status. If any access is denied or restricted, it shows a user-friendly dialog explaining which features are limited. The `Allow` buttons request the matching Android permission without automatically redirecting to App Info. Explicit management links remain available in More > Permissions through `Manage / disable` and `Choose battery mode`.
+
+When both physical activity and notification access are granted, the app starts the step foreground service so Android can show the persistent step-tracking notification. Battery unrestricted access uses Android's direct allow dialog and refreshes the access prompt when the app resumes.
 
 ## Testing
 

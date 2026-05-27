@@ -79,6 +79,7 @@ class _JournalScreenState extends State<JournalScreen> {
       backgroundColor: backgroundColor,
 
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'journal_history_fab',
         onPressed: _openJournalHistory,
 
         backgroundColor: primaryColor,
@@ -474,7 +475,7 @@ class _JournalScreenState extends State<JournalScreen> {
       await WellnessSignalService.publishCurrentUserSignals();
 
       if (mounted) {
-        _showJournalMessage("Saved Successfully.");
+        _showJournalMessage("Saved. Your wellness signals are updated.");
 
         _controller.clear();
 

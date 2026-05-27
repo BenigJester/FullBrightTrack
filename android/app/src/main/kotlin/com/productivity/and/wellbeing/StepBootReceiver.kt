@@ -11,7 +11,9 @@ class StepBootReceiver : BroadcastReceiver() {
             Intent.ACTION_LOCKED_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_USER_UNLOCKED -> {
-                StepCounterService.start(context)
+                if (StepCounterService.hasActivityPermission(context)) {
+                    StepCounterService.start(context)
+                }
                 StepReminderReceiver.schedule(context)
             }
         }

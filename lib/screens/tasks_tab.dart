@@ -148,6 +148,7 @@ class _TasksTabState extends State<TasksTab> {
       backgroundColor: const Color(0xFFF7F8FA),
 
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'tasks_add_task_fab',
         onPressed: _showAddTaskDialog,
 
         backgroundColor: Colors.deepOrange,

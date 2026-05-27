@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/loading_screen.dart';
 import '../screens/login_screen.dart';
+import 'admin_alert_service.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -25,6 +28,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (snapshot.hasData) {
           return LoadingScreen();
         }
+
+        unawaited(AdminAlertService.stopAdminAlertListener());
 
         // If not logged in -> Login
         return LoginTab();

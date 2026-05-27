@@ -31,4 +31,24 @@ class NotificationService {
       notificationDetails: details,
     );
   }
+
+  static Future<void> showAdminSafetyAlert({
+    required String displayName,
+    required String rank,
+  }) async {
+    const androidDetails = AndroidNotificationDetails(
+      'admin_safety_alerts',
+      'Admin Safety Alerts',
+      channelDescription: 'Privacy-safe alerts for admin review',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+
+    await notifications.show(
+      id: 200,
+      title: 'Wellness signal needs review',
+      body: '$displayName has a $rank stress signal. Open Admin Monitoring.',
+      notificationDetails: const NotificationDetails(android: androidDetails),
+    );
+  }
 }

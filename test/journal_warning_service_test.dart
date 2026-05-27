@@ -32,4 +32,24 @@ void main() {
     expect(summary.weight, 0.65);
     expect(summary.snippets, isEmpty);
   });
+  test('does not flag energetic or profane wording without stress meaning', () {
+    final summary = JournalWarningService.analyze(
+      "I'll rule the world and fuck it.",
+    );
+
+    expect(summary.severity, JournalWarningSeverity.none);
+    expect(summary.weight, 0);
+    expect(summary.snippets, isEmpty);
+  });
+
+  test('matches warning words as words instead of partial text', () {
+    final neutral = JournalWarningService.analyze(
+      'This is a stressfulness test.',
+    );
+    final stressed = JournalWarningService.analyze('I feel stressed today.');
+
+    expect(neutral.severity, JournalWarningSeverity.none);
+    expect(stressed.severity, JournalWarningSeverity.stress);
+    expect(stressed.weight, 0.3);
+  });
 }

@@ -315,9 +315,7 @@ class StepCounterService : Service(), SensorEventListener {
     private fun todayKey(): String = LocalDate.now().toString()
 
     private fun hasActivityPermission(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
-            PackageManager.PERMISSION_GRANTED
+        return hasActivityPermission(this)
     }
 
     private fun hasNotificationPermission(): Boolean {
@@ -398,8 +396,17 @@ class StepCounterService : Service(), SensorEventListener {
         private const val KEY_RUNNING = "bg_native_running"
 
         fun start(context: Context) {
-            val intent = Intent(context, StepCounterService::class.java).setAction(ACTION_START)
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+
+            if (!hasActivityPermission(context)) {
+                prefs.edit()
+                    .putString("flutter.$KEY_DEBUG", "Native pedometer waiting for activity permission")
+                    .putBoolean("flutter.$KEY_RUNNING", false)
+                    .apply()
+                return
+            }
+
+            val intent = Intent(context, StepCounterService::class.java).setAction(ACTION_START)
             if (!prefs.getBoolean("flutter.$KEY_RUNNING", false)) {
                 prefs.edit()
                     .putString("flutter.$KEY_DEBUG", "Native pedometer start requested")
@@ -458,6 +465,12 @@ class StepCounterService : Service(), SensorEventListener {
                 .apply()
 
             start(context)
+        }
+
+        fun hasActivityPermission(context: Context): Boolean {
+            return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACTIVITY_RECOGNITION) ==
+                PackageManager.PERMISSION_GRANTED
         }
     }
 }

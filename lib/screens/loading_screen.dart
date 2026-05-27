@@ -5,10 +5,9 @@ import 'package:productivity_and_wellbeing/services/step_foreground_service.dart
 import 'package:productivity_and_wellbeing/services/steps_service.dart';
 import 'home_screen.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 import '../models/app_data.dart';
+import '../services/device_readiness_service.dart';
 import '../services/hometab_service.dart';
 import '../services/streak_service.dart';
 import '../services/wellness_signal_service.dart';
@@ -68,16 +67,6 @@ class _LoadingScreenState extends State<LoadingScreen>
     await _initializeApp();
   }
 
-  Future<void> requestNotificationPermission() async {
-    final plugin = FlutterLocalNotificationsPlugin();
-
-    await plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
-  }
-
   void _setLoadingText(String value) {
     if (!mounted) return;
 
@@ -106,14 +95,14 @@ class _LoadingScreenState extends State<LoadingScreen>
 
       _setLoadingText("Starting step tracker...");
 
-      final activityPermission = await Permission.activityRecognition.request();
+      final readinessStatus = await DeviceReadinessService.checkStatus();
+      final activityGranted = readinessStatus.activityRecognitionGranted;
 
-      if (!activityPermission.isGranted) {
-        throw Exception("Activity recognition permission denied");
+      if (activityGranted) {
+        await StepForegroundService.start();
+      } else {
+        debugPrint('Activity recognition denied; step tracker not started.');
       }
-
-      await requestNotificationPermission();
-      await StepForegroundService.start();
       final stepsInit = StepsService.instance.initialize(appData);
 
       _setLoadingText("Syncing wellness data...");

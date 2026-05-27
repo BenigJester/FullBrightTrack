@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../services/display_name_service.dart';
+import '../services/admin_alert_service.dart';
 import '../services/local_stress_model_service.dart';
 
 class AdminMonitoringScreen extends StatefulWidget {
@@ -759,6 +760,10 @@ class _StudentCard extends StatelessWidget {
           'resolvedWarningSignature': student.warningSignature,
           'resolvedWarningAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+    await AdminAlertService.markResolvedForSignature(
+      userId: student.uid,
+      warningSignature: student.warningSignature,
+    );
 
     await onResolved();
 

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'display_name_service.dart';
+import 'admin_alert_service.dart';
 import 'genkit_stress_ai_service.dart';
 import 'journal_warning_service.dart';
 import 'local_stress_model_service.dart';
@@ -111,9 +112,11 @@ class WellnessSignalService {
     final monitoringRef = _firestore
         .collection('admin_monitoring')
         .doc(user.uid);
-    final previousMonitoring = await monitoringRef.get();
+    final previousMonitoringData = await _readMonitoringDataIfAllowed(
+      monitoringRef,
+    );
     final resolvedWarningSignature =
-        previousMonitoring.data()?['resolvedWarningSignature'] as String? ?? '';
+        previousMonitoringData['resolvedWarningSignature'] as String? ?? '';
     final warningResolved =
         warningSignature.isNotEmpty &&
         warningSignature == resolvedWarningSignature;
@@ -150,7 +153,7 @@ class WellnessSignalService {
       profileData['name'] as String? ?? user.displayName,
       fallback: 'Student',
     );
-    final previousHistory = previousMonitoring.data()?['stressHistory'];
+    final previousHistory = previousMonitoringData['stressHistory'];
     final stressHistory = <String, double>{
       if (previousHistory is Map)
         for (final entry in previousHistory.entries)
@@ -190,6 +193,15 @@ class WellnessSignalService {
           : 'ai_minimized_payload',
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+
+    if (effectiveWarningSeverity == JournalWarningSeverity.critical) {
+      await AdminAlertService.publishCriticalWarningAlert(
+        userId: user.uid,
+        displayName: displayName,
+        warningSignature: warningSignature,
+        modelResult: result,
+      );
+    }
   }
 
   static String _dateKey(DateTime date) {
@@ -205,6 +217,19 @@ class WellnessSignalService {
       (runningTotal, steps) => runningTotal + steps,
     );
     return total / positiveSteps.length;
+  }
+
+  static Future<Map<String, dynamic>> _readMonitoringDataIfAllowed(
+    DocumentReference<Map<String, dynamic>> monitoringRef,
+  ) async {
+    try {
+      return (await monitoringRef.get()).data() ?? <String, dynamic>{};
+    } on FirebaseException catch (error) {
+      if (error.code == 'permission-denied') {
+        return <String, dynamic>{};
+      }
+      rethrow;
+    }
   }
 }
 

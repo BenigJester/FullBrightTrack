@@ -54,6 +54,7 @@ class JournalWarningService {
     _WarningTerm('breakdown', 'breakdown'),
     _WarningTerm('give up', 'giving up'),
     _WarningTerm('cannot cope', 'cannot cope'),
+    _WarningTerm('cant cope', 'cannot cope'),
     _WarningTerm("can't cope", 'cannot cope'),
     _WarningTerm('sin esperanza', 'hopeless'),
     _WarningTerm('no puedo mas', 'cannot cope'),
@@ -182,7 +183,7 @@ class JournalWarningService {
 
   static List<String> _matchedTerms(String lower, List<_WarningTerm> terms) {
     final matches = terms
-        .where((term) => lower.contains(_normalizeForMatching(term.pattern)))
+        .where((term) => _containsNormalizedTerm(lower, term.pattern))
         .map((term) => term.canonical)
         .toList();
 
@@ -219,6 +220,15 @@ class JournalWarningService {
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  static bool _containsNormalizedTerm(String normalizedText, String pattern) {
+    final normalizedPattern = _normalizeForMatching(pattern);
+    if (normalizedPattern.isEmpty) return false;
+
+    final textWithBoundaries = ' $normalizedText ';
+    final patternWithBoundaries = ' $normalizedPattern ';
+    return textWithBoundaries.contains(patternWithBoundaries);
   }
 
   static String _foldLatin(String value) {
