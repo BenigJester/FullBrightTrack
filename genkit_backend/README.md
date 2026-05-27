@@ -2,7 +2,9 @@
 
 This is the server-side AI endpoint for Admin Monitoring stress scoring.
 
-It accepts minimized numeric data from the Flutter app and optional short warning snippets. It does not require raw journal text or task titles.
+Backend version: `0.2.0`
+
+It accepts minimized numeric data from the Flutter app and optional privacy-safe critical warning labels. It does not require raw journal text, task titles, or personal journal reasons.
 
 ## Local Run
 
@@ -30,7 +32,7 @@ $body = @{
   activeTaskCount = 4
   completedTaskCount = 6
   overdueTaskCount = 2
-  warningSnippets = @("short warning line only")
+  warningSnippets = @("want to die")
   journalWarningWeight = 0.3
   journalWarningSeverity = "stress"
 } | ConvertTo-Json -Compress
@@ -43,6 +45,8 @@ Optional model override:
 ```powershell
 $env:GROQ_MODEL="llama-3.3-70b-versatile"
 ```
+
+The backend also has a deterministic local fallback if Groq is unavailable or returns an invalid response.
 
 ## Deploy To Render
 

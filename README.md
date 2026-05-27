@@ -2,7 +2,7 @@
 
 FullBrightTrack is a Flutter productivity and wellbeing app for students. It combines step tracking, mood check-ins, journaling, task management, streak tracking, and Firestore leaderboards in one mobile experience.
 
-Current app version: `0.3.0-alpha`
+Current app version: `0.4.0-alpha+4`
 
 ## Features
 
@@ -16,6 +16,7 @@ Current app version: `0.3.0-alpha`
 - Streak dashboard for step and mood consistency.
 - Firestore leaderboard using combined step and mood streak points.
 - Admin Monitoring for minimized wellbeing summaries, stress ranking, charts, and warning signals.
+- Admin warning resolution workflow and daily stress history charting.
 - Groq-backed AI stress estimate endpoint with local fallback scoring.
 - Account flows for email/password and Google sign-in.
 - App Check support for Firebase protection.
@@ -165,7 +166,7 @@ Minimized admin monitoring summaries are stored under:
 admin_monitoring/{uid}
 ```
 
-These summaries contain numeric wellbeing signals, weighted journal warning severity, AI/local stress score, rank, confidence, and short warning snippets. Raw journal text and task titles are not copied into admin monitoring.
+These summaries contain numeric wellbeing signals, weighted journal warning severity, AI/local stress score, rank, confidence, daily stress history, and privacy-safe critical warning labels. Raw journal text and task titles are not copied into admin monitoring.
 
 ## Suggested Firestore Rules
 
@@ -201,7 +202,11 @@ service cloud.firestore {
 
     match /admin_monitoring/{userId} {
       allow read: if isAdmin();
-      allow write: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['resolvedWarningSignature', 'resolvedWarningAt']);
+      allow delete: if false;
     }
   }
 }
@@ -247,6 +252,10 @@ Current test coverage includes:
 - Refresh controller presence
 - Startup/loading behavior
 - Task parsing and deadline logic
+- Display name validation
+- Stress scoring direction for step activity
+- Wellness signal step averaging
+- Multilingual journal warning detection with privacy-safe labels
 
 ## Development Notes
 
