@@ -112,7 +112,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             ),
           )
         : storedModelResult;
-    final dailyStress = {for (final day in dateKeys) day: modelResult.score};
+    final dailyStress = _stressHistory(data, dateKeys);
+    dailyStress[_dateKey(DateTime.now())] = modelResult.score;
 
     return _StudentWellnessSummary(
       uid: doc.id,
@@ -152,6 +153,20 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         modelResult: modelResult,
       ),
     );
+  }
+
+  Map<String, double> _stressHistory(
+    Map<String, dynamic> data,
+    List<String> dateKeys,
+  ) {
+    final history = data['stressHistory'];
+    if (history is! Map) return <String, double>{};
+
+    return {
+      for (final entry in history.entries)
+        if (dateKeys.contains(entry.key) && entry.value is num)
+          entry.key.toString(): (entry.value as num).toDouble(),
+    };
   }
 
   StressModelResult _resolvedWarningModelResult({
@@ -254,100 +269,109 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(22, 8, 22, 28),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              const Text(
-                "Stress rank guide",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 14),
-              _GuideRow(label: "70+", value: "High", color: Colors.red),
-              _GuideRow(
-                label: "45-69",
-                value: "Elevated",
-                color: Colors.deepOrange,
-              ),
-              _GuideRow(
-                label: "25-44",
-                value: "Moderate",
-                color: Colors.amber.shade700,
-              ),
-              const _GuideRow(label: "<25", value: "Low", color: Colors.green),
-              const SizedBox(height: 18),
-              const Text(
-                "Journal warning guide",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 10),
-              _GuideRow(
-                label: "1.0",
-                value: "Critical warning",
-                color: Colors.red,
-              ),
-              _GuideRow(
-                label: "0.65",
-                value: "Elevated concern",
-                color: Colors.deepOrange,
-              ),
-              _GuideRow(
-                label: "0.3",
-                value: "Normal stress day",
-                color: Colors.amber.shade700,
-              ),
-              _GuideRow(
-                label: "Green",
-                value: "Balanced or highly positive contribution",
-                color: Colors.green,
-              ),
-              _GuideRow(
-                label: "Yellow",
-                value: "A bit negative contribution",
-                color: Colors.amber.shade700,
-              ),
-              _GuideRow(
-                label: "Red",
-                value: "Highly negative contribution",
-                color: Colors.red,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                "Critical phrases include self-harm or death-intent language such as wanting to die. Elevated phrases include hopelessness, panic, depression, breakdown, or giving up. Normal stress phrases include tired, drained, burnout, overwhelmed, or stress.",
-                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "For privacy, Admin Monitoring shows contribution labels instead of exact steps, mood log counts, journal counts, or task counts. AI receives minimized numeric signals for scoring. Only matched critical warning words or phrases are shown or sent, not the full journal text or personal reason.",
-                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Supported non-English warning phrases are matched locally and converted to privacy-safe English labels before scoring. No full journal text is translated or sent to AI.",
-                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                "Mood signal guide",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Mood index 0 means sad/high stress risk, while 3 means happy/lower stress risk. High intensity strengthens the selected mood, so sad with max intensity should increase the stress estimate.",
-                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                "Step activity uses 4000 steps as the daily goal. Reaching 4000 or more steps is highly positive and should reduce the activity-related stress signal.",
-                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                "Scores use minimized mood, steps, journal warning weight, and task signals. AI output is an estimate and requires human review before action.",
-                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-              ),
-            ],
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                const Text(
+                  "Admin guide",
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  "Use this as a review aid. AI stress ranks are estimates and need human judgment before any action.",
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                ),
+                const SizedBox(height: 14),
+                _GuideSection(
+                  title: "Stress rank",
+                  children: [
+                    _GuideRow(label: "70+", value: "High", color: Colors.red),
+                    _GuideRow(
+                      label: "45-69",
+                      value: "Elevated",
+                      color: Colors.deepOrange,
+                    ),
+                    _GuideRow(
+                      label: "25-44",
+                      value: "Moderate",
+                      color: Colors.amber.shade700,
+                    ),
+                    const _GuideRow(
+                      label: "<25",
+                      value: "Low",
+                      color: Colors.green,
+                    ),
+                  ],
+                ),
+                _GuideSection(
+                  title: "Signal colors",
+                  children: [
+                    _GuideRow(
+                      label: "Green",
+                      value: "Balanced or highly positive",
+                      color: Colors.green,
+                    ),
+                    _GuideRow(
+                      label: "Yellow",
+                      value: "A bit negative",
+                      color: Colors.amber.shade700,
+                    ),
+                    _GuideRow(
+                      label: "Red",
+                      value: "Highly negative",
+                      color: Colors.red,
+                    ),
+                  ],
+                ),
+                _GuideSection(
+                  title: "Journal warnings",
+                  children: [
+                    _GuideRow(
+                      label: "1.0",
+                      value: "Critical self-harm or danger wording",
+                      color: Colors.red,
+                    ),
+                    _GuideRow(
+                      label: "0.65",
+                      value: "Hopelessness, panic, depression, giving up",
+                      color: Colors.deepOrange,
+                    ),
+                    _GuideRow(
+                      label: "0.3",
+                      value: "Normal stress words such as tired or burnout",
+                      color: Colors.amber.shade700,
+                    ),
+                  ],
+                ),
+                _GuideNote(
+                  icon: Icons.privacy_tip_outlined,
+                  title: "Privacy",
+                  text:
+                      "Admin Monitoring shows contribution labels instead of exact step, mood, journal, or task counts. Only matched critical warning words or phrases are shown; full journal text is not sent to AI or admins.",
+                ),
+                _GuideNote(
+                  icon: Icons.translate_rounded,
+                  title: "Language support",
+                  text:
+                      "Supported non-English warning phrases are matched locally and converted to privacy-safe English labels before scoring.",
+                ),
+                _GuideNote(
+                  icon: Icons.insights_rounded,
+                  title: "Mood and steps",
+                  text:
+                      "Mood index 0 means sad/high stress risk and 3 means happy/lower risk. A sad mood with high intensity raises risk. 4000 or more recorded average daily steps is highly positive.",
+                ),
+                _GuideNote(
+                  icon: Icons.bar_chart_rounded,
+                  title: "Chart",
+                  text:
+                      "The chart averages saved stress estimates for each day in the selected range. A dash means no stress estimate was saved for that day.",
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -488,6 +512,13 @@ class _StressChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final points = _aggregateStress(students, range);
+    final average = points.where((point) => point.hasData).isEmpty
+        ? 0.0
+        : points
+                  .where((point) => point.hasData)
+                  .map((point) => point.value)
+                  .reduce((a, b) => a + b) /
+              points.where((point) => point.hasData).length;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -505,9 +536,21 @@ class _StressChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Stress signal chart",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  "Stress signal chart",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              _ChartSummaryPill(value: average, label: _rangeLabel(range)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "Averages only saved stress estimates for each day.",
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -532,7 +575,9 @@ class _StressChart extends StatelessWidget {
                                 ),
                                 child: Container(
                                   decoration: BoxDecoration(
-                                    color: _stressColor(point.value),
+                                    color: point.hasData
+                                        ? _stressColor(point.value)
+                                        : Colors.grey.shade300,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                 ),
@@ -549,6 +594,14 @@ class _StressChart extends StatelessWidget {
                               fontSize: 10,
                             ),
                           ),
+                          if (!point.hasData)
+                            Text(
+                              "-",
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 10,
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -557,6 +610,34 @@ class _StressChart extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ChartSummaryPill extends StatelessWidget {
+  const _ChartSummaryPill({required this.value, required this.label});
+
+  final double value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _stressColor(value);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        "$label avg ${value.toStringAsFixed(0)}",
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -651,7 +732,9 @@ class _StudentCard extends StatelessWidget {
                     child: Container(
                       height: max(8, point.value / 100 * 54),
                       decoration: BoxDecoration(
-                        color: _stressColor(point.value),
+                        color: point.hasData
+                            ? _stressColor(point.value)
+                            : Colors.grey.shade300,
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
@@ -957,9 +1040,90 @@ class _GuideRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GuideSection extends StatelessWidget {
+  const _GuideSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _GuideNote extends StatelessWidget {
+  const _GuideNote({
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: Colors.deepOrange),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  text,
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1279,10 +1443,17 @@ class _PersonalMlFeatures {
 }
 
 class _ChartPoint {
-  const _ChartPoint({required this.label, required this.value});
+  const _ChartPoint({
+    required this.label,
+    required this.value,
+    required this.count,
+  });
 
   final String label;
   final double value;
+  final int count;
+
+  bool get hasData => count > 0;
 }
 
 enum _AdminRange { day, week, month }
@@ -1297,10 +1468,19 @@ List<_ChartPoint> _aggregateStress(
   final scopedKeys = _keysForRange(keys, range);
 
   return scopedKeys.map((key) {
-    final values = students.map((student) => student.dailyStress[key] ?? 0);
-    final average = values.reduce((a, b) => a + b) / students.length;
+    final values = students
+        .where((student) => student.dailyStress.containsKey(key))
+        .map((student) => student.dailyStress[key] ?? 0)
+        .toList();
+    final average = values.isEmpty
+        ? 0.0
+        : values.reduce((a, b) => a + b) / values.length;
 
-    return _ChartPoint(label: _shortLabel(key, range), value: average);
+    return _ChartPoint(
+      label: _shortLabel(key, range),
+      value: average,
+      count: values.length,
+    );
   }).toList();
 }
 
@@ -1315,6 +1495,7 @@ List<_ChartPoint> _studentPoints(
         (key) => _ChartPoint(
           label: _shortLabel(key, range),
           value: student.dailyStress[key] ?? 0,
+          count: student.dailyStress.containsKey(key) ? 1 : 0,
         ),
       )
       .toList();
@@ -1367,6 +1548,17 @@ String _shortLabel(String key, _AdminRange range) {
   }
 
   return "${parts[1]}/${parts[2]}";
+}
+
+String _rangeLabel(_AdminRange range) {
+  switch (range) {
+    case _AdminRange.day:
+      return 'Day';
+    case _AdminRange.week:
+      return 'Week';
+    case _AdminRange.month:
+      return 'Month';
+  }
 }
 
 String _dateKey(DateTime date) {

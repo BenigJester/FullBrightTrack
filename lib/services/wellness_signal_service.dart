@@ -150,6 +150,14 @@ class WellnessSignalService {
       profileData['name'] as String? ?? user.displayName,
       fallback: 'Student',
     );
+    final previousHistory = previousMonitoring.data()?['stressHistory'];
+    final stressHistory = <String, double>{
+      if (previousHistory is Map)
+        for (final entry in previousHistory.entries)
+          if (dateKeys.contains(entry.key) && entry.value is num)
+            entry.key.toString(): (entry.value as num).toDouble(),
+      _dateKey(now): result.score,
+    };
 
     await monitoringRef.set({
       'uid': user.uid,
@@ -176,6 +184,7 @@ class WellnessSignalService {
       'confidence': result.confidence,
       'modelVersion': result.modelVersion,
       'rationale': result.rationale,
+      'stressHistory': stressHistory,
       'source': result.modelVersion == LocalStressModelService.modelVersion
           ? 'local_fallback'
           : 'ai_minimized_payload',

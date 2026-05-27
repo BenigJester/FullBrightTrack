@@ -10,7 +10,23 @@ class JournalWarningService {
     _WarningTerm('hurt myself', 'self-harm'),
     _WarningTerm('i want to die', 'want to die'),
     _WarningTerm('want to die', 'want to die'),
+    _WarningTerm('quiero morir', 'want to die'),
+    _WarningTerm('me quiero morir', 'want to die'),
+    _WarningTerm('quiero matarme', 'self-harm intent'),
+    _WarningTerm('quiero suicidarme', 'suicide'),
+    _WarningTerm('no quiero vivir', 'do not want to live'),
+    _WarningTerm('hacerme dano', 'self-harm'),
+    _WarningTerm('me voy a hacer dano', 'self-harm'),
+    _WarningTerm('je veux mourir', 'want to die'),
+    _WarningTerm('je veux me suicider', 'suicide'),
+    _WarningTerm('je ne veux plus vivre', 'do not want to live'),
+    _WarningTerm('aku ingin mati', 'want to die'),
+    _WarningTerm('saya ingin mati', 'want to die'),
+    _WarningTerm('aku mau mati', 'want to die'),
+    _WarningTerm('saya mau mati', 'want to die'),
+    _WarningTerm('tidak mau hidup', 'do not want to live'),
     _WarningTerm('gusto kong mamatay', 'want to die'),
+    _WarningTerm('gusto ko mamatay', 'want to die'),
     _WarningTerm('gusto ko nang mamatay', 'want to die'),
     _WarningTerm('ayoko na mabuhay', 'do not want to live'),
     _WarningTerm('hindi ko na kaya mabuhay', 'do not want to live'),
@@ -21,6 +37,11 @@ class JournalWarningService {
     _WarningTerm('saktan sarili ko', 'self-harm'),
     _WarningTerm('saktan ang sarili ko', 'self-harm'),
     _WarningTerm('sasaktan ko sarili ko', 'self-harm'),
+    _WarningTerm('gusto ko na mamatay', 'want to die'),
+    _WarningTerm('dili nako ganahan mabuhi', 'do not want to live'),
+    _WarningTerm('di nako ganahan mabuhi', 'do not want to live'),
+    _WarningTerm('dili na ko ganahan mabuhi', 'do not want to live'),
+    _WarningTerm('patyon nako akong kaugalingon', 'self-harm intent'),
   ];
 
   static const _elevatedTerms = [
@@ -34,6 +55,19 @@ class JournalWarningService {
     _WarningTerm('give up', 'giving up'),
     _WarningTerm('cannot cope', 'cannot cope'),
     _WarningTerm("can't cope", 'cannot cope'),
+    _WarningTerm('sin esperanza', 'hopeless'),
+    _WarningTerm('no puedo mas', 'cannot cope'),
+    _WarningTerm('ya no puedo', 'cannot cope'),
+    _WarningTerm('me rindo', 'giving up'),
+    _WarningTerm('panico', 'panic'),
+    _WarningTerm('ansiedad', 'anxiety'),
+    _WarningTerm('deprimido', 'depression'),
+    _WarningTerm('deprimida', 'depression'),
+    _WarningTerm('desesperado', 'hopeless'),
+    _WarningTerm('desesperada', 'hopeless'),
+    _WarningTerm('putus asa', 'hopeless'),
+    _WarningTerm('menyerah', 'giving up'),
+    _WarningTerm('tidak sanggup', 'cannot cope'),
     _WarningTerm('wala nang pag asa', 'hopeless'),
     _WarningTerm('wala ng pag asa', 'hopeless'),
     _WarningTerm('walang pag asa', 'hopeless'),
@@ -46,6 +80,10 @@ class JournalWarningService {
     _WarningTerm('susuko na ako', 'giving up'),
     _WarningTerm('ayoko na', 'giving up'),
     _WarningTerm('panic ako', 'panic'),
+    _WarningTerm('wala nay paglaum', 'hopeless'),
+    _WarningTerm('di na nako kaya', 'cannot cope'),
+    _WarningTerm('dili na nako kaya', 'cannot cope'),
+    _WarningTerm('mosuko na ko', 'giving up'),
   ];
 
   static const _stressTerms = [
@@ -59,6 +97,17 @@ class JournalWarningService {
     _WarningTerm('tired', 'tired'),
     _WarningTerm('drained', 'drained'),
     _WarningTerm('pressure', 'pressure'),
+    _WarningTerm('estres', 'stress'),
+    _WarningTerm('estresado', 'stress'),
+    _WarningTerm('estresada', 'stress'),
+    _WarningTerm('cansado', 'tired'),
+    _WarningTerm('cansada', 'tired'),
+    _WarningTerm('agotado', 'exhausted'),
+    _WarningTerm('agotada', 'exhausted'),
+    _WarningTerm('tertekan', 'pressure'),
+    _WarningTerm('stres', 'stress'),
+    _WarningTerm('lelah', 'tired'),
+    _WarningTerm('capek', 'tired'),
     _WarningTerm('pagod', 'tired'),
     _WarningTerm('pagod na pagod', 'exhausted'),
     _WarningTerm('sobrang pagod', 'exhausted'),
@@ -68,6 +117,9 @@ class JournalWarningService {
     _WarningTerm('nakakapagod', 'tired'),
     _WarningTerm('naddrain', 'drained'),
     _WarningTerm('napapagod', 'tired'),
+    _WarningTerm('kapoy', 'tired'),
+    _WarningTerm('kapoy kaayo', 'exhausted'),
+    _WarningTerm('kapoy na kaayo', 'exhausted'),
   ];
 
   static JournalWarningSummary analyze(String text) {
@@ -163,11 +215,47 @@ class JournalWarningService {
   }
 
   static String _normalizeForMatching(String value) {
-    return value
-        .toLowerCase()
+    return _foldLatin(value.toLowerCase())
         .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
+  }
+
+  static String _foldLatin(String value) {
+    const replacements = {
+      'á': 'a',
+      'à': 'a',
+      'â': 'a',
+      'ä': 'a',
+      'ã': 'a',
+      'å': 'a',
+      'é': 'e',
+      'è': 'e',
+      'ê': 'e',
+      'ë': 'e',
+      'í': 'i',
+      'ì': 'i',
+      'î': 'i',
+      'ï': 'i',
+      'ó': 'o',
+      'ò': 'o',
+      'ô': 'o',
+      'ö': 'o',
+      'õ': 'o',
+      'ú': 'u',
+      'ù': 'u',
+      'û': 'u',
+      'ü': 'u',
+      'ñ': 'n',
+      'ç': 'c',
+    };
+
+    var folded = value;
+    for (final entry in replacements.entries) {
+      folded = folded.replaceAll(entry.key, entry.value);
+    }
+
+    return folded;
   }
 
   static String _safeSnippet(

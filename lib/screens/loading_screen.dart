@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:productivity_and_wellbeing/services/step_foreground_service.dart';
@@ -89,11 +90,19 @@ class _LoadingScreenState extends State<LoadingScreen>
     final appData = Provider.of<AppData>(context, listen: false);
 
     try {
+      await HomeTabService.loadCached(appData);
+
       _setLoadingText("Checking account...");
-      await AuthService.refreshGoogleProfile();
+      final profileSync = _runInBackground(
+        AuthService.refreshGoogleProfile(),
+        label: 'Profile refresh',
+      );
 
       _setLoadingText("Loading daily motivation...");
-      await HomeTabService.preload(appData);
+      final homePreload = _runInBackground(
+        HomeTabService.preload(appData),
+        label: 'Home preload',
+      );
 
       _setLoadingText("Starting step tracker...");
 
@@ -105,15 +114,29 @@ class _LoadingScreenState extends State<LoadingScreen>
 
       await requestNotificationPermission();
       await StepForegroundService.start();
-      await StepsService.instance.initialize(appData);
+      final stepsInit = StepsService.instance.initialize(appData);
 
       _setLoadingText("Syncing wellness data...");
       await Future.wait([
+        stepsInit,
         MoodService.instance.initialize(appData),
         JournalService.initialize(appData),
-        StreakService.preload(appData),
       ]);
-      await WellnessSignalService.publishCurrentUserSignals();
+
+      unawaited(
+        Future.wait([
+          profileSync,
+          homePreload,
+          _runInBackground(
+            StreakService.preload(appData),
+            label: 'Streak sync',
+          ),
+          _runInBackground(
+            WellnessSignalService.publishCurrentUserSignals(),
+            label: 'Wellness signal sync',
+          ),
+        ]),
+      );
 
       _setLoadingText("Preparing dashboard...");
 
@@ -133,6 +156,12 @@ class _LoadingScreenState extends State<LoadingScreen>
         loadingText = "Failed to initialize app";
       });
     }
+  }
+
+  Future<void> _runInBackground(Future<void> future, {required String label}) {
+    return future.catchError((error) {
+      debugPrint("$label failed: $error");
+    });
   }
 
   @override
