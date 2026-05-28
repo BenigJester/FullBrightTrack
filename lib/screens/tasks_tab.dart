@@ -44,6 +44,8 @@ class _TasksTabState extends State<TasksTab> {
   String? _openSection = 'active';
   Timer? _refreshTimer;
 
+  bool _isAddTaskSheetOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -581,221 +583,249 @@ class _TasksTabState extends State<TasksTab> {
   // ================= ADD TASK =================
 
   void _showAddTaskDialog() {
+    if (_isAddTaskSheetOpen) return;
+
+    _isAddTaskSheetOpen = true;
+
     final titleController = TextEditingController();
     DateTime? selectedDeadline;
     String? localError;
+    bool isCreating = false;
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return Container(
-              padding: EdgeInsets.only(
-                left: 20,
-                right: 20,
-                top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-              ),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ================= HANDLE =================
-                  Center(
-                    child: Container(
-                      width: 50,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // ================= TITLE =================
-                  const Text(
-                    "Create New Task",
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  Text(
-                    "Stay organized and track your progress",
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // ================= TASK INPUT =================
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: TextField(
-                      controller: titleController,
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        hintText: "What do you need to do?",
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ================= DEADLINE PICKER =================
-                  InkWell(
-                    onTap: () async {
-                      final pickedDate = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime(2100),
-                      );
-
-                      if (!context.mounted || pickedDate == null) return;
-
-                      final pickedTime = await showTimePicker(
-                        context: context,
-                        initialTime: TimeOfDay.now(),
-                      );
-
-                      if (!context.mounted || pickedTime == null) return;
-
-                      final combined = DateTime(
-                        pickedDate.year,
-                        pickedDate.month,
-                        pickedDate.day,
-                        pickedTime.hour,
-                        pickedTime.minute,
-                      );
-
-                      setState(() {
-                        selectedDeadline = combined;
-                        localError = null;
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.orange.shade50,
-                            Colors.deepOrange.shade50,
-                          ],
+    try {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              return Container(
+                padding: EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                  top: 20,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                ),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ================= HANDLE =================
+                    Center(
+                      child: Container(
+                        width: 50,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.orange.shade100),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.calendar_today,
-                            color: Colors.deepOrange,
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // ================= TITLE =================
+                    const Text(
+                      "Create New Task",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    Text(
+                      "Stay organized and track your progress",
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // ================= TASK INPUT =================
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: TextField(
+                        controller: titleController,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          hintText: "What do you need to do?",
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    // ================= DEADLINE PICKER =================
+                    InkWell(
+                      onTap: () async {
+                        final pickedDate = await showDatePicker(
+                          context: context,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2100),
+                        );
+
+                        if (!context.mounted || pickedDate == null) return;
+
+                        final pickedTime = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.now(),
+                        );
+
+                        if (!context.mounted || pickedTime == null) return;
+
+                        final combined = DateTime(
+                          pickedDate.year,
+                          pickedDate.month,
+                          pickedDate.day,
+                          pickedTime.hour,
+                          pickedTime.minute,
+                        );
+
+                        setState(() {
+                          selectedDeadline = combined;
+                          localError = null;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.orange.shade50,
+                              Colors.deepOrange.shade50,
+                            ],
                           ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.orange.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.calendar_today,
+                              color: Colors.deepOrange,
+                            ),
 
-                          const SizedBox(width: 10),
+                            const SizedBox(width: 10),
 
-                          Expanded(
-                            child: Text(
-                              selectedDeadline == null
-                                  ? "Set deadline"
-                                  : _formatDateTime(selectedDeadline!),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                            Expanded(
+                              child: Text(
+                                selectedDeadline == null
+                                    ? "Set deadline"
+                                    : _formatDateTime(selectedDeadline!),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                          ),
 
-                          const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // ================= ERROR =================
-                  if (localError != null)
-                    Text(
-                      localError!,
-                      style: const TextStyle(color: Colors.red, fontSize: 13),
-                    ),
-
-                  const SizedBox(height: 20),
-
-                  // ================= ACTION BUTTON =================
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepOrange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 16,
+                            ),
+                          ],
                         ),
                       ),
-                      onPressed: () async {
-                        final navigator = Navigator.of(context);
-                        final messenger = ScaffoldMessenger.of(context);
+                    ),
 
-                        final now = DateTime.now();
+                    const SizedBox(height: 10),
 
-                        if (titleController.text.trim().isEmpty ||
-                            selectedDeadline == null) {
-                          setState(() {
-                            localError = "Please complete all fields.";
-                          });
-                          return;
-                        }
+                    // ================= ERROR =================
+                    if (localError != null)
+                      Text(
+                        localError!,
+                        style: const TextStyle(color: Colors.red, fontSize: 13),
+                      ),
 
-                        if (selectedDeadline!.isBefore(now)) {
-                          setState(() {
-                            localError = "Deadline must be in the future.";
-                          });
-                          return;
-                        }
+                    const SizedBox(height: 20),
 
-                        try {
-                          await addTask(
-                            titleController.text.trim(),
-                            selectedDeadline!,
-                          );
+                    // ================= ACTION BUTTON =================
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepOrange,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        onPressed: isCreating
+                            ? null
+                            : () async {
+                                final navigator = Navigator.of(context);
+                                final messenger = ScaffoldMessenger.of(context);
 
-                          if (!mounted) return;
+                                final now = DateTime.now();
 
-                          navigator.pop();
-                        } catch (e) {
-                          if (!mounted) return;
+                                if (titleController.text.trim().isEmpty ||
+                                    selectedDeadline == null) {
+                                  setModalState(() {
+                                    localError = "Please complete all fields.";
+                                  });
+                                  return;
+                                }
 
-                          messenger.showSnackBar(
-                            SnackBar(content: Text("Error: $e")),
-                          );
-                        }
-                      },
-                      child: const Text(
-                        "Create Task",
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                                if (selectedDeadline!.isBefore(now)) {
+                                  setModalState(() {
+                                    localError =
+                                        "Deadline must be in the future.";
+                                  });
+                                  return;
+                                }
+
+                                setModalState(() {
+                                  isCreating = true;
+                                  localError = null;
+                                });
+
+                                try {
+                                  await addTask(
+                                    titleController.text.trim(),
+                                    selectedDeadline!,
+                                  );
+
+                                  if (!context.mounted) return;
+
+                                  navigator.pop();
+                                } catch (e) {
+                                  if (!context.mounted) return;
+
+                                  setModalState(() {
+                                    isCreating = false;
+                                  });
+
+                                  messenger.showSnackBar(
+                                    SnackBar(content: Text("Error: $e")),
+                                  );
+                                }
+                              },
+                        child: Text(
+                          isCreating ? "Creating..." : "Create Task",
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      titleController.dispose();
+      _isAddTaskSheetOpen = false;
+    }
   }
 
   // ============== DELETE ACTIVE TASK ===================
