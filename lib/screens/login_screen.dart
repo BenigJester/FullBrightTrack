@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import 'consent_screen.dart';
 import 'register_screen.dart';
 
 class LoginTab extends StatefulWidget {
@@ -12,7 +13,8 @@ class LoginTab extends StatefulWidget {
   State<LoginTab> createState() => _LoginTabState();
 }
 
-class _LoginTabState extends State<LoginTab> {
+class _LoginTabState extends State<LoginTab>
+    with SingleTickerProviderStateMixin {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
 
@@ -21,6 +23,30 @@ class _LoginTabState extends State<LoginTab> {
   bool isLoading = false;
   bool obscurePassword = true;
   bool rawDataConsent = false;
+  late final AnimationController _consentAttentionController;
+  late final Animation<double> _consentShake;
+
+  @override
+  void initState() {
+    super.initState();
+    _consentAttentionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 430),
+    );
+    _consentShake =
+        TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0, end: -10), weight: 1),
+          TweenSequenceItem(tween: Tween(begin: -10, end: 10), weight: 2),
+          TweenSequenceItem(tween: Tween(begin: 10, end: -7), weight: 2),
+          TweenSequenceItem(tween: Tween(begin: -7, end: 7), weight: 2),
+          TweenSequenceItem(tween: Tween(begin: 7, end: 0), weight: 1),
+        ]).animate(
+          CurvedAnimation(
+            parent: _consentAttentionController,
+            curve: Curves.easeOut,
+          ),
+        );
+  }
 
   Future<void> createUserIfNotExists() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -51,10 +77,26 @@ class _LoginTabState extends State<LoginTab> {
   bool _requireRawDataConsent() {
     if (rawDataConsent) return true;
 
+    HapticFeedback.mediumImpact();
+    _consentAttentionController.forward(from: 0);
     showErrorSnackBar(
       'Please agree to raw wellness data processing before continuing.',
     );
     return false;
+  }
+
+  Future<void> _openConsentScreen() async {
+    if (isLoading) return;
+
+    final agreed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const ConsentScreen()),
+    );
+
+    if (!mounted) return;
+    if (agreed == true) {
+      setState(() => rawDataConsent = true);
+    }
   }
 
   Future<void> login() async {
@@ -80,6 +122,22 @@ class _LoginTabState extends State<LoginTab> {
       // ================= LOGIN =================
 
       await auth.login(email, password);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && !user.emailVerified) {
+        if (mounted) {
+          final shouldSend = await _showEmailVerificationDialog(email);
+          if (shouldSend == true) {
+            await user.sendEmailVerification();
+            if (mounted) {
+              showErrorSnackBar(
+                'A new confirmation email was sent. Use the newest link only.',
+              );
+            }
+          }
+        }
+        await FirebaseAuth.instance.signOut();
+        return;
+      }
       await createUserIfNotExists();
     } on FirebaseAuthException catch (e) {
       if (mounted) {
@@ -100,6 +158,41 @@ class _LoginTabState extends State<LoginTab> {
         setState(() => isLoading = false);
       }
     }
+  }
+
+  Future<bool?> _showEmailVerificationDialog(String email) async {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text("Confirm your account"),
+          content: Text(
+            "This account is not confirmed yet. Use the newest confirmation email only, because Firebase links are single-use and older links may show expired or already used.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("I have the email"),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text("Send new email"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _consentAttentionController.dispose();
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
   }
 
   Future<void> googleLogin() async {
@@ -217,11 +310,13 @@ class _LoginTabState extends State<LoginTab> {
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height - 40,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: MediaQuery.of(context).size.height - 40,
+            ),
             child: Column(
               children: [
-                const Spacer(),
+                const SizedBox(height: 28),
 
                 // ================= LOGO =================
                 Container(
@@ -304,9 +399,18 @@ class _LoginTabState extends State<LoginTab> {
                   ),
                 ),
 
-                const SizedBox(height: 28),
+                const SizedBox(height: 20),
 
-                _rawDataConsentCard(),
+                AnimatedBuilder(
+                  animation: _consentShake,
+                  builder: (context, child) {
+                    return Transform.translate(
+                      offset: Offset(_consentShake.value, 0),
+                      child: child,
+                    );
+                  },
+                  child: _rawDataConsentCard(),
+                ),
 
                 const SizedBox(height: 20),
 
@@ -426,7 +530,7 @@ class _LoginTabState extends State<LoginTab> {
                   ],
                 ),
 
-                const Spacer(),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -438,26 +542,25 @@ class _LoginTabState extends State<LoginTab> {
   // ================= INPUT =================
 
   Widget _rawDataConsentCard() {
+    final borderColor = rawDataConsent
+        ? Colors.green
+        : _consentAttentionController.isAnimating
+        ? Colors.redAccent
+        : Colors.grey.shade300;
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: isLoading
-            ? null
-            : () {
-                setState(() {
-                  rawDataConsent = !rawDataConsent;
-                });
-              },
+        onTap: rawDataConsent ? null : _openConsentScreen,
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: rawDataConsent
-                  ? const Color(0xFFFF7A59)
-                  : Colors.grey.shade300,
+              color: borderColor,
+              width: rawDataConsent ? 1.4 : 1,
             ),
           ),
           child: Row(
@@ -465,25 +568,39 @@ class _LoginTabState extends State<LoginTab> {
             children: [
               Checkbox(
                 value: rawDataConsent,
-                activeColor: const Color(0xFFFF7A59),
-                onChanged: isLoading
-                    ? null
-                    : (value) {
-                        setState(() {
-                          rawDataConsent = value ?? false;
-                        });
-                      },
+                activeColor: Colors.green,
+                onChanged: rawDataConsent ? null : (_) => _openConsentScreen(),
               ),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(
-                  'I have read and agree to let FullBrightTrack process my raw wellness data, including moods, journal entries, tasks, and steps, for AI wellness insights and admin safety alerts.',
-                  style: TextStyle(
-                    color: Colors.grey.shade800,
-                    fontSize: 12.5,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      rawDataConsent
+                          ? 'Agreement confirmed'
+                          : 'AI wellness data agreement required',
+                      style: TextStyle(
+                        color: rawDataConsent
+                            ? Colors.green.shade700
+                            : Colors.grey.shade900,
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      rawDataConsent
+                          ? 'You consented to AI wellness analysis and safety alerts.'
+                          : 'Tap to review the consent screen and scroll to the end before agreeing.',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.2,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

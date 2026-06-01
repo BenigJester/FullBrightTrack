@@ -192,6 +192,12 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 const [],
       warningSignature: warningSignature,
       resolvedWarningSignature: resolvedWarningSignature,
+      warningJournalId: (data['warningJournalId'] as String?) ?? '',
+      warningJournalText: warningResolved
+          ? ''
+          : (data['warningJournalText'] as String?) ?? '',
+      warningJournalCreatedAt:
+          (data['warningJournalCreatedAt'] as String?) ?? '',
       mlFeatures: _PersonalMlFeatures(
         avgMoodIndex: avgMoodIndex,
         avgMoodIntensity: avgMoodIntensity,
@@ -984,14 +990,18 @@ class _StudentCard extends StatelessWidget {
                   ],
                 ),
               ),
-              _RankBadge(rank: student.stressRank, score: student.stressScore),
+              _RankBadge(
+                rank: student.stressRank,
+                score: student.stressScore,
+                confidence: student.mlFeatures.modelResult.confidence,
+              ),
             ],
           ),
           const SizedBox(height: 14),
           if (hasActiveWarning) ...[
             _WarningSnippetPanel(
               snippets: student.warningSnippets,
-              onResolved: () => _resolveWarning(context),
+              onVerify: () => _openVerification(context),
             ),
             const SizedBox(height: 14),
           ],
@@ -1022,39 +1032,27 @@ class _StudentCard extends StatelessWidget {
     );
   }
 
-  Future<void> _resolveWarning(BuildContext context) async {
+  Future<void> _openVerification(BuildContext context) async {
     if (student.warningSignature.isEmpty) return;
 
-    await FirebaseFirestore.instance
-        .collection('admin_monitoring')
-        .doc(student.uid)
-        .set({
-          'resolvedWarningSignature': student.warningSignature,
-          'resolvedWarningAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-    await AdminAlertService.markResolvedForSignature(
-      userId: student.uid,
-      warningSignature: student.warningSignature,
-    );
-
-    await onResolved();
-
     if (!context.mounted) return;
-
-    ScaffoldMessenger.of(
+    await Navigator.push<void>(
       context,
-    ).showSnackBar(const SnackBar(content: Text("Warning marked as resolved")));
+      MaterialPageRoute(
+        builder: (_) => _WarningVerificationScreen(
+          student: student,
+          onResolved: onResolved,
+        ),
+      ),
+    );
   }
 }
 
 class _WarningSnippetPanel extends StatelessWidget {
-  const _WarningSnippetPanel({
-    required this.snippets,
-    required this.onResolved,
-  });
+  const _WarningSnippetPanel({required this.snippets, required this.onVerify});
 
   final List<String> snippets;
-  final Future<void> Function() onResolved;
+  final Future<void> Function() onVerify;
 
   @override
   Widget build(BuildContext context) {
@@ -1096,11 +1094,217 @@ class _WarningSnippetPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: onResolved,
-              icon: const Icon(Icons.check_circle_outline_rounded),
-              label: const Text("Mark resolved"),
+            child: FilledButton.icon(
+              onPressed: onVerify,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.fact_check_rounded),
+              label: const Text("Verify warning"),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WarningVerificationScreen extends StatefulWidget {
+  const _WarningVerificationScreen({
+    required this.student,
+    required this.onResolved,
+  });
+
+  final _StudentWellnessSummary student;
+  final Future<void> Function() onResolved;
+
+  @override
+  State<_WarningVerificationScreen> createState() =>
+      _WarningVerificationScreenState();
+}
+
+class _WarningVerificationScreenState
+    extends State<_WarningVerificationScreen> {
+  bool _saving = false;
+
+  Future<void> _markResolved() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('admin_monitoring')
+          .doc(widget.student.uid)
+          .set({
+            'resolvedWarningSignature': widget.student.warningSignature,
+            'resolvedWarningAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+      await AdminAlertService.markResolvedForSignature(
+        userId: widget.student.uid,
+        warningSignature: widget.student.warningSignature,
+      );
+      await widget.onResolved();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Warning verified and marked resolved")),
+      );
+      Navigator.pop(context);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final journalText = widget.student.warningJournalText.trim();
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FC),
+      appBar: AppBar(
+        title: const Text("Verify Warning"),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.red,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.student.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
+                          ),
+                          Text(
+                            widget.student.email.isEmpty
+                                ? widget.student.uid
+                                : widget.student.email,
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  "Warning signals",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final snippet in widget.student.warningSnippets)
+                      Chip(
+                        label: Text(snippet),
+                        backgroundColor: Colors.red.withValues(alpha: 0.1),
+                        side: BorderSide.none,
+                        labelStyle: const TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  "Raw journal entry",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F8FC),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.05),
+                    ),
+                  ),
+                  child: Text(
+                    journalText.isEmpty
+                        ? "Raw journal text is unavailable. The student may not have consented to raw AI data sharing yet."
+                        : journalText,
+                    style: TextStyle(
+                      color: Colors.grey.shade800,
+                      height: 1.45,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                if (widget.student.warningJournalCreatedAt.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    "Created: ${widget.student.warningJournalCreatedAt}",
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          FilledButton.icon(
+            onPressed: _saving ? null : _markResolved,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.deepOrange,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            icon: _saving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.verified_rounded),
+            label: Text(_saving ? "Saving..." : "Mark resolved after review"),
           ),
         ],
       ),
@@ -1445,10 +1649,15 @@ class _MetricPill extends StatelessWidget {
 }
 
 class _RankBadge extends StatelessWidget {
-  const _RankBadge({required this.rank, required this.score});
+  const _RankBadge({
+    required this.rank,
+    required this.score,
+    required this.confidence,
+  });
 
   final String rank;
   final double score;
+  final double confidence;
 
   @override
   Widget build(BuildContext context) {
@@ -1462,10 +1671,16 @@ class _RankBadge extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Text(
-            rank,
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
-          ),
+          if (confidence > 0)
+            Text(
+              rank,
+              style: TextStyle(color: color, fontWeight: FontWeight.bold),
+            )
+          else
+            Text(
+              "Pending",
+              style: TextStyle(color: color, fontWeight: FontWeight.bold),
+            ),
           Text(
             score.toStringAsFixed(0),
             style: TextStyle(color: color, fontSize: 12),
@@ -1559,6 +1774,9 @@ class _StudentWellnessSummary {
     required this.warningSnippets,
     required this.warningSignature,
     required this.resolvedWarningSignature,
+    required this.warningJournalId,
+    required this.warningJournalText,
+    required this.warningJournalCreatedAt,
     required this.mlFeatures,
   });
 
@@ -1580,6 +1798,9 @@ class _StudentWellnessSummary {
   final List<String> warningSnippets;
   final String warningSignature;
   final String resolvedWarningSignature;
+  final String warningJournalId;
+  final String warningJournalText;
+  final String warningJournalCreatedAt;
   final _PersonalMlFeatures mlFeatures;
 
   bool get warningResolved {

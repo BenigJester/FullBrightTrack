@@ -10,12 +10,21 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
+  static const _pageSize = 100;
   late Future<LeaderboardResult> _leaderboard;
+  final _pageController = TextEditingController(text: '1');
+  int _page = 1;
 
   @override
   void initState() {
     super.initState();
     _leaderboard = LeaderboardService.loadMonthlyLeaderboard();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _refresh() async {
@@ -55,6 +64,21 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             return _EmptyState(onRefresh: _refresh);
           }
 
+          final totalPages = (data.entries.length / _pageSize).ceil().clamp(
+            1,
+            999999,
+          );
+          if (_page > totalPages) {
+            _page = totalPages;
+            _pageController.text = '$_page';
+          }
+          final start = (_page - 1) * _pageSize;
+          final visibleEntries = data.entries
+              .skip(start)
+              .take(_pageSize)
+              .toList();
+          final showPaging = data.entries.length > _pageSize;
+
           return RefreshIndicator(
             color: Colors.deepOrange,
             onRefresh: _refresh,
@@ -75,11 +99,118 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 18),
-                ...data.entries.map((entry) => _RankingTile(entry)),
+                ...visibleEntries.map((entry) => _RankingTile(entry)),
+                if (showPaging) ...[
+                  const SizedBox(height: 8),
+                  _LeaderboardPager(
+                    page: _page,
+                    totalPages: totalPages,
+                    controller: _pageController,
+                    onPrevious: _page > 1
+                        ? () {
+                            setState(() {
+                              _page--;
+                              _pageController.text = '$_page';
+                            });
+                          }
+                        : null,
+                    onNext: _page < totalPages
+                        ? () {
+                            setState(() {
+                              _page++;
+                              _pageController.text = '$_page';
+                            });
+                          }
+                        : null,
+                    onSubmitted: (value) {
+                      final parsed = int.tryParse(value.trim());
+                      if (parsed == null) {
+                        _pageController.text = '$_page';
+                        return;
+                      }
+                      setState(() {
+                        _page = parsed.clamp(1, totalPages);
+                        _pageController.text = '$_page';
+                      });
+                    },
+                  ),
+                ],
               ],
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _LeaderboardPager extends StatelessWidget {
+  const _LeaderboardPager({
+    required this.page,
+    required this.totalPages,
+    required this.controller,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onSubmitted,
+  });
+
+  final int page;
+  final int totalPages;
+  final TextEditingController controller;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: onPrevious,
+              icon: const Icon(Icons.chevron_left_rounded),
+              label: const Text('Previous'),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 74,
+            child: TextField(
+              controller: controller,
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              onSubmitted: onSubmitted,
+              decoration: InputDecoration(
+                isDense: true,
+                helperText: 'of $totalPages',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: onNext,
+              icon: const Icon(Icons.chevron_right_rounded),
+              label: const Text('Next'),
+            ),
+          ),
+        ],
       ),
     );
   }

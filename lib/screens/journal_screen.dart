@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../services/journal_warning_service.dart';
 import '../services/wellness_signal_service.dart';
+import '../services/moodscreen_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
@@ -473,9 +474,12 @@ class _JournalScreenState extends State<JournalScreen> {
             'created_at': FieldValue.serverTimestamp(),
           });
       await WellnessSignalService.publishCurrentUserSignals();
+      await MoodService.instance.applyJournalMood(text);
 
       if (mounted) {
-        _showJournalMessage("Saved");
+        _showJournalMessage(
+          "Saved. AI refreshed today's mood from your entry.",
+        );
 
         _controller.clear();
 

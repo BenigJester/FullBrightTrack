@@ -1,4 +1,7 @@
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_data.dart';
@@ -53,7 +56,7 @@ class StepsTab extends StatelessWidget {
 
                 const SizedBox(height: 12),
 
-                _buildInsightsList(data),
+                _buildAiStepsInsight(data),
               ],
             ),
           ),
@@ -321,75 +324,126 @@ class StepsTab extends StatelessWidget {
 
   // ================= INSIGHTS =================
 
-  Widget _buildInsightsList(AppData data) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
+  Widget _buildAiStepsInsight(AppData data) {
+    Stream<DocumentSnapshot<Map<String, dynamic>>>? stream;
+    if (Firebase.apps.isNotEmpty && FirebaseAuth.instance.currentUser != null) {
+      stream = FirebaseFirestore.instance
+          .collection('admin_monitoring')
+          .doc(FirebaseAuth.instance.currentUser!.uid)
+          .snapshots();
+    }
 
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final monitoring = snapshot.data?.data() ?? const <String, dynamic>{};
+        final insight = _stepsInsightFromAi(data, monitoring);
+        final rationale =
+            (monitoring['rationale'] as List?)?.whereType<String>().take(2) ??
+            const <String>[];
 
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withValues(alpha: 0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-
-        children: [
-          const Text(
-            "Health Insights",
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-
-          const SizedBox(height: 14),
-
-          ...data.insights.map((insight) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(14),
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.orange.withValues(alpha: 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
               ),
-
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  const Text("\u{1F525}", style: TextStyle(fontSize: 18)),
-
-                  const SizedBox(width: 10),
-
-                  Expanded(
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.deepOrange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Colors.deepOrange,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
                     child: Text(
-                      insight,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.4,
+                      "AI Steps Insight",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                         color: Colors.black87,
-                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                 ],
               ),
-            );
-          }),
-        ],
-      ),
+              const SizedBox(height: 14),
+              Text(
+                insight,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.45,
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (rationale.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final reason in rationale)
+                      Chip(
+                        label: Text(reason),
+                        backgroundColor: Colors.orange.shade50,
+                        side: BorderSide.none,
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  String _stepsInsightFromAi(AppData data, Map<String, dynamic> monitoring) {
+    final rank = (monitoring['stressRank'] as String?) ?? '';
+    final confidence = ((monitoring['confidence'] as num?)?.toDouble() ?? 0);
+    final activeTasks = (monitoring['activeTaskCount'] as num?)?.toInt() ?? 0;
+    final overdueTasks = (monitoring['overdueTaskCount'] as num?)?.toInt() ?? 0;
+
+    if (confidence <= 0) {
+      return data.insights.isNotEmpty
+          ? data.insights.first
+          : "Keep your steps steady today. A short walk after study blocks can help build a reliable baseline.";
+    }
+
+    if (rank == 'High' || overdueTasks > 2) {
+      return "Your wellness signals suggest pressure is high. Keep movement gentle today: short 5-10 minute walks, hydration, and breaks between urgent tasks are safer than pushing for a big step goal.";
+    }
+
+    if (rank == 'Elevated' || activeTasks > 5) {
+      return "You have enough activity signals for a focused plan. Try splitting steps into two short walks around study or task sessions so movement supports energy without adding pressure.";
+    }
+
+    if (data.stepsToday < data.stepGoal) {
+      final remaining = data.stepGoal - data.stepsToday;
+      return "Your overall signals look manageable. You are $remaining steps from today's goal, so a calm walk or light movement break can help finish the day strong.";
+    }
+
+    return "You reached today's step goal while your wellness signals look stable. Keep the routine consistent and avoid overdoing it when your body feels tired.";
   }
 }
 

@@ -5,6 +5,7 @@ import 'streak_service.dart';
 import '../models/app_data.dart';
 import 'leaderboard_service.dart';
 import 'wellness_signal_service.dart';
+import 'genkit_stress_ai_service.dart';
 
 class MoodService {
   // ================= SINGLETON =================
@@ -103,6 +104,41 @@ class MoodService {
     );
 
     _autoSaveMood(overrideIntensity: value);
+  }
+
+  Future<void> applyJournalMood(String journalText) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final result = await GenkitStressAiService.analyzeJournalMood(journalText);
+    final today = _todayKey();
+
+    _appData?.updateMoodData(
+      moodIndex: result.moodIndex,
+      moodIntensity: result.moodIntensity,
+    );
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('mood')
+        .doc(today)
+        .set({
+          'mood_index': result.moodIndex,
+          'intensity': result.moodIntensity,
+          'source': result.source,
+          'aiCriteria': result.criteria,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+    if (_appData != null) {
+      final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
+      updatedMoodData[today] = result.moodIndex;
+      StreakService.refreshMoodStreak(_appData!, updatedMoodData);
+      await LeaderboardService.publishCurrentUserSummary(
+        todaySteps: _appData!.stepsToday,
+      );
+    }
   }
 
   // ================= AUTO SAVE =================

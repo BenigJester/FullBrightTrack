@@ -50,7 +50,26 @@ Future<Response> _stress(Request request, String? apiKey) async {
   Map<String, dynamic>? input;
 
   try {
-    input = await _readInput(request);
+    final body = await request.readAsString();
+    final decoded = _decodeBody(body);
+    final payload =
+        decoded is Map<String, dynamic> &&
+            decoded['data'] is Map<String, dynamic>
+        ? decoded['data'] as Map<String, dynamic>
+        : decoded;
+
+    if (payload is Map<String, dynamic> &&
+        payload['mode'] == 'journal-warning') {
+      final result = await _journalWarningWithGroq(payload, apiKey);
+      return Response.ok(jsonEncode(result));
+    }
+
+    if (payload is Map<String, dynamic> && payload['mode'] == 'journal-mood') {
+      final result = await _journalMoodWithGroq(payload, apiKey);
+      return Response.ok(jsonEncode(result));
+    }
+
+    input = _readInputFromDecoded(decoded);
     final result = await _scoreWithGroq(input, apiKey);
 
     return Response.ok(jsonEncode(result));
@@ -66,10 +85,107 @@ Future<Response> _stress(Request request, String? apiKey) async {
   }
 }
 
+Future<Map<String, dynamic>> _journalMoodWithGroq(
+  Map<String, dynamic> payload,
+  String? apiKey,
+) async {
+  final text = (payload['rawJournalText'] as String?)?.trim() ?? '';
+  if (text.isEmpty) {
+    return const {
+      'moodIndex': 1,
+      'moodIntensity': 0.5,
+      'criteria': 'No journal text was provided.',
+      'modelVersion': _fallbackVersion,
+    };
+  }
+
+  if (apiKey == null || apiKey.isEmpty) {
+    return {
+      'moodIndex': 1,
+      'moodIntensity': 0.5,
+      'criteria': 'Missing Groq API key; app should use local fallback.',
+      'modelVersion': _fallbackVersion,
+      'fallbackReason': 'missing_groq_api_key',
+    };
+  }
+
+  try {
+    final response = await http
+        .post(
+          Uri.parse(_groqEndpoint),
+          headers: {
+            HttpHeaders.authorizationHeader: 'Bearer $apiKey',
+            HttpHeaders.contentTypeHeader: 'application/json',
+          },
+          body: jsonEncode({
+            'model': _groqModel(),
+            'messages': [
+              {
+                'role': 'system',
+                'content':
+                    'Estimate a student mood check-in from raw journal text. Return only compact JSON.',
+              },
+              {
+                'role': 'user',
+                'content':
+                    'Understand English and Philippine languages. Return exactly {"moodIndex":1,"moodIntensity":0.5,"criteria":""}. moodIndex: 0=sad/high distress, 1=low or neutral, 2=okay/steady, 3=happy/energized. moodIntensity is 0.0 to 1.0. Journal: ${jsonEncode(text)}',
+              },
+            ],
+            'temperature': 0,
+            'max_tokens': 140,
+            'response_format': {'type': 'json_object'},
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return {
+        'moodIndex': 1,
+        'moodIntensity': 0.5,
+        'criteria': 'Groq mood request failed.',
+        'modelVersion': _fallbackVersion,
+        'fallbackReason': 'groq_http_${response.statusCode}',
+      };
+    }
+
+    final parsed = _extractJson(_groqMessageContent(jsonDecode(response.body)));
+    if (parsed == null) {
+      return {
+        'moodIndex': 1,
+        'moodIntensity': 0.5,
+        'criteria': 'Groq returned an invalid mood response.',
+        'modelVersion': _fallbackVersion,
+        'fallbackReason': 'groq_non_json_response',
+      };
+    }
+
+    return {
+      'moodIndex': ((_asDouble(parsed['moodIndex']) ?? 1).round()).clamp(0, 3),
+      'moodIntensity': (_asDouble(parsed['moodIntensity']) ?? 0.5)
+          .clamp(0, 1)
+          .toDouble(),
+      'criteria': ((parsed['criteria'] as String?) ?? '').trim(),
+      'modelVersion': '$_modelVersion+journal-mood',
+    };
+  } catch (error) {
+    return {
+      'moodIndex': 1,
+      'moodIntensity': 0.5,
+      'criteria': 'Mood request failed.',
+      'modelVersion': _fallbackVersion,
+      'fallbackReason': 'journal_mood_failed',
+      'providerError': _shortError(error.toString()),
+    };
+  }
+}
+
 Future<Map<String, dynamic>> _readInput(Request request) async {
   final body = await request.readAsString();
   final decoded = _decodeBody(body);
+  return _readInputFromDecoded(decoded);
+}
 
+Map<String, dynamic> _readInputFromDecoded(Object? decoded) {
   if (decoded is! Map<String, dynamic>) {
     throw const _BadRequest('Expected a JSON object.');
   }
@@ -99,6 +215,110 @@ Future<Map<String, dynamic>> _readInput(Request request) async {
     'journalWarningSeverity':
         (payload['journalWarningSeverity'] as String?) ?? 'none',
   };
+}
+
+Future<Map<String, dynamic>> _journalWarningWithGroq(
+  Map<String, dynamic> payload,
+  String? apiKey,
+) async {
+  final text = (payload['rawJournalText'] as String?)?.trim() ?? '';
+  if (text.isEmpty) {
+    return const {
+      'severity': 'none',
+      'weight': 0,
+      'warningSignalTerm': '',
+      'confidence': 0,
+      'modelVersion': _fallbackVersion,
+    };
+  }
+
+  if (apiKey == null || apiKey.isEmpty) {
+    return {
+      'severity': 'none',
+      'weight': 0,
+      'warningSignalTerm': '',
+      'confidence': 0,
+      'modelVersion': _fallbackVersion,
+      'fallbackReason': 'missing_groq_api_key',
+    };
+  }
+
+  try {
+    final response = await http
+        .post(
+          Uri.parse(_groqEndpoint),
+          headers: {
+            HttpHeaders.authorizationHeader: 'Bearer $apiKey',
+            HttpHeaders.contentTypeHeader: 'application/json',
+          },
+          body: jsonEncode({
+            'model': _groqModel(),
+            'messages': [
+              {
+                'role': 'system',
+                'content':
+                    'Classify student journal safety warning severity. Return only compact JSON.',
+              },
+              {
+                'role': 'user',
+                'content':
+                    'Understand English, Tagalog, Cebuano, Ilocano, Hiligaynon, and mixed Philippine languages. Return exactly {"severity":"none|stress|elevated|critical","weight":0,"warningSignalTerm":"","confidence":0}. Use a short non-graphic warningSignalTerm. Journal: ${jsonEncode(text)}',
+              },
+            ],
+            'temperature': 0,
+            'max_tokens': 140,
+            'response_format': {'type': 'json_object'},
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return {
+        'severity': 'none',
+        'weight': 0,
+        'warningSignalTerm': '',
+        'confidence': 0,
+        'modelVersion': _fallbackVersion,
+        'fallbackReason': 'groq_http_${response.statusCode}',
+      };
+    }
+
+    final parsed = _extractJson(_groqMessageContent(jsonDecode(response.body)));
+    if (parsed == null) {
+      return {
+        'severity': 'none',
+        'weight': 0,
+        'warningSignalTerm': '',
+        'confidence': 0,
+        'modelVersion': _fallbackVersion,
+        'fallbackReason': 'groq_non_json_response',
+      };
+    }
+
+    final severity = (parsed['severity'] as String?)?.toLowerCase() ?? 'none';
+    return {
+      'severity': ['stress', 'elevated', 'critical'].contains(severity)
+          ? severity
+          : 'none',
+      'weight': (_asDouble(parsed['weight']) ?? 0).clamp(0, 1).toDouble(),
+      'warningSignalTerm': ((parsed['warningSignalTerm'] as String?) ?? '')
+          .trim(),
+      'confidence': (_asDouble(parsed['confidence']) ?? 0)
+          .clamp(0, 1)
+          .toDouble(),
+      'modelVersion': '$_modelVersion+journal-warning',
+    };
+  } catch (error) {
+    return {
+      'severity': 'none',
+      'weight': 0,
+      'warningSignalTerm': '',
+      'confidence': 0,
+      'modelVersion': _fallbackVersion,
+      'fallbackReason': 'journal_warning_failed',
+      'providerError': _shortError(error.toString()),
+    };
+  }
 }
 
 Future<Map<String, dynamic>> _tryReadInput(Request request) async {

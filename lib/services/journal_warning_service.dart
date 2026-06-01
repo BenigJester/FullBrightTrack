@@ -141,6 +141,41 @@ class JournalWarningService {
     return JournalWarningSummary(findings: findings);
   }
 
+  static JournalWarningSummary fromAi({
+    required String severity,
+    required double weight,
+    required String warningSignalTerm,
+  }) {
+    final normalizedSeverity = severity.trim().toLowerCase();
+    final resolvedSeverity = switch (normalizedSeverity) {
+      'critical' || 'high' => JournalWarningSeverity.critical,
+      'elevated' || 'medium' => JournalWarningSeverity.elevated,
+      'stress' || 'moderate' || 'low' => JournalWarningSeverity.stress,
+      _ => JournalWarningSeverity.none,
+    };
+
+    if (resolvedSeverity == JournalWarningSeverity.none) {
+      return const JournalWarningSummary(findings: []);
+    }
+
+    final term = warningSignalTerm.trim().isEmpty
+        ? resolvedSeverity.label.toLowerCase()
+        : warningSignalTerm.trim();
+
+    return JournalWarningSummary(
+      findings: [
+        JournalWarningFinding(
+          snippet: resolvedSeverity == JournalWarningSeverity.critical
+              ? term
+              : '',
+          severity: resolvedSeverity,
+          weight: weight.clamp(0, 1).toDouble(),
+          matchedTerms: [term],
+        ),
+      ],
+    );
+  }
+
   static List<String> extractWarningSnippets(String text) {
     return analyze(text).snippets;
   }

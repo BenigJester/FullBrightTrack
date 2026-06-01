@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -172,10 +174,12 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _refreshHome(AppData data) async {
-    await HomeTabService.preload(data);
-    await StepsService.instance.refreshNow();
-    await MoodService.instance.loadTodayMood();
-    await JournalService.initialize(data);
+    await Future.wait<void>([
+      HomeTabService.preload(data),
+      StepsService.instance.refreshNow(),
+      MoodService.instance.loadTodayMood(),
+    ]);
+    unawaited(JournalService.initialize(data));
   }
 
   String _moodEmoji(int mood) {

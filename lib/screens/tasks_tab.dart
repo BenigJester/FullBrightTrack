@@ -3,33 +3,97 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../services/task_content_guard_service.dart';
+import '../services/task_content_blocked_exception.dart';
 import '../services/wellness_signal_service.dart';
 
 class Task {
   final String id;
   final String title;
-  final DateTime deadline;
+  final DateTime? deadline;
+  final bool dateOnly;
   final bool isCompleted;
+  final List<TaskFlag> flags;
 
   Task({
     required this.id,
     required this.title,
     required this.deadline,
+    required this.dateOnly,
     required this.isCompleted,
+    required this.flags,
   });
 
-  bool get isOverdue => !isCompleted && DateTime.now().isAfter(deadline);
+  bool get isOverdue =>
+      deadline != null && !isCompleted && DateTime.now().isAfter(deadline!);
 
   static Task? fromFirestore(String id, Map<String, dynamic> data) {
     final rawDeadline = data['deadline'];
-    if (rawDeadline is! Timestamp) return null;
+    final title = (data['title'] as String?)?.trim() ?? '';
+    if (title.isEmpty) return null;
 
     return Task(
       id: id,
-      title: (data['title'] as String?)?.trim() ?? '',
-      deadline: rawDeadline.toDate(),
+      title: title,
+      deadline: rawDeadline is Timestamp ? rawDeadline.toDate() : null,
+      dateOnly: data['dateOnly'] == true,
       isCompleted: data['isCompleted'] == true,
+      flags: TaskFlag.detect(title),
     );
+  }
+}
+
+class TaskFlag {
+  const TaskFlag({
+    required this.label,
+    required this.color,
+    required this.icon,
+    required this.keywords,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+  final List<String> keywords;
+
+  static const urgent = TaskFlag(
+    label: 'Urgent',
+    color: Colors.red,
+    icon: Icons.priority_high_rounded,
+    keywords: ['urgent', 'asap', 'immediately', 'emergency'],
+  );
+  static const exam = TaskFlag(
+    label: 'Exam',
+    color: Colors.deepPurple,
+    icon: Icons.school_rounded,
+    keywords: ['exam', 'quiz', 'test', 'midterm', 'final'],
+  );
+  static const assignment = TaskFlag(
+    label: 'Assignment',
+    color: Colors.blue,
+    icon: Icons.assignment_rounded,
+    keywords: ['assignment', 'homework', 'report', 'project', 'submit'],
+  );
+  static const study = TaskFlag(
+    label: 'Study',
+    color: Colors.teal,
+    icon: Icons.menu_book_rounded,
+    keywords: ['study', 'review', 'read', 'practice'],
+  );
+  static const personal = TaskFlag(
+    label: 'Personal',
+    color: Colors.orange,
+    icon: Icons.self_improvement_rounded,
+    keywords: ['rest', 'break', 'sleep', 'health', 'family'],
+  );
+
+  static const values = [urgent, exam, assignment, study, personal];
+
+  static List<TaskFlag> detect(String title) {
+    final normalized = title.toLowerCase();
+    return values.where((flag) {
+      return flag.keywords.any((keyword) => normalized.contains(keyword));
+    }).toList();
   }
 }
 
@@ -97,33 +161,30 @@ class _TasksTabState extends State<TasksTab> {
                 .doc(user.uid)
                 .collection('tasks');
 
-            taskSubscription = ref
-                .orderBy('deadline')
-                .snapshots()
-                .listen(
-                  (snapshot) {
-                    final tasks = snapshot.docs
-                        .map((doc) => Task.fromFirestore(doc.id, doc.data()))
-                        .whereType<Task>()
-                        .where((task) => task.title.isNotEmpty)
-                        .toList();
+            taskSubscription = ref.snapshots().listen(
+              (snapshot) {
+                final tasks = snapshot.docs
+                    .map((doc) => Task.fromFirestore(doc.id, doc.data()))
+                    .whereType<Task>()
+                    .where((task) => task.title.isNotEmpty)
+                    .toList();
 
-                    if (!controller.isClosed) controller.add(tasks);
-                  },
-                  onError: (Object error, StackTrace stackTrace) {
-                    final signedOut = FirebaseAuth.instance.currentUser == null;
-                    if (signedOut &&
-                        error is FirebaseException &&
-                        error.code == 'permission-denied') {
-                      if (!controller.isClosed) controller.add(const []);
-                      return;
-                    }
+                if (!controller.isClosed) controller.add(tasks);
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                final signedOut = FirebaseAuth.instance.currentUser == null;
+                if (signedOut &&
+                    error is FirebaseException &&
+                    error.code == 'permission-denied') {
+                  if (!controller.isClosed) controller.add(const []);
+                  return;
+                }
 
-                    if (!controller.isClosed) {
-                      controller.addError(error, stackTrace);
-                    }
-                  },
-                );
+                if (!controller.isClosed) {
+                  controller.addError(error, stackTrace);
+                }
+              },
+            );
           },
           onError: (Object error, StackTrace stackTrace) {
             if (!controller.isClosed) {
@@ -144,7 +205,7 @@ class _TasksTabState extends State<TasksTab> {
   // ================= CRUD =================
 
   Future<void> toggleTask(Task task, bool value) async {
-    if (task.isCompleted || task.deadline.isBefore(DateTime.now())) {
+    if (task.isCompleted || task.isOverdue) {
       return;
     }
 
@@ -155,24 +216,206 @@ class _TasksTabState extends State<TasksTab> {
     await WellnessSignalService.publishCurrentUserSignals();
   }
 
-  Future<void> addTask(String title, DateTime deadline) async {
+  Future<void> addTask(
+    String title,
+    DateTime? deadline, {
+    bool dateOnly = false,
+  }) async {
     final trimmedTitle = title.trim();
     if (trimmedTitle.isEmpty) return;
-    if (!deadline.isAfter(DateTime.now())) return;
+    if (deadline != null && !deadline.isAfter(DateTime.now())) return;
+    final guardResult = TaskContentGuardService.validate(trimmedTitle);
+    if (!guardResult.isAllowed) {
+      throw TaskContentBlockedException(guardResult);
+    }
 
     final taskRef = _taskRef;
     if (taskRef == null) return;
 
     await taskRef.add({
       'title': trimmedTitle,
-      'deadline': deadline,
+      'deadline': ?deadline,
+      'dateOnly': dateOnly,
+      'flags': TaskFlag.detect(trimmedTitle).map((flag) => flag.label).toList(),
       'isCompleted': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
     await WellnessSignalService.publishCurrentUserSignals();
   }
 
-  String _formatDateTime(DateTime dt) {
+  Future<void> deleteTaskGroup({
+    required String title,
+    required List<Task> tasks,
+  }) async {
+    if (tasks.isEmpty) return;
+
+    final taskRef = _taskRef;
+    if (taskRef == null) return;
+
+    final confirmed = await _showClearTasksDialog(
+      context,
+      title: title,
+      count: tasks.length,
+    );
+    if (confirmed != true) return;
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (final task in tasks.take(450)) {
+      batch.delete(taskRef.doc(task.id));
+    }
+
+    await batch.commit();
+    await WellnessSignalService.publishCurrentUserSignals();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text("$title tasks cleared"),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  Future<bool?> _showClearTasksDialog(
+    BuildContext context, {
+    required String title,
+    required int count,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.delete_sweep_rounded,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Text("Clear $title tasks?")),
+            ],
+          ),
+          content: Text(
+            "This will permanently delete $count ${count == 1 ? "task" : "tasks"} from the $title section. This action cannot be undone.",
+            style: TextStyle(color: Colors.grey.shade800, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.delete_outline_rounded),
+              label: const Text("Delete"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showTaskBlockedDialog(
+    BuildContext context,
+    TaskContentGuardResult result,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+          contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.health_and_safety_rounded,
+                  color: Colors.red,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  "Task needs revision",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "FullBrightTrack could not save this task because it may contain ${result.label}.",
+                style: TextStyle(color: Colors.grey.shade800, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  result.guidance,
+                  style: TextStyle(
+                    color: Colors.orange.shade900,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.deepOrange,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Edit task"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _formatDateTime(DateTime dt, {bool dateOnly = false}) {
+    if (dateOnly) {
+      return "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}";
+    }
+
     return "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} "
         "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
   }
@@ -185,10 +428,22 @@ class _TasksTabState extends State<TasksTab> {
     });
   }
 
-  String _timeLeftLabel(DateTime deadline) {
+  String _timeLeftLabel(DateTime? deadline, {bool dateOnly = false}) {
+    if (deadline == null) return "No deadline";
+
     final diff = deadline.difference(DateTime.now());
 
     if (diff.isNegative) return "Overdue";
+    if (dateOnly) {
+      final now = DateTime.now();
+      final sameDay =
+          deadline.year == now.year &&
+          deadline.month == now.month &&
+          deadline.day == now.day;
+      return sameDay
+          ? "Due today"
+          : "Due ${_formatDateTime(deadline, dateOnly: true)}";
+    }
 
     final totalMinutes = diff.inMinutes;
     if (totalMinutes < 1) return "Due now";
@@ -284,10 +539,22 @@ class _TasksTabState extends State<TasksTab> {
 
               final overdueTasks =
                   tasks.where((t) => !t.isCompleted && t.isOverdue).toList()
-                    ..sort((a, b) => b.deadline.compareTo(a.deadline));
+                    ..sort((a, b) {
+                      final aDeadline = a.deadline;
+                      final bDeadline = b.deadline;
+                      if (aDeadline == null || bDeadline == null) return 0;
+                      return bDeadline.compareTo(aDeadline);
+                    });
 
               final completedTasks = tasks.where((t) => t.isCompleted).toList()
-                ..sort((a, b) => b.deadline.compareTo(a.deadline));
+                ..sort((a, b) {
+                  final aDeadline = a.deadline;
+                  final bDeadline = b.deadline;
+                  if (aDeadline == null && bDeadline == null) return 0;
+                  if (aDeadline == null) return 1;
+                  if (bDeadline == null) return -1;
+                  return bDeadline.compareTo(aDeadline);
+                });
 
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(
@@ -306,6 +573,14 @@ class _TasksTabState extends State<TasksTab> {
 
                   const SizedBox(height: 22),
 
+                  _buildTaskRecommendation(
+                    active: activeTasks.length,
+                    overdue: overdueTasks.length,
+                    completed: completedTasks.length,
+                  ),
+
+                  const SizedBox(height: 14),
+
                   // ================= ACTIVE =================
                   buildSection(
                     title: "Active",
@@ -315,6 +590,8 @@ class _TasksTabState extends State<TasksTab> {
                     count: activeTasks.length,
                     tasks: activeTasks,
                     onTap: () => _toggleSection('active'),
+                    onClear: () =>
+                        deleteTaskGroup(title: "Active", tasks: activeTasks),
                   ),
 
                   const SizedBox(height: 14),
@@ -328,6 +605,8 @@ class _TasksTabState extends State<TasksTab> {
                     count: overdueTasks.length,
                     tasks: overdueTasks,
                     onTap: () => _toggleSection('overdue'),
+                    onClear: () =>
+                        deleteTaskGroup(title: "Overdue", tasks: overdueTasks),
                   ),
 
                   const SizedBox(height: 14),
@@ -341,6 +620,10 @@ class _TasksTabState extends State<TasksTab> {
                     count: completedTasks.length,
                     tasks: completedTasks,
                     onTap: () => _toggleSection('completed'),
+                    onClear: () => deleteTaskGroup(
+                      title: "Completed",
+                      tasks: completedTasks,
+                    ),
                   ),
                 ],
               );
@@ -349,6 +632,121 @@ class _TasksTabState extends State<TasksTab> {
         ),
       ),
     );
+  }
+
+  Widget _buildTaskRecommendation({
+    required int active,
+    required int overdue,
+    required int completed,
+  }) {
+    final user = FirebaseAuth.instance.currentUser;
+    final stream = user == null
+        ? null
+        : FirebaseFirestore.instance
+              .collection('admin_monitoring')
+              .doc(user.uid)
+              .snapshots();
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final monitoring = snapshot.data?.data() ?? const <String, dynamic>{};
+        final rank = (monitoring['stressRank'] as String?) ?? 'Pending';
+        final confidence =
+            ((monitoring['confidence'] as num?)?.toDouble() ?? 0);
+        final recommendation = _taskRecommendationText(
+          rank: rank,
+          confidence: confidence,
+          active: active,
+          overdue: overdue,
+          completed: completed,
+        );
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.1)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Colors.deepOrange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Colors.deepOrange,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "AI Task Recommendation",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      recommendation,
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        height: 1.38,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _taskRecommendationText({
+    required String rank,
+    required double confidence,
+    required int active,
+    required int overdue,
+    required int completed,
+  }) {
+    if (confidence <= 0) {
+      return "Create only the next clear action first. Add deadlines when they are real, and leave flexible tasks without one.";
+    }
+
+    if (rank == 'High' || overdue >= 3) {
+      return "Prioritize the smallest urgent task, pause anything optional, and ask for support before adding more work today.";
+    }
+
+    if (rank == 'Elevated' || active >= 6) {
+      return "Your task load looks busy. Group similar school tasks, choose one deadline task for the next hour, then schedule a short reset.";
+    }
+
+    if (completed > active && active > 0) {
+      return "You are clearing tasks well. Keep momentum by setting one focused task with a realistic date or no deadline if it is flexible.";
+    }
+
+    return "Your workload looks manageable. Pick one meaningful task, give it a clear title, and add a date only when timing matters.";
   }
 
   // ================= SECTION =================
@@ -360,6 +758,7 @@ class _TasksTabState extends State<TasksTab> {
     required bool isOpen,
     required int count,
     required VoidCallback onTap,
+    required VoidCallback onClear,
     required List<Task> tasks,
   }) {
     return Column(
@@ -441,6 +840,17 @@ class _TasksTabState extends State<TasksTab> {
                     color: Colors.grey.shade700,
                   ),
                 ),
+                if (count > 0) ...[
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: "Clear $title tasks",
+                    child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: onClear,
+                      icon: Icon(Icons.delete_sweep_rounded, color: color),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -494,7 +904,7 @@ class _TasksTabState extends State<TasksTab> {
   // ================= TASK CARD =================
 
   Widget buildTaskCard(Task task) {
-    final diff = task.deadline.difference(DateTime.now());
+    final diff = task.deadline?.difference(DateTime.now());
 
     Color color;
     String status;
@@ -508,7 +918,15 @@ class _TasksTabState extends State<TasksTab> {
       color = Colors.redAccent;
       status = "Overdue";
       icon = Icons.warning_rounded;
-    } else if (diff.inMinutes <= 60) {
+    } else if (task.deadline == null) {
+      color = Colors.blueGrey;
+      status = "No deadline";
+      icon = Icons.inbox_rounded;
+    } else if (task.dateOnly) {
+      color = Colors.blue;
+      status = _timeLeftLabel(task.deadline, dateOnly: true);
+      icon = Icons.event_rounded;
+    } else if (diff!.inMinutes <= 60) {
       color = Colors.orange;
       status = _timeLeftLabel(task.deadline);
       icon = Icons.access_time_filled_rounded;
@@ -549,7 +967,8 @@ class _TasksTabState extends State<TasksTab> {
           GestureDetector(
             onTap: canInteract
                 ? () async {
-                    if (DateTime.now().isAfter(task.deadline)) {
+                    if (task.deadline != null &&
+                        DateTime.now().isAfter(task.deadline!)) {
                       setState(() {});
                       return;
                     }
@@ -607,6 +1026,17 @@ class _TasksTabState extends State<TasksTab> {
 
                 const SizedBox(height: 8),
 
+                if (task.flags.isNotEmpty) ...[
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final flag in task.flags) _taskFlagChip(flag: flag),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
                 Row(
                   children: [
                     Container(
@@ -630,21 +1060,6 @@ class _TasksTabState extends State<TasksTab> {
                         ),
                       ),
                     ),
-
-                    const SizedBox(width: 8),
-
-                    Expanded(
-                      child: Text(
-                        _formatDateTime(task.deadline),
-
-                        overflow: TextOverflow.ellipsis,
-
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ],
@@ -658,7 +1073,8 @@ class _TasksTabState extends State<TasksTab> {
               color: Colors.redAccent,
 
               onPressed: () async {
-                if (DateTime.now().isAfter(task.deadline)) {
+                if (task.deadline != null &&
+                    DateTime.now().isAfter(task.deadline!)) {
                   setState(() {});
                   return;
                 }
@@ -676,7 +1092,10 @@ class _TasksTabState extends State<TasksTab> {
   void _showAddTaskDialog() {
     final titleController = TextEditingController();
     DateTime? selectedDeadline;
+    bool hasDeadline = false;
+    bool dateOnly = false;
     String? localError;
+    bool isCreating = false;
 
     showModalBottomSheet(
       context: context,
@@ -747,74 +1166,124 @@ class _TasksTabState extends State<TasksTab> {
 
                   const SizedBox(height: 16),
 
-                  // ================= DEADLINE PICKER =================
-                  InkWell(
-                    onTap: () async {
-                      final pickedDate = await showDatePicker(
-                        context: context,
-                        firstDate: DateTime.now(),
-                        lastDate: DateTime(2100),
-                      );
-
-                      if (!context.mounted || pickedDate == null) return;
-
-                      final pickedTime = await showTimePicker(
-                        context: context,
-                        initialTime: TimeOfDay.now(),
-                      );
-
-                      if (!context.mounted || pickedTime == null) return;
-
-                      final combined = DateTime(
-                        pickedDate.year,
-                        pickedDate.month,
-                        pickedDate.day,
-                        pickedTime.hour,
-                        pickedTime.minute,
-                      );
-
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: hasDeadline,
+                    activeThumbColor: Colors.deepOrange,
+                    title: const Text(
+                      "Add deadline",
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text("Optional for flexible tasks"),
+                    onChanged: (value) {
                       setState(() {
-                        selectedDeadline = combined;
+                        hasDeadline = value;
+                        if (!value) {
+                          selectedDeadline = null;
+                          dateOnly = false;
+                        }
                         localError = null;
                       });
                     },
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.orange.shade50,
-                            Colors.deepOrange.shade50,
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.orange.shade100),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.calendar_today,
-                            color: Colors.deepOrange,
+                  ),
+
+                  if (hasDeadline) ...[
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      value: dateOnly,
+                      activeColor: Colors.deepOrange,
+                      title: const Text("Date only"),
+                      subtitle: const Text("No exact time needed"),
+                      onChanged: (value) {
+                        setState(() {
+                          dateOnly = value ?? false;
+                          selectedDeadline = null;
+                          localError = null;
+                        });
+                      },
+                    ),
+                    InkWell(
+                      onTap: () async {
+                        final pickedDate = await showDatePicker(
+                          context: context,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime(2100),
+                        );
+
+                        if (!context.mounted || pickedDate == null) return;
+
+                        TimeOfDay? pickedTime;
+                        if (!dateOnly) {
+                          pickedTime = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay.now(),
+                          );
+
+                          if (!context.mounted || pickedTime == null) return;
+                        }
+
+                        final combined = dateOnly
+                            ? DateTime(
+                                pickedDate.year,
+                                pickedDate.month,
+                                pickedDate.day,
+                                23,
+                                59,
+                              )
+                            : DateTime(
+                                pickedDate.year,
+                                pickedDate.month,
+                                pickedDate.day,
+                                pickedTime!.hour,
+                                pickedTime.minute,
+                              );
+
+                        setState(() {
+                          selectedDeadline = combined;
+                          localError = null;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.orange.shade50,
+                              Colors.deepOrange.shade50,
+                            ],
                           ),
-
-                          const SizedBox(width: 10),
-
-                          Expanded(
-                            child: Text(
-                              selectedDeadline == null
-                                  ? "Set deadline"
-                                  : _formatDateTime(selectedDeadline!),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.orange.shade100),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.calendar_today,
+                              color: Colors.deepOrange,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                selectedDeadline == null
+                                    ? "Set ${dateOnly ? "date" : "deadline"}"
+                                    : _formatDateTime(
+                                        selectedDeadline!,
+                                        dateOnly: dateOnly,
+                                      ),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                          ),
-
-                          const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                        ],
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 16,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
+                  ],
 
                   const SizedBox(height: 10),
 
@@ -838,48 +1307,91 @@ class _TasksTabState extends State<TasksTab> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: () async {
-                        final navigator = Navigator.of(context);
-                        final messenger = ScaffoldMessenger.of(context);
+                      onPressed: isCreating
+                          ? null
+                          : () async {
+                              final navigator = Navigator.of(context);
+                              final messenger = ScaffoldMessenger.of(context);
 
-                        final now = DateTime.now();
+                              final now = DateTime.now();
+                              final title = titleController.text.trim();
 
-                        if (titleController.text.trim().isEmpty ||
-                            selectedDeadline == null) {
-                          setState(() {
-                            localError = "Please complete all fields.";
-                          });
-                          return;
-                        }
+                              if (title.isEmpty) {
+                                setState(() {
+                                  localError = "Please enter a task title.";
+                                });
+                                return;
+                              }
 
-                        if (selectedDeadline!.isBefore(now)) {
-                          setState(() {
-                            localError = "Deadline must be in the future.";
-                          });
-                          return;
-                        }
+                              if (hasDeadline && selectedDeadline == null) {
+                                setState(() {
+                                  localError =
+                                      "Choose a deadline or turn it off.";
+                                });
+                                return;
+                              }
 
-                        try {
-                          await addTask(
-                            titleController.text.trim(),
-                            selectedDeadline!,
-                          );
+                              if (selectedDeadline != null &&
+                                  selectedDeadline!.isBefore(now)) {
+                                setState(() {
+                                  localError =
+                                      "Deadline must be in the future.";
+                                });
+                                return;
+                              }
 
-                          if (!mounted) return;
+                              final guardResult =
+                                  TaskContentGuardService.validate(title);
+                              if (!guardResult.isAllowed) {
+                                await _showTaskBlockedDialog(
+                                  context,
+                                  guardResult,
+                                );
+                                return;
+                              }
 
-                          navigator.pop();
-                        } catch (e) {
-                          if (!mounted) return;
+                              try {
+                                setState(() {
+                                  isCreating = true;
+                                  localError = null;
+                                });
+                                await addTask(
+                                  title,
+                                  hasDeadline ? selectedDeadline : null,
+                                  dateOnly: dateOnly,
+                                );
 
-                          messenger.showSnackBar(
-                            SnackBar(content: Text("Error: $e")),
-                          );
-                        }
-                      },
-                      child: const Text(
-                        "Create Task",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                                if (!mounted) return;
+
+                                navigator.pop();
+                              } on TaskContentBlockedException catch (e) {
+                                if (!context.mounted) return;
+                                await _showTaskBlockedDialog(context, e.result);
+                              } catch (e) {
+                                if (!mounted) return;
+
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text("Error: $e")),
+                                );
+                              } finally {
+                                if (context.mounted) {
+                                  setState(() => isCreating = false);
+                                }
+                              }
+                            },
+                      child: isCreating
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              "Create Task",
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                     ),
                   ),
                 ],
@@ -903,6 +1415,31 @@ class _TasksTabState extends State<TasksTab> {
 
     await taskRef.doc(task.id).delete();
     await WellnessSignalService.publishCurrentUserSignals();
+  }
+
+  Widget _taskFlagChip({required TaskFlag flag}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: flag.color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(flag.icon, color: flag.color, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            flag.label,
+            style: TextStyle(
+              color: flag.color,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ================ CARD =====================

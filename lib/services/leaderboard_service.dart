@@ -51,11 +51,13 @@ class LeaderboardResult {
     required this.entries,
     required this.currentUser,
     required this.monthLabel,
+    required this.totalCount,
   });
 
   final List<LeaderboardEntry> entries;
   final LeaderboardEntry? currentUser;
   final String monthLabel;
+  final int totalCount;
 
   List<LeaderboardEntry> get podium => entries.take(3).toList();
 }
@@ -65,9 +67,7 @@ class LeaderboardService {
 
   static final _firestore = FirebaseFirestore.instance;
 
-  static Future<LeaderboardResult> loadMonthlyLeaderboard({
-    int limit = 30,
-  }) async {
+  static Future<LeaderboardResult> loadMonthlyLeaderboard() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     final now = DateTime.now();
     final monthKey = _monthKey(now);
@@ -115,9 +115,10 @@ class LeaderboardService {
     }
 
     return LeaderboardResult(
-      entries: ranked.take(limit).toList(),
+      entries: ranked,
       currentUser: current,
       monthLabel: _monthLabel(now),
+      totalCount: ranked.length,
     );
   }
 

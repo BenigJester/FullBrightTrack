@@ -9,6 +9,7 @@ import 'tasks_tab.dart';
 import 'mood_tab.dart';
 import 'streaks_tab.dart';
 import 'appbar.dart';
+import 'ai_analysis_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const StepsTab(),
       const TasksTab(),
       const MoodTab(),
+      const AiAnalysisScreen(),
       const StreakTab(),
     ];
 
@@ -96,6 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.emoji_emotions_outlined),
             activeIcon: Icon(Icons.emoji_emotions),
             label: "Mood",
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.insights_outlined),
+            activeIcon: Icon(Icons.insights),
+            label: "AI",
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.local_fire_department_outlined),
@@ -218,10 +225,10 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.82,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
         ),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(22),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,14 +243,14 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: const Icon(
-                      Icons.shield_outlined,
+                      Icons.tune_rounded,
                       color: Colors.deepOrange,
                     ),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
-                      'Allow app access',
+                      'Setup needs attention',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -254,7 +261,7 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
               ),
               const SizedBox(height: 10),
               Text(
-                'FullBrightTrack will still open, but these settings help steps, reminders, and safety alerts work reliably.',
+                'These permissions keep step tracking, reminders, and safety alerts reliable. Review each item below.',
                 style: TextStyle(color: Colors.grey.shade700, height: 1.35),
               ),
               const SizedBox(height: 16),
@@ -282,17 +289,19 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
                 ),
               const SizedBox(height: 10),
               Center(
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.deepOrange,
-                    foregroundColor: Colors.white,
-                    minimumSize: const Size(180, 48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                child: Expanded(
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
+                    child: const Text('Confirm'),
                   ),
-                  child: const Text('Confirm'),
                 ),
               ),
             ],
@@ -303,13 +312,22 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
   }
 
   Widget _issueTile(DeviceReadinessIssue issue) {
+    final busy = busyAction == issue.action;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F8FC),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withValues(alpha: 0.04)),
+        border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.035),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,28 +358,27 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton.icon(
+                  child: FilledButton.icon(
                     onPressed: busyAction == null
                         ? () => handleIssue(issue)
                         : null,
-                    icon: busyAction == issue.action
+                    icon: busy
                         ? const SizedBox(
                             width: 18,
                             height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(
                             Icons.check_circle_outline_rounded,
                             size: 18,
                           ),
-                    label: Text(
-                      busyAction == issue.action ? 'Checking...' : 'Allow',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.deepOrange,
-                      side: BorderSide(
-                        color: Colors.deepOrange.withValues(alpha: 0.35),
-                      ),
+                    label: Text(busy ? 'Checking...' : 'Allow'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(44),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),

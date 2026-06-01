@@ -69,10 +69,14 @@ class _RegisterTabState extends State<RegisterTab> {
     try {
       setState(() => isLoading = true);
 
-      await auth.register(email, password);
+      final user = await auth.register(email, password);
+      await user?.sendEmailVerification();
 
       if (!mounted) return;
 
+      _showSnackBar(
+        "Verification email sent. Please verify before logging in.",
+      );
       Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
       if (e.code == 'email-already-in-use') {

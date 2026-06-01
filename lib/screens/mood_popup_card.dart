@@ -156,12 +156,6 @@ class _MoodPopupCardState extends State<MoodPopupCard> {
               inactiveColor: Colors.orange.shade100,
 
               onChanged: (value) {
-                setState(() {
-                  data.moodIntensity = value;
-                });
-              },
-
-              onChangeEnd: (value) {
                 moodService.updateIntensity(value);
               },
             ),

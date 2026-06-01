@@ -45,12 +45,7 @@ class WellnessSignalService {
         .orderBy('created_at', descending: true)
         .limit(30)
         .get();
-    final taskSnapshot = await userRef
-        .collection('tasks')
-        .where('deadline', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-        .orderBy('deadline', descending: true)
-        .limit(60)
-        .get();
+    final taskSnapshot = await userRef.collection('tasks').limit(60).get();
 
     final recordedSteps = stepsSnapshot.docs
         .map((doc) => (doc.data()['steps'] as num?)?.toInt() ?? 0)
@@ -79,11 +74,11 @@ class WellnessSignalService {
     for (final doc in taskSnapshot.docs) {
       final data = doc.data();
       final deadline = data['deadline'];
-      if (deadline is! Timestamp) continue;
-
       final isCompleted = data['isCompleted'] == true;
       if (isCompleted) {
         completedTasks++;
+      } else if (deadline is! Timestamp) {
+        activeTasks++;
       } else if (deadline.toDate().isBefore(now)) {
         overdueTasks++;
       } else {
@@ -91,20 +86,31 @@ class WellnessSignalService {
       }
     }
 
+    final profileData = profile.data() ?? <String, dynamic>{};
+    final hasRawAiConsent = profileData['rawAiDataConsent'] == true;
+
     var warningSnippets = <String>[];
     var warningFindings = <Map<String, dynamic>>[];
     var warningSignature = '';
+    var warningJournalId = '';
+    var warningJournalText = '';
+    var warningJournalCreatedAt = '';
     var journalWarningWeight = 0.0;
     var journalWarningSeverity = JournalWarningSeverity.none;
     for (final doc in journalSnapshot.docs) {
       final text = (doc.data()['text'] as String?) ?? '';
-      final warningSummary = JournalWarningService.analyze(text);
+      final warningSummary = hasRawAiConsent
+          ? await GenkitStressAiService.analyzeJournalWarning(text)
+          : JournalWarningService.analyze(text);
       if (warningSummary.findings.isEmpty) continue;
 
       warningSnippets = warningSummary.snippets;
       warningFindings = warningSummary.toJsonList();
       warningSignature =
           '${doc.id}:${warningSummary.signatures.take(3).join('|')}';
+      warningJournalId = doc.id;
+      warningJournalText = text;
+      warningJournalCreatedAt = _timestampText(doc.data()['created_at']) ?? '';
       journalWarningWeight = warningSummary.weight;
       journalWarningSeverity = warningSummary.severity;
       break;
@@ -131,8 +137,6 @@ class WellnessSignalService {
         ? JournalWarningSeverity.none
         : journalWarningSeverity;
 
-    final profileData = profile.data() ?? <String, dynamic>{};
-    final hasRawAiConsent = profileData['rawAiDataConsent'] == true;
     final input = StressModelInput(
       avgMoodIndex: avgMoodIndex,
       avgMoodIntensity: avgMoodIntensity,
@@ -193,6 +197,11 @@ class WellnessSignalService {
       'warningSnippets': effectiveWarningSnippets.take(5).toList(),
       'warningFindings': effectiveWarningFindings.take(5).toList(),
       'warningSignature': warningSignature,
+      'warningJournalId': warningResolved ? '' : warningJournalId,
+      'warningJournalText': warningResolved || !hasRawAiConsent
+          ? ''
+          : warningJournalText,
+      'warningJournalCreatedAt': warningResolved ? '' : warningJournalCreatedAt,
       'journalWarningWeight': effectiveWarningWeight,
       'journalWarningSeverity': effectiveWarningSeverity.name,
       'hasDangerWarning':

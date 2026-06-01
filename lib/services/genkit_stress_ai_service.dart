@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'local_stress_model_service.dart';
+import 'journal_warning_service.dart';
 
 class GenkitStressAiService {
   const GenkitStressAiService._();
@@ -82,4 +83,151 @@ class GenkitStressAiService {
       return LocalStressModelService.analyze(input);
     }
   }
+
+  static Future<JournalWarningSummary> analyzeJournalWarning(
+    String journalText,
+  ) async {
+    final fallback = JournalWarningService.analyze(journalText);
+    if (!isConfigured || journalText.trim().isEmpty) return fallback;
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_flowUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'mode': 'journal-warning',
+              'rawJournalText': journalText,
+              'instructions':
+                  'Classify safety severity from raw student journal text. Understand English, Tagalog, Cebuano, Ilocano, Hiligaynon, and mixed Philippine languages. Return severity, weight, and warningSignalTerm.',
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return fallback;
+      }
+
+      final decoded = jsonDecode(response.body);
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      final output = data['result'] is Map<String, dynamic>
+          ? data['result'] as Map<String, dynamic>
+          : data;
+
+      return JournalWarningService.fromAi(
+        severity: (output['severity'] as String?) ?? 'none',
+        weight: ((output['weight'] as num?)?.toDouble() ?? fallback.weight)
+            .clamp(0, 1)
+            .toDouble(),
+        warningSignalTerm:
+            (output['warningSignalTerm'] as String?) ??
+            fallback.snippets.firstOrNull ??
+            '',
+      );
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  static Future<JournalMoodResult> analyzeJournalMood(
+    String journalText,
+  ) async {
+    final fallback = JournalMoodResult.local(journalText);
+    if (!isConfigured || journalText.trim().isEmpty) return fallback;
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_flowUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'mode': 'journal-mood',
+              'rawJournalText': journalText,
+              'instructions':
+                  'Read the raw journal and estimate moodIndex 0 sad, 1 low/neutral, 2 okay, 3 happy, plus moodIntensity 0.0 to 1.0. Return criteria.',
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return fallback;
+      }
+
+      final decoded = jsonDecode(response.body);
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      final output = data['result'] is Map<String, dynamic>
+          ? data['result'] as Map<String, dynamic>
+          : data;
+
+      return JournalMoodResult(
+        moodIndex:
+            ((output['moodIndex'] as num?)?.toInt() ?? fallback.moodIndex)
+                .clamp(0, 3),
+        moodIntensity:
+            ((output['moodIntensity'] as num?)?.toDouble() ??
+                    fallback.moodIntensity)
+                .clamp(0, 1)
+                .toDouble(),
+        criteria:
+            (output['criteria'] as String?) ??
+            (output['rationale'] as String?) ??
+            fallback.criteria,
+        source: (output['modelVersion'] as String?) ?? 'ai-journal-mood',
+      );
+    } catch (_) {
+      return fallback;
+    }
+  }
+}
+
+class JournalMoodResult {
+  const JournalMoodResult({
+    required this.moodIndex,
+    required this.moodIntensity,
+    required this.criteria,
+    required this.source,
+  });
+
+  factory JournalMoodResult.local(String text) {
+    final normalized = text.toLowerCase();
+    var index = 1;
+    var intensity = 0.5;
+    var criteria = 'Local journal mood estimate';
+
+    if (RegExp(
+      r'\b(happy|great|grateful|excited|proud|relieved|masaya|salamat)\b',
+    ).hasMatch(normalized)) {
+      index = 3;
+      intensity = 0.72;
+      criteria = 'Positive emotion words were found in the journal.';
+    } else if (RegExp(
+      r'\b(okay|fine|calm|manageable|neutral|kaya)\b',
+    ).hasMatch(normalized)) {
+      index = 2;
+      intensity = 0.52;
+      criteria = 'Journal tone looks manageable or steady.';
+    } else if (RegExp(
+      r'\b(sad|tired|stress|stressed|anxious|pagod|kapoy|hirap)\b',
+    ).hasMatch(normalized)) {
+      index = 0;
+      intensity = 0.68;
+      criteria = 'Stress or low mood words were found in the journal.';
+    }
+
+    return JournalMoodResult(
+      moodIndex: index,
+      moodIntensity: intensity,
+      criteria: criteria,
+      source: 'local-journal-mood',
+    );
+  }
+
+  final int moodIndex;
+  final double moodIntensity;
+  final String criteria;
+  final String source;
 }

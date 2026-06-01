@@ -142,7 +142,13 @@ class StreakTab extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
+
+          _miniBestBadge(
+            label: "Best",
+            value: "${streak["longest"] ?? 0} days",
+            color: Colors.white,
+          ),
         ],
       ),
     );
@@ -243,7 +249,49 @@ class StreakTab extends StatelessWidget {
             ),
           ),
 
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
+
+          _miniBestBadge(
+            label: "Best",
+            value: "${moodStreak["longest"] ?? 0} days",
+            color: Colors.white,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniBestBadge({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -327,9 +375,7 @@ class StreakTab extends StatelessWidget {
                     const Spacer(),
 
                     Text(
-                      data.longestStreak >= 7
-                          ? "Outstanding"
-                          : "Keep Walking",
+                      data.longestStreak >= 7 ? "Outstanding" : "Keep Walking",
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,

@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_data.dart';
 import 'journal_warning_service.dart';
 import 'wellness_signal_service.dart';
+import 'moodscreen_service.dart';
 
 class JournalService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -79,6 +80,7 @@ class JournalService {
       'created_at': FieldValue.serverTimestamp(),
     });
     await WellnessSignalService.publishCurrentUserSignals();
+    await MoodService.instance.applyJournalMood(text);
   }
 
   // =========================================================
