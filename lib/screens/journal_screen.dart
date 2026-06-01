@@ -475,7 +475,7 @@ class _JournalScreenState extends State<JournalScreen> {
       await WellnessSignalService.publishCurrentUserSignals();
 
       if (mounted) {
-        _showJournalMessage("Saved. Your wellness signals are updated.");
+        _showJournalMessage("Saved");
 
         _controller.clear();
 

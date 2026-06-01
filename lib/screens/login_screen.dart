@@ -20,6 +20,7 @@ class _LoginTabState extends State<LoginTab> {
 
   bool isLoading = false;
   bool obscurePassword = true;
+  bool rawDataConsent = false;
 
   Future<void> createUserIfNotExists() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -35,9 +36,25 @@ class _LoginTabState extends State<LoginTab> {
         'email': user.email,
         'name': user.displayName,
         'photoUrl': user.photoURL,
+        'rawAiDataConsent': rawDataConsent,
+        'rawAiDataConsentAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
       });
+    } else if (rawDataConsent) {
+      await ref.set({
+        'rawAiDataConsent': true,
+        'rawAiDataConsentAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     }
+  }
+
+  bool _requireRawDataConsent() {
+    if (rawDataConsent) return true;
+
+    showErrorSnackBar(
+      'Please agree to raw wellness data processing before continuing.',
+    );
+    return false;
   }
 
   Future<void> login() async {
@@ -51,6 +68,10 @@ class _LoginTabState extends State<LoginTab> {
 
       // ================= VALIDATION =================
 
+      if (!_requireRawDataConsent()) {
+        return;
+      }
+
       if (email.isEmpty || password.isEmpty) {
         showErrorSnackBar('Please enter email and password');
         return;
@@ -59,6 +80,7 @@ class _LoginTabState extends State<LoginTab> {
       // ================= LOGIN =================
 
       await auth.login(email, password);
+      await createUserIfNotExists();
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         showErrorSnackBar(_getErrorMessage(e));
@@ -82,6 +104,10 @@ class _LoginTabState extends State<LoginTab> {
 
   Future<void> googleLogin() async {
     try {
+      if (!_requireRawDataConsent()) {
+        return;
+      }
+
       if (mounted) {
         setState(() => isLoading = true);
       }
@@ -280,6 +306,10 @@ class _LoginTabState extends State<LoginTab> {
 
                 const SizedBox(height: 28),
 
+                _rawDataConsentCard(),
+
+                const SizedBox(height: 20),
+
                 // ================= LOGIN BUTTON =================
                 SizedBox(
                   width: double.infinity,
@@ -406,6 +436,62 @@ class _LoginTabState extends State<LoginTab> {
   }
 
   // ================= INPUT =================
+
+  Widget _rawDataConsentCard() {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: isLoading
+            ? null
+            : () {
+                setState(() {
+                  rawDataConsent = !rawDataConsent;
+                });
+              },
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: rawDataConsent
+                  ? const Color(0xFFFF7A59)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: rawDataConsent,
+                activeColor: const Color(0xFFFF7A59),
+                onChanged: isLoading
+                    ? null
+                    : (value) {
+                        setState(() {
+                          rawDataConsent = value ?? false;
+                        });
+                      },
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'I have read and agree to let FullBrightTrack process my raw wellness data, including moods, journal entries, tasks, and steps, for AI wellness insights and admin safety alerts.',
+                  style: TextStyle(
+                    color: Colors.grey.shade800,
+                    fontSize: 12.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _inputField({
     required TextEditingController controller,

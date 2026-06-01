@@ -77,16 +77,23 @@ Future<Map<String, dynamic>> _readInput(Request request) async {
   final payload = decoded['data'] is Map<String, dynamic>
       ? decoded['data'] as Map<String, dynamic>
       : decoded;
+  final baseline = payload['localBaseline'] is Map<String, dynamic>
+      ? payload['localBaseline'] as Map<String, dynamic>
+      : payload;
+  final rawData = payload['rawData'] is Map<String, dynamic>
+      ? payload['rawData'] as Map<String, dynamic>
+      : <String, dynamic>{};
 
   return {
-    'avgMoodIndex': _number(payload, 'avgMoodIndex'),
-    'avgMoodIntensity': _number(payload, 'avgMoodIntensity'),
-    'avgDailySteps': _number(payload, 'avgDailySteps'),
-    'moodLogCoverage': _number(payload, 'moodLogCoverage'),
-    'journalEntryCount': _integer(payload, 'journalEntryCount'),
-    'activeTaskCount': _integer(payload, 'activeTaskCount'),
-    'completedTaskCount': _integer(payload, 'completedTaskCount'),
-    'overdueTaskCount': _integer(payload, 'overdueTaskCount'),
+    'avgMoodIndex': _number(baseline, 'avgMoodIndex'),
+    'avgMoodIntensity': _number(baseline, 'avgMoodIntensity'),
+    'avgDailySteps': _number(baseline, 'avgDailySteps'),
+    'moodLogCoverage': _number(baseline, 'moodLogCoverage'),
+    'journalEntryCount': _integer(baseline, 'journalEntryCount'),
+    'activeTaskCount': _integer(baseline, 'activeTaskCount'),
+    'completedTaskCount': _integer(baseline, 'completedTaskCount'),
+    'overdueTaskCount': _integer(baseline, 'overdueTaskCount'),
+    'rawData': rawData,
     'warningSnippets': _warningSnippets(payload),
     'journalWarningWeight': _optionalNumber(payload, 'journalWarningWeight'),
     'journalWarningSeverity':
@@ -107,6 +114,7 @@ Future<Map<String, dynamic>> _tryReadInput(Request request) async {
       'activeTaskCount': 0,
       'completedTaskCount': 0,
       'overdueTaskCount': 0,
+      'rawData': <String, dynamic>{},
       'warningSnippets': <String>[],
       'journalWarningWeight': 0.0,
       'journalWarningSeverity': 'none',
@@ -206,7 +214,8 @@ Return only valid compact JSON. Do not use markdown. Do not include prose before
 The JSON object must use exactly these keys:
 {"score": 0, "confidence": 0, "rationale": ["short signal label"]}
 
-Use only the minimized numeric signals and short warning snippets below.
+Use the raw recent wellness data below as the primary evidence.
+Use the local numeric baseline only for calibration and safety floors.
 Do not diagnose. Do not mention medical certainty.
 Mood scale is important: avgMoodIndex 0 = sad/high stress risk, 1 = low mood, 2 = okay, 3 = happy/low stress risk.
 avgMoodIntensity is 0 to 1. High intensity amplifies the current mood. High intensity with sad/low mood increases stress risk.
@@ -230,7 +239,7 @@ Rank thresholds used by the app:
 Local baseline result for calibration:
 ${jsonEncode(local)}
 
-Minimized input:
+Raw input and local baseline:
 $sanitized
 ''';
 }

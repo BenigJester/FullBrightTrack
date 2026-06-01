@@ -15,8 +15,16 @@ class AdminMonitoringScreen extends StatefulWidget {
 }
 
 class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
+  static const int _pageSize = 100;
+
   late Future<_AdminDashboardData> _dashboardFuture;
+  final TextEditingController _pageController = TextEditingController(
+    text: '1',
+  );
   _AdminRange _range = _AdminRange.week;
+  _StressRankFilter _rankFilter = _StressRankFilter.all;
+  _ConfidenceSort _confidenceSort = _ConfidenceSort.descending;
+  int _page = 1;
 
   @override
   void initState() {
@@ -24,9 +32,16 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     _dashboardFuture = _loadDashboard();
   }
 
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
     setState(() {
       _dashboardFuture = _loadDashboard();
+      _setPage(1);
     });
 
     await _dashboardFuture;
@@ -42,7 +57,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     final users = await FirebaseFirestore.instance
         .collection('admin_monitoring')
         .orderBy('stressScore', descending: true)
-        .limit(50)
+        .limit(1000)
         .get();
 
     final summaries = <_StudentWellnessSummary>[];
@@ -60,6 +75,44 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       generatedAt: now,
       dateKeys: dateKeys,
     );
+  }
+
+  void _setPage(int page) {
+    _page = max(1, page);
+    _pageController.text = _page.toString();
+  }
+
+  void _goToPage(int page, int totalPages) {
+    final nextPage = page.clamp(1, totalPages);
+    setState(() => _setPage(nextPage));
+  }
+
+  void _applyPageInput(int totalPages) {
+    final requested = int.tryParse(_pageController.text.trim()) ?? _page;
+    _goToPage(requested, totalPages);
+  }
+
+  List<_StudentWellnessSummary> _filteredStudents(
+    List<_StudentWellnessSummary> students,
+  ) {
+    final filtered = students.where((student) {
+      return _rankFilter == _StressRankFilter.all ||
+          student.normalizedStressRank == _rankFilter.label;
+    }).toList();
+
+    filtered.sort((a, b) {
+      final confidenceCompare = a.mlFeatures.modelResult.confidence.compareTo(
+        b.mlFeatures.modelResult.confidence,
+      );
+      final confidenceOrdered = _confidenceSort == _ConfidenceSort.descending
+          ? -confidenceCompare
+          : confidenceCompare;
+      if (confidenceOrdered != 0) return confidenceOrdered;
+
+      return b.stressScore.compareTo(a.stressScore);
+    });
+
+    return filtered;
   }
 
   _StudentWellnessSummary _summaryFromMonitoringDoc(
@@ -225,6 +278,22 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
           }
 
           final data = snapshot.data ?? _AdminDashboardData.empty();
+          final filteredStudents = _filteredStudents(data.students);
+          final totalPages = max(
+            1,
+            (filteredStudents.length / _pageSize).ceil(),
+          );
+          if (_page > totalPages) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _goToPage(totalPages, totalPages);
+            });
+          }
+          final safePage = min(_page, totalPages);
+          final startIndex = (safePage - 1) * _pageSize;
+          final pagedStudents = filteredStudents
+              .skip(startIndex)
+              .take(_pageSize)
+              .toList();
 
           return RefreshIndicator(
             color: Colors.deepOrange,
@@ -235,23 +304,52 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
               children: [
                 _SummaryHeader(data: data),
                 const SizedBox(height: 14),
+                _AdminStudentControls(
+                  rankFilter: _rankFilter,
+                  confidenceSort: _confidenceSort,
+                  pageController: _pageController,
+                  currentPage: safePage,
+                  totalPages: totalPages,
+                  totalCount: filteredStudents.length,
+                  pageSize: _pageSize,
+                  onRankChanged: (filter) {
+                    setState(() {
+                      _rankFilter = filter;
+                      _setPage(1);
+                    });
+                  },
+                  onSortChanged: (sort) {
+                    setState(() {
+                      _confidenceSort = sort;
+                      _setPage(1);
+                    });
+                  },
+                  onPrevious: safePage > 1
+                      ? () => _goToPage(safePage - 1, totalPages)
+                      : null,
+                  onNext: safePage < totalPages
+                      ? () => _goToPage(safePage + 1, totalPages)
+                      : null,
+                  onPageSubmitted: () => _applyPageInput(totalPages),
+                ),
+                const SizedBox(height: 14),
                 _RangeSelector(
                   selected: _range,
                   onChanged: (range) => setState(() => _range = range),
                 ),
                 const SizedBox(height: 14),
-                _StressChart(students: data.students, range: _range),
+                _StressChart(students: filteredStudents, range: _range),
                 const SizedBox(height: 16),
-                for (final student in data.students)
+                for (final student in pagedStudents)
                   _StudentCard(
                     student: student,
                     range: _range,
                     onResolved: _refresh,
                   ),
-                if (data.students.isEmpty)
+                if (filteredStudents.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 60),
-                    child: Center(child: Text("No student data found")),
+                    child: Center(child: Text("No matching student data")),
                   ),
               ],
             ),
@@ -464,6 +562,180 @@ class _SummaryHeader extends StatelessWidget {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminStudentControls extends StatelessWidget {
+  const _AdminStudentControls({
+    required this.rankFilter,
+    required this.confidenceSort,
+    required this.pageController,
+    required this.currentPage,
+    required this.totalPages,
+    required this.totalCount,
+    required this.pageSize,
+    required this.onRankChanged,
+    required this.onSortChanged,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onPageSubmitted,
+  });
+
+  final _StressRankFilter rankFilter;
+  final _ConfidenceSort confidenceSort;
+  final TextEditingController pageController;
+  final int currentPage;
+  final int totalPages;
+  final int totalCount;
+  final int pageSize;
+  final ValueChanged<_StressRankFilter> onRankChanged;
+  final ValueChanged<_ConfidenceSort> onSortChanged;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+  final VoidCallback onPageSubmitted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  "Student filters",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              Text(
+                "$totalCount",
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final filter in _StressRankFilter.values)
+                ChoiceChip(
+                  label: Text(filter.label),
+                  selected: rankFilter == filter,
+                  selectedColor: filter.color.withValues(alpha: 0.16),
+                  side: BorderSide(
+                    color: rankFilter == filter
+                        ? filter.color
+                        : Colors.grey.shade300,
+                  ),
+                  labelStyle: TextStyle(
+                    color: rankFilter == filter
+                        ? filter.color
+                        : Colors.grey.shade700,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  onSelected: (_) => onRankChanged(filter),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            "Confidence priority",
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<_ConfidenceSort>(
+                  selected: {confidenceSort},
+                  showSelectedIcon: false,
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    backgroundColor: WidgetStateProperty.resolveWith((states) {
+                      return states.contains(WidgetState.selected)
+                          ? Colors.deepOrange
+                          : const Color(0xFFF7F8FC);
+                    }),
+                    foregroundColor: WidgetStateProperty.resolveWith((states) {
+                      return states.contains(WidgetState.selected)
+                          ? Colors.white
+                          : Colors.black87;
+                    }),
+                  ),
+                  segments: const [
+                    ButtonSegment(
+                      value: _ConfidenceSort.descending,
+                      label: Text("Descending"),
+                    ),
+                    ButtonSegment(
+                      value: _ConfidenceSort.ascending,
+                      label: Text("Ascending"),
+                    ),
+                  ],
+                  onSelectionChanged: (value) => onSortChanged(value.first),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (totalPages > 1)
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onPrevious,
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  label: const Text("Previous"),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: pageController,
+                    textAlign: TextAlign.center,
+                    keyboardType: TextInputType.number,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => onPageSubmitted(),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: "Page",
+                      suffixText: "of $totalPages",
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onNext,
+                  icon: const Icon(Icons.chevron_right_rounded),
+                  label: const Text("Next"),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -1314,6 +1586,14 @@ class _StudentWellnessSummary {
     return warningSignature.isNotEmpty &&
         warningSignature == resolvedWarningSignature;
   }
+
+  String get normalizedStressRank {
+    final normalized = stressRank.trim().toLowerCase();
+    if (normalized == 'high') return 'High';
+    if (normalized == 'elevated') return 'Elevated';
+    if (normalized == 'moderate') return 'Moderate';
+    return 'Low';
+  }
 }
 
 class _PersonalMlFeatures {
@@ -1462,6 +1742,42 @@ class _ChartPoint {
 }
 
 enum _AdminRange { day, week, month }
+
+enum _StressRankFilter { all, high, elevated, moderate, low }
+
+extension _StressRankFilterLabel on _StressRankFilter {
+  String get label {
+    switch (this) {
+      case _StressRankFilter.all:
+        return 'All';
+      case _StressRankFilter.high:
+        return 'High';
+      case _StressRankFilter.elevated:
+        return 'Elevated';
+      case _StressRankFilter.moderate:
+        return 'Moderate';
+      case _StressRankFilter.low:
+        return 'Low';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case _StressRankFilter.all:
+        return Colors.blueGrey;
+      case _StressRankFilter.high:
+        return Colors.red;
+      case _StressRankFilter.elevated:
+        return Colors.deepOrange;
+      case _StressRankFilter.moderate:
+        return Colors.amber;
+      case _StressRankFilter.low:
+        return Colors.green;
+    }
+  }
+}
+
+enum _ConfidenceSort { ascending, descending }
 
 List<_ChartPoint> _aggregateStress(
   List<_StudentWellnessSummary> students,

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/loading_screen.dart';
 import '../screens/login_screen.dart';
 import 'admin_alert_service.dart';
+import 'logout_service.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -16,23 +17,32 @@ class AuthWrapper extends StatefulWidget {
 class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        // Loading
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(body: Center(child: CircularProgressIndicator()));
+    return ValueListenableBuilder<bool>(
+      valueListenable: LogoutService.isLoggingOut,
+      builder: (context, isLoggingOut, _) {
+        if (isLoggingOut) {
+          return LoginTab();
         }
 
-        // If logged in -> Home
-        if (snapshot.hasData) {
-          return LoadingScreen();
-        }
+        return StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            // Loading
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Scaffold(body: Center(child: CircularProgressIndicator()));
+            }
 
-        unawaited(AdminAlertService.stopAdminAlertListener());
+            // If logged in -> Home
+            if (snapshot.hasData) {
+              return LoadingScreen();
+            }
 
-        // If not logged in -> Login
-        return LoginTab();
+            unawaited(AdminAlertService.stopAdminAlertListener());
+
+            // If not logged in -> Login
+            return LoginTab();
+          },
+        );
       },
     );
   }

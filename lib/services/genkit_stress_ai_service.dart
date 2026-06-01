@@ -13,6 +13,7 @@ class GenkitStressAiService {
 
   static Future<StressModelResult> analyze({
     required StressModelInput input,
+    required Map<String, dynamic> rawData,
     required List<String> warningSnippets,
     required double journalWarningWeight,
     required String journalWarningSeverity,
@@ -27,14 +28,17 @@ class GenkitStressAiService {
             Uri.parse(_flowUrl),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'avgMoodIndex': input.avgMoodIndex,
-              'avgMoodIntensity': input.avgMoodIntensity,
-              'avgDailySteps': input.avgDailySteps,
-              'moodLogCoverage': input.moodLogCoverage,
-              'journalEntryCount': input.journalEntryCount,
-              'activeTaskCount': input.activeTaskCount,
-              'completedTaskCount': input.completedTaskCount,
-              'overdueTaskCount': input.overdueTaskCount,
+              'rawData': rawData,
+              'localBaseline': {
+                'avgMoodIndex': input.avgMoodIndex,
+                'avgMoodIntensity': input.avgMoodIntensity,
+                'avgDailySteps': input.avgDailySteps,
+                'moodLogCoverage': input.moodLogCoverage,
+                'journalEntryCount': input.journalEntryCount,
+                'activeTaskCount': input.activeTaskCount,
+                'completedTaskCount': input.completedTaskCount,
+                'overdueTaskCount': input.overdueTaskCount,
+              },
               'warningSnippets': warningSnippets.take(3).toList(),
               'journalWarningWeight': journalWarningWeight.clamp(0, 1),
               'journalWarningSeverity': journalWarningSeverity,

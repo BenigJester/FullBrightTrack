@@ -10,17 +10,20 @@ Current app version: `0.4.0-alpha+5`
 - Background step persistence using local storage and Firestore sync.
 - Step goal progress, calories, distance, streaks, and health insights.
 - Mood check-in with intensity tracking and daily popup reminder.
+- Professional AI mood status view based on the latest consented wellness signal output.
 - Journal entries with prompts, history, filters, and Firestore storage.
 - Weighted journal warning detection for normal stress, elevated concern, and critical danger phrases.
 - Task management with deadlines, overdue state, completion, and collapsible sections.
 - Streak dashboard for step and mood consistency.
 - Firestore leaderboard using combined step and mood streak points.
-- Admin Monitoring for minimized wellbeing summaries, stress ranking, charts, and warning signals.
+- Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, charts, and warning signals.
 - Admin warning resolution workflow and daily stress history charting.
-- Groq-backed AI stress estimate endpoint with local fallback scoring.
+- Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads and local fallback scoring.
 - Account flows for email/password and Google sign-in.
+- Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - Step reminder notification support with 1, 2, or 3 hour intervals.
+- Firebase Cloud Functions support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`.
 - Daily motivation popup.
 
 ## Tech Stack
@@ -36,6 +39,7 @@ Current app version: `0.4.0-alpha+5`
 - Native Android Kotlin foreground service
 - Firebase App Check
 - Groq AI backend on Render or another Docker host
+- Firebase Cloud Functions for trusted admin FCM alert delivery
 
 ## Project Structure
 
@@ -85,6 +89,10 @@ genkit_backend/
   Dockerfile
   README.md
 
+functions/
+  index.js
+  package.json
+
 android/app/src/main/kotlin/com/productivity/and/wellbeing/
   MainActivity.kt
   StepBootReceiver.kt
@@ -121,6 +129,7 @@ flutter pub get
   - Google
 - Enable Cloud Firestore.
 - Configure Firebase App Check for Android. Use debug provider only for debug builds and Play Integrity for release.
+- If admin push alerts are needed, deploy the Firebase Functions backend from `functions/`.
 - When running a debug build, check the Flutter console for `Firebase App Check debug token to register: ...`, then add that token in Firebase Console under App Check > your Android app > Manage debug tokens.
 
 3. Configure the AI backend:
@@ -128,8 +137,19 @@ flutter pub get
 - Deploy `genkit_backend` to Render or another Docker host.
 - Set `GROQ_API_KEY` as a server environment variable.
 - Use the deployed `/stress` endpoint when running or building Flutter.
+- Users must agree to the raw wellness data processing consent on login before raw mood, journal, task, and step records are sent to the AI backend. Without consent, the app uses local fallback scoring.
 
-4. Run the app:
+4. Configure admin FCM alerts, optional but recommended for admin safety review:
+
+```bash
+cd functions
+npm install
+firebase deploy --only functions
+```
+
+The function watches `admin_alerts/{alertId}`, reads registered admin device tokens from `admin_fcm_tokens/{adminUid}/tokens/{token}`, sends FCM notifications, removes invalid tokens, and updates `pushStatus` fields on the alert record.
+
+5. Run the app:
 
 ```bash
 flutter run --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
@@ -167,7 +187,9 @@ Minimized admin monitoring summaries are stored under:
 admin_monitoring/{uid}
 ```
 
-These summaries contain numeric wellbeing signals, weighted journal warning severity, AI/local stress score, rank, confidence, daily stress history, and privacy-safe critical warning labels. Raw journal text and task titles are not copied into admin monitoring.
+These summaries contain numeric wellbeing signals, weighted journal warning severity, AI/local stress score, rank, confidence, AI mood status, daily stress history, and privacy-safe critical warning labels. Raw journal text and task titles are not copied into admin monitoring.
+
+When a user gives raw AI processing consent at login, recent raw mood, journal, task, and step records may be sent to the configured AI backend for scoring. That raw payload is used by the backend request and is not copied into `admin_monitoring`.
 
 Privacy-safe admin alert records are stored under:
 
@@ -176,7 +198,7 @@ admin_alerts/{alertId}
 admin_fcm_tokens/{adminUid}/tokens/{token}
 ```
 
-`admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, and warning signature. It does not store raw journal text. `admin_fcm_tokens` stores verified admin device tokens so a trusted backend or Cloud Function can send FCM push notifications for active alerts.
+`admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, warning signature, and push delivery status. It does not store raw journal text. `admin_fcm_tokens` stores verified admin device tokens so the Firebase Function can send FCM push notifications for active alerts.
 
 ## Suggested Firestore Rules
 
@@ -229,6 +251,7 @@ service cloud.firestore {
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['status', 'resolvedAt', 'updatedAt']);
+      // Firebase Admin SDK in Cloud Functions bypasses rules for pushStatus fields.
       allow delete: if false;
     }
 
@@ -289,11 +312,15 @@ Current test coverage includes:
 - Stress scoring direction for step activity
 - Wellness signal step averaging
 - Multilingual journal warning detection with privacy-safe labels
+- Mood screen pull-to-refresh behavior for the AI status page
 
 ## Development Notes
 
 - Step counts are saved locally first and synced to Firestore when possible.
 - The leaderboard is Firestore-only and uses public summary documents.
+- Raw AI scoring is consent-gated. If consent is unavailable, the local deterministic stress model is used.
+- Admin Monitoring lists are filtered locally by rank, sorted by confidence, and displayed in pages of 100 students.
+- Admin FCM alerts require deployed Firebase Functions; client-side token registration alone does not send push notifications.
 - Step streaks preserve the current streak during the unfinished current day and reset the next day if no goal is reached.
 - Midnight step rollover saves the previous day under its correct date before starting the new day.
 - Native step counter and detector events are reconciled to avoid double counting while keeping closed-app step updates live.

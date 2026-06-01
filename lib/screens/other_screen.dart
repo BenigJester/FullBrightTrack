@@ -8,10 +8,11 @@ import '../services/admin_access_service.dart';
 import '../services/auth_service.dart';
 import '../services/device_readiness_service.dart';
 import '../services/display_name_service.dart';
+import '../services/logout_service.dart';
 import '../services/notification_service.dart';
 import '../services/notification_history_service.dart';
 import '../services/reminder_scheduler_service.dart';
-import '../services/steps_service.dart';
+import '../services/step_foreground_service.dart';
 import 'admin_monitoring_screen.dart';
 
 String _firstName(String? name) {
@@ -34,12 +35,13 @@ class _MoreScreenState extends State<MoreScreen> {
     setState(() => _loggingOut = true);
 
     try {
-      await StepsService.instance.fullLogoutCleanup();
-      await FirebaseAuth.instance.signOut();
+      await LogoutService.logout();
 
       if (!mounted) return;
 
-      Navigator.pop(context);
+      Navigator.of(context, rootNavigator: true).popUntil((route) {
+        return route.isFirst;
+      });
     } catch (e) {
       debugPrint("Logout error: $e");
 
@@ -1213,22 +1215,40 @@ class PermissionManagerScreen extends StatefulWidget {
       _PermissionManagerScreenState();
 }
 
-class _PermissionManagerScreenState extends State<PermissionManagerScreen> {
+class _PermissionManagerScreenState extends State<PermissionManagerScreen>
+    with WidgetsBindingObserver {
   late Future<DeviceReadinessStatus> _statusFuture;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _statusFuture = DeviceReadinessService.checkStatus();
   }
 
-  Future<void> _refresh() async {
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh(startService: true);
+    }
+  }
+
+  Future<void> _refresh({bool startService = false}) async {
     setState(() {
       _statusFuture = DeviceReadinessService.checkStatus();
     });
 
-    await _statusFuture;
+    final status = await _statusFuture;
+    if (startService) {
+      await _startStepServiceWhenReady(status);
+    }
   }
 
   Future<void> _runAction(Future<void> Function() action) async {
@@ -1238,9 +1258,21 @@ class _PermissionManagerScreenState extends State<PermissionManagerScreen> {
 
     try {
       await action();
-      await _refresh();
+      await _refresh(startService: true);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _startStepServiceWhenReady(DeviceReadinessStatus status) async {
+    if (!status.activityRecognitionGranted || !status.notificationGranted) {
+      return;
+    }
+
+    try {
+      await StepForegroundService.start();
+    } catch (error) {
+      debugPrint('Could not start step foreground service: $error');
     }
   }
 

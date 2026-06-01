@@ -131,6 +131,8 @@ class WellnessSignalService {
         ? JournalWarningSeverity.none
         : journalWarningSeverity;
 
+    final profileData = profile.data() ?? <String, dynamic>{};
+    final hasRawAiConsent = profileData['rawAiDataConsent'] == true;
     final input = StressModelInput(
       avgMoodIndex: avgMoodIndex,
       avgMoodIntensity: avgMoodIntensity,
@@ -142,13 +144,26 @@ class WellnessSignalService {
       overdueTaskCount: overdueTasks,
       journalWarningWeight: effectiveWarningWeight,
     );
-    final result = await GenkitStressAiService.analyze(
-      input: input,
+    final rawData = _rawAiPayload(
+      dateKeys: dateKeys,
+      stepsSnapshot: stepsSnapshot,
+      moodSnapshot: moodSnapshot,
+      journalSnapshot: journalSnapshot,
+      taskSnapshot: taskSnapshot,
       warningSnippets: effectiveWarningSnippets,
-      journalWarningWeight: effectiveWarningWeight,
-      journalWarningSeverity: effectiveWarningSeverity.name,
+      warningFindings: effectiveWarningFindings,
+      warningWeight: effectiveWarningWeight,
+      warningSeverity: effectiveWarningSeverity.name,
     );
-    final profileData = profile.data() ?? <String, dynamic>{};
+    final result = hasRawAiConsent
+        ? await GenkitStressAiService.analyze(
+            input: input,
+            rawData: rawData,
+            warningSnippets: effectiveWarningSnippets,
+            journalWarningWeight: effectiveWarningWeight,
+            journalWarningSeverity: effectiveWarningSeverity.name,
+          )
+        : LocalStressModelService.analyze(input);
     final displayName = DisplayNameService.cleanForDisplay(
       profileData['name'] as String? ?? user.displayName,
       fallback: 'Student',
@@ -187,10 +202,13 @@ class WellnessSignalService {
       'confidence': result.confidence,
       'modelVersion': result.modelVersion,
       'rationale': result.rationale,
+      'aiMoodStatus': _moodStatusFor(result),
+      'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
       'stressHistory': stressHistory,
       'source': result.modelVersion == LocalStressModelService.modelVersion
           ? 'local_fallback'
-          : 'ai_minimized_payload',
+          : 'ai_raw_payload',
+      'rawAiDataConsent': hasRawAiConsent,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
@@ -217,6 +235,92 @@ class WellnessSignalService {
       (runningTotal, steps) => runningTotal + steps,
     );
     return total / positiveSteps.length;
+  }
+
+  static Map<String, dynamic> _rawAiPayload({
+    required List<String> dateKeys,
+    required QuerySnapshot<Map<String, dynamic>> stepsSnapshot,
+    required QuerySnapshot<Map<String, dynamic>> moodSnapshot,
+    required QuerySnapshot<Map<String, dynamic>> journalSnapshot,
+    required QuerySnapshot<Map<String, dynamic>> taskSnapshot,
+    required List<String> warningSnippets,
+    required List<Map<String, dynamic>> warningFindings,
+    required double warningWeight,
+    required String warningSeverity,
+  }) {
+    return {
+      'period': {
+        'days': dateKeys.length,
+        'startDate': dateKeys.first,
+        'endDate': dateKeys.last,
+      },
+      'steps': stepsSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'date': doc.id,
+          'steps': data['steps'],
+          'baseline': data['baseline'],
+          'updatedAt': _timestampText(data['updatedAt']),
+        };
+      }).toList(),
+      'moods': moodSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'date': doc.id,
+          'moodIndex': data['mood_index'],
+          'intensity': data['intensity'],
+          'updatedAt': _timestampText(data['updated_at']),
+        };
+      }).toList(),
+      'journals': journalSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'text': data['text'],
+          'tag': data['tag'],
+          'prompt': data['prompt'],
+          'createdAt': _timestampText(data['created_at']),
+          'warningSnippets': data['warningSnippets'],
+          'warningFindings': data['warningFindings'],
+          'journalWarningWeight': data['journalWarningWeight'],
+          'journalWarningSeverity': data['journalWarningSeverity'],
+        };
+      }).toList(),
+      'tasks': taskSnapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'title': data['title'],
+          'isCompleted': data['isCompleted'],
+          'deadline': _timestampText(data['deadline']),
+          'createdAt': _timestampText(data['createdAt']),
+        };
+      }).toList(),
+      'latestWarning': {
+        'snippets': warningSnippets,
+        'findings': warningFindings,
+        'weight': warningWeight,
+        'severity': warningSeverity,
+      },
+    };
+  }
+
+  static String? _timestampText(Object? value) {
+    if (value is Timestamp) return value.toDate().toIso8601String();
+    return value?.toString();
+  }
+
+  static String _moodStatusFor(StressModelResult result) {
+    switch (result.rank) {
+      case 'High':
+        return 'Needs urgent support';
+      case 'Elevated':
+        return 'Needs closer check-in';
+      case 'Moderate':
+        return 'Mixed but manageable';
+      default:
+        return 'Stable and balanced';
+    }
   }
 
   static Future<Map<String, dynamic>> _readMonitoringDataIfAllowed(
