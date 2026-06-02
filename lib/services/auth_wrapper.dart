@@ -6,6 +6,7 @@ import '../screens/loading_screen.dart';
 import '../screens/login_screen.dart';
 import 'admin_alert_service.dart';
 import 'logout_service.dart';
+import 'moodscreen_service.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -38,6 +39,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             }
 
             unawaited(AdminAlertService.stopAdminAlertListener());
+            MoodService.instance.dispose();
 
             // If not logged in -> Login
             return LoginTab();

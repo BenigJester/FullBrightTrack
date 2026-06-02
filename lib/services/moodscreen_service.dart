@@ -118,9 +118,12 @@ class MoodService {
           onError: (Object error) {
             if (error is FirebaseException &&
                 error.code == 'permission-denied') {
+              _aiMoodSubscription?.cancel();
+              _aiMoodSubscription = null;
               debugPrint(
                 'AI mood adjustment listen skipped: permission-denied',
               );
+              return;
             }
           },
         );

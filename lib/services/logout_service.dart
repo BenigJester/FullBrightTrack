@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import 'admin_alert_service.dart';
 import 'journal_service.dart';
+import 'moodscreen_service.dart';
 import 'steps_service.dart';
 
 class LogoutService {
@@ -23,6 +24,7 @@ class LogoutService {
       await StepsService.instance.fullLogoutCleanup();
       await AdminAlertService.stopAdminAlertListener();
       await JournalService.dispose();
+      MoodService.instance.dispose();
 
       await Future<void>.delayed(Duration.zero);
       await FirebaseAuth.instance.signOut();

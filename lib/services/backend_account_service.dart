@@ -56,7 +56,7 @@ class BackendAccountService {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'email': email, 'password': password}),
         )
-        .timeout(const Duration(seconds: 12));
+        .timeout(const Duration(seconds: 35));
 
     final decoded = response.body.trim().isEmpty
         ? <String, dynamic>{}
@@ -98,7 +98,7 @@ class BackendAccountService {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({'requestId': requestId, 'email': email}),
         )
-        .timeout(const Duration(seconds: 12));
+        .timeout(const Duration(seconds: 25));
 
     final decoded = response.body.trim().isEmpty
         ? <String, dynamic>{}

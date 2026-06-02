@@ -1557,9 +1557,10 @@ class _SmtpClient {
     required int port,
     required bool useImplicitTls,
   }) async {
+    const timeout = Duration(seconds: 25);
     final socket = useImplicitTls
-        ? await SecureSocket.connect(host, port, timeout: const Duration(seconds: 12))
-        : await Socket.connect(host, port, timeout: const Duration(seconds: 12));
+        ? await SecureSocket.connect(host, port, timeout: timeout)
+        : await Socket.connect(host, port, timeout: timeout);
     return _SmtpClient._(socket);
   }
 
