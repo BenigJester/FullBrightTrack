@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_data.dart';
@@ -99,6 +101,10 @@ class _MoodPopupCardState extends State<MoodPopupCard> {
 
                 return GestureDetector(
                   onTap: () {
+                    context.read<AppData>().updateMoodData(
+                      moodIndex: index,
+                      moodIntensity: data.moodIntensity,
+                    );
                     moodService.updateMood(index);
                   },
 
@@ -156,6 +162,10 @@ class _MoodPopupCardState extends State<MoodPopupCard> {
               inactiveColor: Colors.orange.shade100,
 
               onChanged: (value) {
+                context.read<AppData>().updateMoodData(
+                  moodIndex: data.selectedMood,
+                  moodIntensity: value,
+                );
                 moodService.updateIntensity(value);
               },
             ),
@@ -179,7 +189,14 @@ class _MoodPopupCardState extends State<MoodPopupCard> {
                 ),
 
                 onPressed: () {
-                  Navigator.pop(context);
+                  final navigator = Navigator.of(context);
+                  final appData = context.read<AppData>();
+                  unawaited(
+                    moodService.saveMoodNow(appData).catchError((error) {
+                      debugPrint('Mood save skipped: $error');
+                    }),
+                  );
+                  navigator.pop();
                 },
 
                 child: const Text(

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'streak_service.dart';
 import '../models/app_data.dart';
 import 'leaderboard_service.dart';
@@ -61,12 +62,23 @@ class MoodService {
 
     final today = _todayKey();
 
-    final doc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .collection('mood')
-        .doc(today)
-        .get();
+    final DocumentSnapshot<Map<String, dynamic>> doc;
+    try {
+      doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('mood')
+          .doc(today)
+          .get();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint('Today mood load skipped: permission-denied');
+        _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
+        return;
+      }
+
+      rethrow;
+    }
 
     if (!doc.exists) {
       _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
@@ -104,6 +116,39 @@ class MoodService {
     );
 
     _autoSaveMood(overrideIntensity: value);
+  }
+
+  Future<void> saveMoodNow(AppData appData) async {
+    _appData = appData;
+    _debounce?.cancel();
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final today = _todayKey();
+    final moodIndex = appData.selectedMood;
+    final intensity = appData.moodIntensity;
+
+    appData.updateMoodData(moodIndex: moodIndex, moodIntensity: intensity);
+
+    await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('mood')
+        .doc(today)
+        .set({
+          'mood_index': moodIndex,
+          'intensity': intensity,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+    final updatedMoodData = Map<String, int?>.from(appData.streakMoodData);
+    updatedMoodData[today] = moodIndex;
+    StreakService.refreshMoodStreak(appData, updatedMoodData);
+    await LeaderboardService.publishCurrentUserSummary(
+      todaySteps: appData.stepsToday,
+    );
+    await WellnessSignalService.publishCurrentUserSignals();
   }
 
   Future<void> applyJournalMood(String journalText) async {

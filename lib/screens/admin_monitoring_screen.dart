@@ -135,6 +135,10 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     final warningResolved =
         warningSignature.isNotEmpty &&
         warningSignature == resolvedWarningSignature;
+    final warningJournals = _warningJournalsFromData(
+      data,
+      warningResolved: warningResolved,
+    );
     final avgMoodIndex = (data['avgMoodIndex'] as num?)?.toDouble() ?? 0;
     final avgMoodIntensity =
         (data['avgMoodIntensity'] as num?)?.toDouble() ?? 0;
@@ -192,6 +196,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 const [],
       warningSignature: warningSignature,
       resolvedWarningSignature: resolvedWarningSignature,
+      warningJournals: warningJournals,
       warningJournalId: (data['warningJournalId'] as String?) ?? '',
       warningJournalText: warningResolved
           ? ''
@@ -213,6 +218,50 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         modelResult: modelResult,
       ),
     );
+  }
+
+  List<_WarningJournalReview> _warningJournalsFromData(
+    Map<String, dynamic> data, {
+    required bool warningResolved,
+  }) {
+    if (warningResolved) return const [];
+
+    final rawList = data['warningJournals'];
+    if (rawList is List && rawList.isNotEmpty) {
+      return rawList
+          .whereType<Map>()
+          .map((item) {
+            final mapped = Map<String, dynamic>.from(item);
+            return _WarningJournalReview(
+              id: (mapped['id'] as String?) ?? '',
+              signature: (mapped['signature'] as String?) ?? '',
+              text: (mapped['text'] as String?) ?? '',
+              createdAt: (mapped['createdAt'] as String?) ?? '',
+              snippets:
+                  (mapped['snippets'] as List?)?.whereType<String>().toList() ??
+                  const [],
+              severity: (mapped['severity'] as String?) ?? 'critical',
+            );
+          })
+          .where((item) => item.signature.isNotEmpty)
+          .toList();
+    }
+
+    final signature = (data['warningSignature'] as String?) ?? '';
+    if (signature.isEmpty) return const [];
+
+    return [
+      _WarningJournalReview(
+        id: (data['warningJournalId'] as String?) ?? '',
+        signature: signature,
+        text: (data['warningJournalText'] as String?) ?? '',
+        createdAt: (data['warningJournalCreatedAt'] as String?) ?? '',
+        snippets:
+            (data['warningSnippets'] as List?)?.whereType<String>().toList() ??
+            const [],
+        severity: (data['journalWarningSeverity'] as String?) ?? 'critical',
+      ),
+    ];
   }
 
   Map<String, double> _stressHistory(
@@ -937,7 +986,9 @@ class _StudentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final points = _studentPoints(student, range);
     final hasActiveWarning =
-        student.warningSnippets.isNotEmpty && !student.warningResolved;
+        (student.warningSnippets.isNotEmpty ||
+            student.warningJournals.isNotEmpty) &&
+        !student.warningResolved;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1033,7 +1084,9 @@ class _StudentCard extends StatelessWidget {
   }
 
   Future<void> _openVerification(BuildContext context) async {
-    if (student.warningSignature.isEmpty) return;
+    if (student.warningJournals.isEmpty && student.warningSignature.isEmpty) {
+      return;
+    }
 
     if (!context.mounted) return;
     await Navigator.push<void>(
@@ -1126,39 +1179,155 @@ class _WarningVerificationScreen extends StatefulWidget {
 
 class _WarningVerificationScreenState
     extends State<_WarningVerificationScreen> {
-  bool _saving = false;
+  late List<_WarningJournalReview> _visibleWarnings;
+  final Set<String> _savingSignatures = <String>{};
 
-  Future<void> _markResolved() async {
-    if (_saving) return;
-    setState(() => _saving = true);
+  @override
+  void initState() {
+    super.initState();
+    _visibleWarnings = _initialUnresolvedWarnings();
+  }
+
+  List<_WarningJournalReview> _initialUnresolvedWarnings() {
+    final resolved = <String>{
+      if (widget.student.resolvedWarningSignature.isNotEmpty)
+        widget.student.resolvedWarningSignature,
+    };
+    final source = widget.student.warningJournals.isNotEmpty
+        ? widget.student.warningJournals
+        : [
+            _WarningJournalReview(
+              id: widget.student.warningJournalId,
+              signature: widget.student.warningSignature,
+              text: widget.student.warningJournalText,
+              createdAt: widget.student.warningJournalCreatedAt,
+              snippets: widget.student.warningSnippets,
+              severity: 'critical',
+            ),
+          ];
+
+    return source
+        .where(
+          (warning) =>
+              warning.signature.isNotEmpty &&
+              !resolved.contains(warning.signature),
+        )
+        .toList();
+  }
+
+  Future<void> _markJournalResolved(_WarningJournalReview warning) async {
+    if (_savingSignatures.contains(warning.signature) ||
+        warning.signature.isEmpty) {
+      return;
+    }
+    setState(() => _savingSignatures.add(warning.signature));
 
     try {
+      final remaining = _visibleWarnings
+          .where((item) => item.signature != warning.signature)
+          .toList();
+      final allResolved = remaining.isEmpty;
+
       await FirebaseFirestore.instance
           .collection('admin_monitoring')
           .doc(widget.student.uid)
           .set({
-            'resolvedWarningSignature': widget.student.warningSignature,
+            'resolvedWarningSignature': warning.signature,
+            'resolvedWarningSignatures': FieldValue.arrayUnion([
+              warning.signature,
+            ]),
             'resolvedWarningAt': FieldValue.serverTimestamp(),
+            'warningJournals': remaining.map((item) => item.toJson()).toList(),
+            if (allResolved) ...{
+              'warningSnippets': <String>[],
+              'warningFindings': <Map<String, dynamic>>[],
+              'warningSignature': '',
+              'warningJournalId': '',
+              'warningJournalText': '',
+              'warningJournalCreatedAt': '',
+              'journalWarningWeight': 0.0,
+              'journalWarningSeverity': 'none',
+              'hasDangerWarning': false,
+              'aiMoodStatus': 'Warning reviewed by admin',
+              'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
+              'rationale': [
+                'critical journal warning reviewed by admin',
+                'continue monitoring recent signals',
+              ],
+            },
           }, SetOptions(merge: true));
       await AdminAlertService.markResolvedForSignature(
         userId: widget.student.uid,
-        warningSignature: widget.student.warningSignature,
+        warningSignature: warning.signature,
       );
       await widget.onResolved();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Warning verified and marked resolved")),
+      setState(() {
+        _visibleWarnings = remaining;
+      });
+      _showAdminFeedback(
+        title: "Warning verified",
+        message: allResolved
+            ? "All active critical journal warnings were resolved. The user's AI analysis has been updated."
+            : "This journal warning was resolved. Remaining active warnings still need review.",
+        color: Colors.green,
       );
-      Navigator.pop(context);
+      if (allResolved) Navigator.pop(context);
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() => _savingSignatures.remove(warning.signature));
+      }
     }
+  }
+
+  Future<void> _showAdminFeedback({
+    required String title,
+    required String message,
+    required Color color,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(Icons.verified_rounded, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Text(message, style: const TextStyle(height: 1.4)),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Done"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final journalText = widget.student.warningJournalText.trim();
+    final warnings = _visibleWarnings;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
@@ -1225,86 +1394,111 @@ class _WarningVerificationScreenState
                   ],
                 ),
                 const SizedBox(height: 18),
-                const Text(
-                  "Warning signals",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final snippet in widget.student.warningSnippets)
-                      Chip(
-                        label: Text(snippet),
-                        backgroundColor: Colors.red.withValues(alpha: 0.1),
-                        side: BorderSide.none,
-                        labelStyle: const TextStyle(
-                          color: Colors.red,
-                          fontWeight: FontWeight.w700,
+                if (warnings.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, color: Colors.green),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            "No unresolved journal warnings remain.",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                for (final warning in warnings) ...[
+                  const Text(
+                    "Unresolved journal warning",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final snippet in warning.snippets)
+                        Chip(
+                          label: Text(snippet),
+                          backgroundColor: Colors.red.withValues(alpha: 0.1),
+                          side: BorderSide.none,
+                          labelStyle: const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7F8FC),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.black.withValues(alpha: 0.05),
                       ),
+                    ),
+                    child: Text(
+                      warning.text.trim().isEmpty
+                          ? "Raw journal text is unavailable. The student may not have consented to raw AI data sharing yet."
+                          : warning.text,
+                      style: TextStyle(
+                        color: Colors.grey.shade800,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (warning.createdAt.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      "Created: ${warning.createdAt}",
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
                   ],
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  "Raw journal entry",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F8FC),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: Colors.black.withValues(alpha: 0.05),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _savingSignatures.contains(warning.signature)
+                        ? null
+                        : () => _markJournalResolved(warning),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: _savingSignatures.contains(warning.signature)
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.verified_rounded),
+                    label: Text(
+                      _savingSignatures.contains(warning.signature)
+                          ? "Resolving..."
+                          : "Mark this warning resolved",
                     ),
                   ),
-                  child: Text(
-                    journalText.isEmpty
-                        ? "Raw journal text is unavailable. The student may not have consented to raw AI data sharing yet."
-                        : journalText,
-                    style: TextStyle(
-                      color: Colors.grey.shade800,
-                      height: 1.45,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                if (widget.student.warningJournalCreatedAt.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    "Created: ${widget.student.warningJournalCreatedAt}",
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
+                  const SizedBox(height: 18),
                 ],
               ],
             ),
-          ),
-          const SizedBox(height: 18),
-          FilledButton.icon(
-            onPressed: _saving ? null : _markResolved,
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.deepOrange,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-            icon: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.verified_rounded),
-            label: Text(_saving ? "Saving..." : "Mark resolved after review"),
           ),
         ],
       ),
@@ -1399,7 +1593,9 @@ class _PersonalMlPanel extends StatelessWidget {
               Expanded(
                 child: _MetricPill(
                   label: "AI rank",
-                  value: features.modelResult.rank,
+                  value: features.modelResult.confidence <= 0
+                      ? "Pending"
+                      : features.modelResult.rank,
                   color: _stressColor(features.modelResult.score),
                 ),
               ),
@@ -1671,20 +1867,15 @@ class _RankBadge extends StatelessWidget {
       ),
       child: Column(
         children: [
+          Text(
+            confidence > 0 ? rank : "Pending",
+            style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          ),
           if (confidence > 0)
             Text(
-              rank,
-              style: TextStyle(color: color, fontWeight: FontWeight.bold),
-            )
-          else
-            Text(
-              "Pending",
-              style: TextStyle(color: color, fontWeight: FontWeight.bold),
+              score.toStringAsFixed(0),
+              style: TextStyle(color: color, fontSize: 12),
             ),
-          Text(
-            score.toStringAsFixed(0),
-            style: TextStyle(color: color, fontSize: 12),
-          ),
         ],
       ),
     );
@@ -1774,6 +1965,7 @@ class _StudentWellnessSummary {
     required this.warningSnippets,
     required this.warningSignature,
     required this.resolvedWarningSignature,
+    required this.warningJournals,
     required this.warningJournalId,
     required this.warningJournalText,
     required this.warningJournalCreatedAt,
@@ -1798,6 +1990,7 @@ class _StudentWellnessSummary {
   final List<String> warningSnippets;
   final String warningSignature;
   final String resolvedWarningSignature;
+  final List<_WarningJournalReview> warningJournals;
   final String warningJournalId;
   final String warningJournalText;
   final String warningJournalCreatedAt;
@@ -1814,6 +2007,35 @@ class _StudentWellnessSummary {
     if (normalized == 'elevated') return 'Elevated';
     if (normalized == 'moderate') return 'Moderate';
     return 'Low';
+  }
+}
+
+class _WarningJournalReview {
+  const _WarningJournalReview({
+    required this.id,
+    required this.signature,
+    required this.text,
+    required this.createdAt,
+    required this.snippets,
+    required this.severity,
+  });
+
+  final String id;
+  final String signature;
+  final String text;
+  final String createdAt;
+  final List<String> snippets;
+  final String severity;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'signature': signature,
+      'text': text,
+      'createdAt': createdAt,
+      'snippets': snippets,
+      'severity': severity,
+    };
   }
 }
 

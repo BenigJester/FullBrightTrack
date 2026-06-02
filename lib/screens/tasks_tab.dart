@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../services/task_content_guard_service.dart';
 import '../services/task_content_blocked_exception.dart';
 import '../services/wellness_signal_service.dart';
+import '../services/genkit_stress_ai_service.dart';
 
 class Task {
   final String id;
@@ -224,9 +225,16 @@ class _TasksTabState extends State<TasksTab> {
     final trimmedTitle = title.trim();
     if (trimmedTitle.isEmpty) return;
     if (deadline != null && !deadline.isAfter(DateTime.now())) return;
-    final guardResult = TaskContentGuardService.validate(trimmedTitle);
-    if (!guardResult.isAllowed) {
-      throw TaskContentBlockedException(guardResult);
+    final aiReview = await GenkitStressAiService.analyzeTaskContent(
+      trimmedTitle,
+    );
+    if (!aiReview.isAllowed) {
+      throw TaskContentBlockedException(
+        TaskContentGuardResult.blocked(
+          label: aiReview.label,
+          guidance: aiReview.feedback,
+        ),
+      );
     }
 
     final taskRef = _taskRef;
@@ -268,14 +276,12 @@ class _TasksTabState extends State<TasksTab> {
     await WellnessSignalService.publishCurrentUserSignals();
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text("$title tasks cleared"),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    _showTaskFeedback(
+      title: "Tasks cleared",
+      message: "$title tasks cleared",
+      icon: Icons.check_circle_outline_rounded,
+      iconColor: Colors.greenAccent,
+    );
   }
 
   Future<bool?> _showClearTasksDialog(
@@ -336,78 +342,76 @@ class _TasksTabState extends State<TasksTab> {
     BuildContext context,
     TaskContentGuardResult result,
   ) async {
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
-          contentPadding: const EdgeInsets.fromLTRB(22, 14, 22, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
-          title: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.health_and_safety_rounded,
-                  color: Colors.red,
-                ),
+    _showTaskFeedback(
+      title: "Task needs revision",
+      message: "This task may contain ${result.label}. ${result.guidance}",
+      icon: Icons.health_and_safety_rounded,
+      iconColor: Colors.redAccent,
+      duration: const Duration(seconds: 5),
+    );
+  }
+
+  void _showTaskFeedback({
+    required String title,
+    required String message,
+    required IconData icon,
+    required Color iconColor,
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF2D2D2D),
+        elevation: 0,
+        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        duration: duration,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        content: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
               ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  "Task needs revision",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "FullBrightTrack could not save this task because it may contain ${result.label}.",
-                style: TextStyle(color: Colors.grey.shade800, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Text(
-                  result.guidance,
-                  style: TextStyle(
-                    color: Colors.orange.shade900,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 3),
+                  Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          actions: [
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.deepOrange,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Edit task"),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -1311,7 +1315,6 @@ class _TasksTabState extends State<TasksTab> {
                           ? null
                           : () async {
                               final navigator = Navigator.of(context);
-                              final messenger = ScaffoldMessenger.of(context);
 
                               final now = DateTime.now();
                               final title = titleController.text.trim();
@@ -1340,16 +1343,6 @@ class _TasksTabState extends State<TasksTab> {
                                 return;
                               }
 
-                              final guardResult =
-                                  TaskContentGuardService.validate(title);
-                              if (!guardResult.isAllowed) {
-                                await _showTaskBlockedDialog(
-                                  context,
-                                  guardResult,
-                                );
-                                return;
-                              }
-
                               try {
                                 setState(() {
                                   isCreating = true;
@@ -1370,8 +1363,11 @@ class _TasksTabState extends State<TasksTab> {
                               } catch (e) {
                                 if (!mounted) return;
 
-                                messenger.showSnackBar(
-                                  SnackBar(content: Text("Error: $e")),
+                                _showTaskFeedback(
+                                  title: "Could not create task",
+                                  message: "Error: $e",
+                                  icon: Icons.error_outline_rounded,
+                                  iconColor: Colors.redAccent,
                                 );
                               } finally {
                                 if (context.mounted) {

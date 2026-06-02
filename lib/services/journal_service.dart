@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/app_data.dart';
 import 'journal_warning_service.dart';
 import 'wellness_signal_service.dart';
@@ -41,15 +42,28 @@ class JournalService {
     _journalSubscription = _journalCollection(user.uid)
         .orderBy('created_at', descending: true)
         .snapshots()
-        .listen((snapshot) {
-          final journals = snapshot.docs.map((doc) {
-            final data = doc.data();
+        .listen(
+          (snapshot) {
+            final journals = snapshot.docs.map((doc) {
+              final data = doc.data();
 
-            return {'id': doc.id, ...data};
-          }).toList();
+              return {'id': doc.id, ...data};
+            }).toList();
 
-          appData.updateJournalData(journalList: journals, loading: false);
-        });
+            appData.updateJournalData(journalList: journals, loading: false);
+          },
+          onError: (Object error) {
+            if (error is FirebaseException &&
+                error.code == 'permission-denied') {
+              debugPrint('Journal listener skipped: permission-denied');
+              appData.updateJournalData(journalList: const [], loading: false);
+              return;
+            }
+
+            debugPrint('Journal listener failed: $error');
+            appData.updateJournalData(journalList: const [], loading: false);
+          },
+        );
   }
 
   // =========================================================

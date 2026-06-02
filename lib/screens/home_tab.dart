@@ -174,12 +174,23 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _refreshHome(AppData data) async {
-    await Future.wait<void>([
-      HomeTabService.preload(data),
-      StepsService.instance.refreshNow(),
-      MoodService.instance.loadTodayMood(),
-    ]);
+    final quickRefresh = Future.wait<void>([
+      StepsService.instance.refreshVisibleNow(),
+      HomeTabService.loadCached(data).then((_) {}),
+    ]).timeout(const Duration(milliseconds: 900), onTimeout: () => <void>[]);
+
+    unawaited(
+      Future.wait<void>([
+        HomeTabService.preload(data),
+        StepsService.instance.refreshNow(),
+        MoodService.instance.loadTodayMood(),
+      ]).catchError((error) {
+        debugPrint('Background home refresh failed: $error');
+        return <void>[];
+      }),
+    );
     unawaited(JournalService.initialize(data));
+    await quickRefresh;
   }
 
   String _moodEmoji(int mood) {

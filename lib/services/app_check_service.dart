@@ -7,6 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AppCheckService {
   const AppCheckService._();
 
+  static const _enabled = bool.fromEnvironment(
+    'ENABLE_APP_CHECK',
+    defaultValue: true,
+  );
   static const _useDebugProvider = bool.fromEnvironment(
     'USE_APP_CHECK_DEBUG',
     defaultValue: kDebugMode,
@@ -15,6 +19,11 @@ class AppCheckService {
   static const _debugTokenPrefsKey = 'app_check_debug_token';
 
   static Future<void> activate() async {
+    if (!_enabled) {
+      debugPrint('Firebase App Check is disabled for this build.');
+      return;
+    }
+
     final debugToken = _useDebugProvider ? await _debugTokenForDevice() : null;
 
     await FirebaseAppCheck.instance.activate(

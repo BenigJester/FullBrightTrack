@@ -53,14 +53,22 @@ class AdminAlertService {
   }) async {
     if (warningSignature.isEmpty) return;
 
-    await _firestore
-        .collection('admin_alerts')
-        .doc(_alertId(userId, warningSignature))
-        .set({
-          'status': 'resolved',
-          'resolvedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+    try {
+      await _firestore
+          .collection('admin_alerts')
+          .doc(_alertId(userId, warningSignature))
+          .update({
+            'status': 'resolved',
+            'resolvedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+    } on FirebaseException catch (error) {
+      if (error.code == 'not-found' || error.code == 'permission-denied') {
+        debugPrint('Admin alert resolve skipped: ${error.code}');
+        return;
+      }
+      rethrow;
+    }
   }
 
   static Future<void> startAdminAlertListener() async {

@@ -128,9 +128,11 @@ flutter pub get
   - Email/password
   - Google
 - Enable Cloud Firestore.
-- Configure Firebase App Check for Android. Use debug provider only for debug builds and Play Integrity for release.
+- App Check is enabled by default. Debug builds use the debug provider and print the token that must be registered in Firebase Console. Release builds use Play Integrity.
+- Optional explicit debug App Check run command:
+  `flutter run --dart-define=USE_APP_CHECK_DEBUG=true`
 - If admin push alerts are needed, deploy the Firebase Functions backend from `functions/`.
-- When running a debug build, check the Flutter console for `Firebase App Check debug token to register: ...`, then add that token in Firebase Console under App Check > your Android app > Manage debug tokens.
+- When using debug App Check, check the Flutter console for `Firebase App Check debug token to register: ...`, then add that exact token in Firebase Console under App Check > your Android app > Manage debug tokens.
 
 3. Configure the AI backend:
 
@@ -203,6 +205,7 @@ admin_fcm_tokens/{adminUid}/tokens/{token}
 ## Suggested Firestore Rules
 
 This app expects users to access their own private data, read public leaderboard summaries, and write only their own minimized admin monitoring summary. Admin access is controlled by `users/{uid}.isAdmin == true`.
+Email verification is not required by the current app flow, so these rules intentionally do not check `request.auth.token.email_verified`.
 
 ```js
 rules_version = '2';
@@ -222,9 +225,15 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
     }
 
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId);
+      allow delete: if false;
+    }
+
     match /users/{userId}/{document=**} {
       allow read: if isOwner(userId) || isAdmin();
-      allow write: if isOwner(userId);
+      allow create, update, delete: if isOwner(userId);
     }
 
     match /leaderboard/{userId} {
@@ -233,11 +242,28 @@ service cloud.firestore {
     }
 
     match /admin_monitoring/{userId} {
-      allow read: if isAdmin();
+      allow read: if isOwner(userId) || isAdmin();
       allow create, update: if isOwner(userId);
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).changedKeys()
-          .hasOnly(['resolvedWarningSignature', 'resolvedWarningAt']);
+          .hasOnly([
+            'resolvedWarningSignature',
+            'resolvedWarningSignatures',
+            'resolvedWarningAt',
+            'warningJournals',
+            'warningSnippets',
+            'warningFindings',
+            'warningSignature',
+            'warningJournalId',
+            'warningJournalText',
+            'warningJournalCreatedAt',
+            'journalWarningWeight',
+            'journalWarningSeverity',
+            'hasDangerWarning',
+            'aiMoodStatus',
+            'aiMoodStatusUpdatedAt',
+            'rationale'
+          ]);
       allow delete: if false;
     }
 

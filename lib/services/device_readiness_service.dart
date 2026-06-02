@@ -110,14 +110,14 @@ class DeviceReadinessService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final userDoc = await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .get();
-
-    if (userDoc.data()?['isAdmin'] != true) return;
-
     try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (userDoc.data()?['isAdmin'] != true) return;
+
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null || token.isEmpty) return;
 
@@ -147,6 +147,11 @@ class DeviceReadinessService {
             }, SetOptions(merge: true));
       });
     } catch (error) {
+      if (error is FirebaseException && error.code == 'permission-denied') {
+        debugPrint('Admin FCM token registration skipped: permission-denied');
+        return;
+      }
+
       debugPrint('Admin FCM token registration failed: $error');
     }
   }

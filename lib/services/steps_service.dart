@@ -88,7 +88,7 @@ class StepsService with WidgetsBindingObserver {
 
     await Future.wait([_loadQueue(), _loadToday()]);
 
-    await _refreshFromLocalCache(syncNow: true);
+    await _refreshFromLocalCache(syncNow: false);
 
     Future.microtask(() => getHealthInsights(_goal));
 
@@ -109,6 +109,10 @@ class StepsService with WidgetsBindingObserver {
     await _refreshFromLocalCache(syncNow: true);
     await _refreshStepStreaks();
     await getHealthInsights(_goal);
+  }
+
+  Future<void> refreshVisibleNow() async {
+    await _refreshFromLocalCache(syncNow: false);
   }
 
   Future<void> _refreshFromLocalCache({bool syncNow = false}) async {
@@ -744,20 +748,32 @@ class StepsService with WidgetsBindingObserver {
 
     final dates = _generateDateRange(start, now);
 
-    final futures = dates.map<Future<MapEntry<String, int>>>((date) async {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('steps')
-          .doc(date)
-          .get();
+    final result = {for (final date in dates) date: 0};
 
-      return MapEntry(date, (doc.data()?['steps'] as num?)?.toInt() ?? 0);
-    });
+    for (final date in dates) {
+      final activeUser = FirebaseAuth.instance.currentUser;
+      if (activeUser == null || activeUser.uid != user.uid) {
+        break;
+      }
 
-    final entries = await Future.wait(futures);
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('steps')
+            .doc(date)
+            .get();
 
-    final result = Map<String, int>.fromEntries(entries);
+        result[date] = (doc.data()?['steps'] as num?)?.toInt() ?? 0;
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied') {
+          debugPrint("Step insight history skipped: permission-denied");
+          break;
+        }
+
+        rethrow;
+      }
+    }
 
     // merge offline queue
     for (final item in _offlineQueue) {

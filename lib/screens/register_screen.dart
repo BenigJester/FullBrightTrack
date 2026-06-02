@@ -69,22 +69,28 @@ class _RegisterTabState extends State<RegisterTab> {
     try {
       setState(() => isLoading = true);
 
-      final user = await auth.register(email, password);
-      await user?.sendEmailVerification();
+      await auth.register(email, password);
+      await FirebaseAuth.instance.signOut();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+    } on FirebaseAuthException catch (e) {
+      if (FirebaseAuth.instance.currentUser?.email == email) {
+        await FirebaseAuth.instance.signOut();
+      }
 
       if (!mounted) return;
 
-      _showSnackBar(
-        "Verification email sent. Please verify before logging in.",
-      );
-      Navigator.pop(context);
-    } on FirebaseAuthException catch (e) {
       if (e.code == 'email-already-in-use') {
         await _confirmAndMergeGoogleAccount(email, password);
       } else {
         _showSnackBar(_authErrorMessage(e));
       }
     } catch (e) {
+      if (FirebaseAuth.instance.currentUser?.email == email) {
+        await FirebaseAuth.instance.signOut();
+      }
+      if (!mounted) return;
       _showSnackBar(e.toString());
     } finally {
       if (mounted) {

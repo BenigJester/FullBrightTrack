@@ -4,9 +4,16 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class QuoteService {
+  static const _fallbackQuote = {
+    "quote": "Stay consistent. Small steps matter.",
+    "author": "System",
+  };
+
   static Future<Map<String, String>> getDailyQuote() async {
     final user = FirebaseAuth.instance.currentUser;
-    final uid = user!.uid;
+    if (user == null) return _fallbackQuote;
+
+    final uid = user.uid;
 
     final today = DateTime.now().toIso8601String().split('T').first;
 
@@ -16,7 +23,16 @@ class QuoteService {
         .collection('daily_quote')
         .doc(today);
 
-    final doc = await docRef.get();
+    final DocumentSnapshot<Map<String, dynamic>> doc;
+    try {
+      doc = await docRef.get();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        return _fallbackQuote;
+      }
+
+      rethrow;
+    }
 
     if (doc.exists) {
       return {"quote": doc['quote'], "author": doc['author']};
@@ -35,15 +51,19 @@ class QuoteService {
         "author": data[0]["a"].toString(),
       };
 
-      await docRef.set({
-        ...quote,
-        "date": today,
-        "createdAt": FieldValue.serverTimestamp(),
-      });
+      try {
+        await docRef.set({
+          ...quote,
+          "date": today,
+          "createdAt": FieldValue.serverTimestamp(),
+        });
+      } on FirebaseException catch (e) {
+        if (e.code != 'permission-denied') rethrow;
+      }
 
       return quote;
     } else {
-      throw Exception("Failed to fetch quote");
+      return _fallbackQuote;
     }
   }
 }

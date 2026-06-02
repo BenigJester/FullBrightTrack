@@ -435,6 +435,55 @@ class _JournalScreenState extends State<JournalScreen> {
     );
   }
 
+  Future<void> _showJournalFeedbackDialog({
+    required String title,
+    required String message,
+    required IconData icon,
+    required Color color,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Text(message, style: const TextStyle(height: 1.4)),
+          actions: [
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: color,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Done"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _saveJournal() async {
     final user = FirebaseAuth.instance.currentUser;
 
@@ -477,8 +526,12 @@ class _JournalScreenState extends State<JournalScreen> {
       await MoodService.instance.applyJournalMood(text);
 
       if (mounted) {
-        _showJournalMessage(
-          "Saved. AI refreshed today's mood from your entry.",
+        await _showJournalFeedbackDialog(
+          title: "Journal saved",
+          message:
+              "AI refreshed today's mood from your new journal entry and updated your wellness signals.",
+          icon: Icons.check_circle_outline_rounded,
+          color: Colors.green,
         );
 
         _controller.clear();
@@ -492,8 +545,12 @@ class _JournalScreenState extends State<JournalScreen> {
       debugPrint("Error saving journal: $e");
 
       if (mounted) {
-        _showJournalMessage(
-          "I couldn't save this entry. Please check your connection and try again.",
+        await _showJournalFeedbackDialog(
+          title: "Could not save journal",
+          message:
+              "Please check your connection and try again. Your entry was not saved.",
+          icon: Icons.error_outline_rounded,
+          color: Colors.redAccent,
         );
       }
     } finally {

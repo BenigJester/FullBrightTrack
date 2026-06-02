@@ -40,8 +40,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _prepareSignedInDevice() async {
-    await DeviceReadinessService.registerAdminMessagingToken();
-    await AdminAlertService.startAdminAlertListener();
+    try {
+      await DeviceReadinessService.registerAdminMessagingToken();
+    } catch (error) {
+      debugPrint('Admin FCM setup skipped: $error');
+    }
+
+    try {
+      await AdminAlertService.startAdminAlertListener();
+    } catch (error) {
+      debugPrint('Admin alert listener skipped: $error');
+    }
 
     final status = await DeviceReadinessService.checkStatus();
     if (!mounted || !status.needsAttention) return;
@@ -288,20 +297,19 @@ class _PermissionReadinessDialogState extends State<_PermissionReadinessDialog>
                   ),
                 ),
               const SizedBox(height: 10),
-              Center(
-                child: Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.deepOrange,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.deepOrange,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Text('Confirm'),
                   ),
+                  child: const Text('Confirm'),
                 ),
               ),
             ],

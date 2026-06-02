@@ -122,22 +122,6 @@ class _LoginTabState extends State<LoginTab>
       // ================= LOGIN =================
 
       await auth.login(email, password);
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !user.emailVerified) {
-        if (mounted) {
-          final shouldSend = await _showEmailVerificationDialog(email);
-          if (shouldSend == true) {
-            await user.sendEmailVerification();
-            if (mounted) {
-              showErrorSnackBar(
-                'A new confirmation email was sent. Use the newest link only.',
-              );
-            }
-          }
-        }
-        await FirebaseAuth.instance.signOut();
-        return;
-      }
       await createUserIfNotExists();
     } on FirebaseAuthException catch (e) {
       if (mounted) {
@@ -158,33 +142,6 @@ class _LoginTabState extends State<LoginTab>
         setState(() => isLoading = false);
       }
     }
-  }
-
-  Future<bool?> _showEmailVerificationDialog(String email) async {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text("Confirm your account"),
-          content: Text(
-            "This account is not confirmed yet. Use the newest confirmation email only, because Firebase links are single-use and older links may show expired or already used.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("I have the email"),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text("Send new email"),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   @override

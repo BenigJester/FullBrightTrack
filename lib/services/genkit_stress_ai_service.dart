@@ -182,6 +182,76 @@ class GenkitStressAiService {
       return fallback;
     }
   }
+
+  static Future<TaskAiReviewResult> analyzeTaskContent(String taskTitle) async {
+    final fallback = TaskAiReviewResult.local(taskTitle);
+    if (!isConfigured || taskTitle.trim().isEmpty) return fallback;
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(_flowUrl),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'mode': 'task-content',
+              'taskTitle': taskTitle,
+              'instructions':
+                  'Decide if a student task title is safe and appropriate. Block self-harm intent, threats, harassment, explicit content, cheating, or harmful instructions. Return allow, label, feedback.',
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return fallback;
+      }
+
+      final decoded = jsonDecode(response.body);
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      final output = data['result'] is Map<String, dynamic>
+          ? data['result'] as Map<String, dynamic>
+          : data;
+
+      return TaskAiReviewResult(
+        isAllowed: output['allow'] == true,
+        label: (output['label'] as String?) ?? fallback.label,
+        feedback: (output['feedback'] as String?) ?? fallback.feedback,
+        source: (output['modelVersion'] as String?) ?? 'ai-task-content',
+      );
+    } catch (_) {
+      return fallback;
+    }
+  }
+}
+
+class TaskAiReviewResult {
+  const TaskAiReviewResult({
+    required this.isAllowed,
+    required this.label,
+    required this.feedback,
+    required this.source,
+  });
+
+  factory TaskAiReviewResult.local(String title) {
+    final normalized = title.toLowerCase();
+    final blocked = RegExp(
+      r'\b(kill myself|suicide|end my life|hurt myself|harm myself|magpakamatay|cheat on exam|hurt someone)\b',
+    ).hasMatch(normalized);
+    return TaskAiReviewResult(
+      isAllowed: !blocked,
+      label: blocked ? 'unsafe or inappropriate task wording' : 'appropriate',
+      feedback: blocked
+          ? 'Please rewrite this as a safe, constructive support action before saving.'
+          : 'Task wording appears appropriate.',
+      source: 'local-task-content',
+    );
+  }
+
+  final bool isAllowed;
+  final String label;
+  final String feedback;
+  final String source;
 }
 
 class JournalMoodResult {

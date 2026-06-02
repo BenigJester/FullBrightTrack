@@ -91,12 +91,28 @@ class WellnessSignalService {
 
     var warningSnippets = <String>[];
     var warningFindings = <Map<String, dynamic>>[];
+    final warningJournals = <Map<String, dynamic>>[];
     var warningSignature = '';
     var warningJournalId = '';
     var warningJournalText = '';
     var warningJournalCreatedAt = '';
     var journalWarningWeight = 0.0;
     var journalWarningSeverity = JournalWarningSeverity.none;
+    final monitoringRef = _firestore
+        .collection('admin_monitoring')
+        .doc(user.uid);
+    final previousMonitoringData = await _readMonitoringDataIfAllowed(
+      monitoringRef,
+    );
+    final resolvedSignatures = <String>{
+      if ((previousMonitoringData['resolvedWarningSignature'] as String? ?? '')
+          .isNotEmpty)
+        previousMonitoringData['resolvedWarningSignature'] as String,
+      if (previousMonitoringData['resolvedWarningSignatures'] is List)
+        ...(previousMonitoringData['resolvedWarningSignatures'] as List)
+            .whereType<String>(),
+    };
+
     for (final doc in journalSnapshot.docs) {
       final text = (doc.data()['text'] as String?) ?? '';
       final warningSummary = hasRawAiConsent
@@ -104,38 +120,43 @@ class WellnessSignalService {
           : JournalWarningService.analyze(text);
       if (warningSummary.findings.isEmpty) continue;
 
-      warningSnippets = warningSummary.snippets;
-      warningFindings = warningSummary.toJsonList();
-      warningSignature =
+      final signature =
           '${doc.id}:${warningSummary.signatures.take(3).join('|')}';
-      warningJournalId = doc.id;
-      warningJournalText = text;
-      warningJournalCreatedAt = _timestampText(doc.data()['created_at']) ?? '';
-      journalWarningWeight = warningSummary.weight;
-      journalWarningSeverity = warningSummary.severity;
-      break;
+      if (resolvedSignatures.contains(signature)) continue;
+
+      final snippets = warningSummary.snippets;
+      final findings = warningSummary.toJsonList();
+      warningJournals.add({
+        'id': doc.id,
+        'signature': signature,
+        'snippets': snippets,
+        'findings': findings,
+        'severity': warningSummary.severity.name,
+        'weight': warningSummary.weight,
+        'createdAt': _timestampText(doc.data()['created_at']) ?? '',
+        'text': hasRawAiConsent ? text : '',
+      });
+
+      warningSnippets = [...warningSnippets, ...snippets].take(5).toList();
+      warningFindings = [...warningFindings, ...findings].take(5).toList();
+      if (warningSignature.isEmpty) {
+        warningSignature = signature;
+        warningJournalId = doc.id;
+        warningJournalText = text;
+        warningJournalCreatedAt =
+            _timestampText(doc.data()['created_at']) ?? '';
+      }
+      journalWarningWeight = max(journalWarningWeight, warningSummary.weight);
+      journalWarningSeverity = _maxSeverity(
+        journalWarningSeverity,
+        warningSummary.severity,
+      );
+      if (warningJournals.length >= 5) break;
     }
-    final monitoringRef = _firestore
-        .collection('admin_monitoring')
-        .doc(user.uid);
-    final previousMonitoringData = await _readMonitoringDataIfAllowed(
-      monitoringRef,
-    );
-    final resolvedWarningSignature =
-        previousMonitoringData['resolvedWarningSignature'] as String? ?? '';
-    final warningResolved =
-        warningSignature.isNotEmpty &&
-        warningSignature == resolvedWarningSignature;
-    final effectiveWarningSnippets = warningResolved
-        ? <String>[]
-        : warningSnippets;
-    final effectiveWarningFindings = warningResolved
-        ? <Map<String, dynamic>>[]
-        : warningFindings;
-    final effectiveWarningWeight = warningResolved ? 0.0 : journalWarningWeight;
-    final effectiveWarningSeverity = warningResolved
-        ? JournalWarningSeverity.none
-        : journalWarningSeverity;
+    final effectiveWarningSnippets = warningSnippets;
+    final effectiveWarningFindings = warningFindings;
+    final effectiveWarningWeight = journalWarningWeight;
+    final effectiveWarningSeverity = journalWarningSeverity;
 
     final input = StressModelInput(
       avgMoodIndex: avgMoodIndex,
@@ -197,11 +218,10 @@ class WellnessSignalService {
       'warningSnippets': effectiveWarningSnippets.take(5).toList(),
       'warningFindings': effectiveWarningFindings.take(5).toList(),
       'warningSignature': warningSignature,
-      'warningJournalId': warningResolved ? '' : warningJournalId,
-      'warningJournalText': warningResolved || !hasRawAiConsent
-          ? ''
-          : warningJournalText,
-      'warningJournalCreatedAt': warningResolved ? '' : warningJournalCreatedAt,
+      'warningJournals': warningJournals,
+      'warningJournalId': warningJournalId,
+      'warningJournalText': !hasRawAiConsent ? '' : warningJournalText,
+      'warningJournalCreatedAt': warningJournalCreatedAt,
       'journalWarningWeight': effectiveWarningWeight,
       'journalWarningSeverity': effectiveWarningSeverity.name,
       'hasDangerWarning':
@@ -244,6 +264,13 @@ class WellnessSignalService {
       (runningTotal, steps) => runningTotal + steps,
     );
     return total / positiveSteps.length;
+  }
+
+  static JournalWarningSeverity _maxSeverity(
+    JournalWarningSeverity current,
+    JournalWarningSeverity next,
+  ) {
+    return next.index > current.index ? next : current;
   }
 
   static Map<String, dynamic> _rawAiPayload({

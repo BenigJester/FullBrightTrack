@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:productivity_and_wellbeing/services/step_foreground_service.dart';
 import 'package:productivity_and_wellbeing/services/steps_service.dart';
@@ -20,6 +22,15 @@ class LoadingScreen extends StatefulWidget {
 
   @override
   State<LoadingScreen> createState() => _LoadingScreenState();
+}
+
+class FirestoreStartupException implements Exception {
+  const FirestoreStartupException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class _LoadingScreenState extends State<LoadingScreen>
@@ -82,6 +93,8 @@ class _LoadingScreenState extends State<LoadingScreen>
       await HomeTabService.loadCached(appData);
 
       _setLoadingText("Checking account...");
+      await _verifyFirestoreAccess();
+
       final profileSync = _runInBackground(
         AuthService.refreshGoogleProfile(),
         label: 'Profile refresh',
@@ -103,19 +116,22 @@ class _LoadingScreenState extends State<LoadingScreen>
       } else {
         debugPrint('Activity recognition denied; step tracker not started.');
       }
-      final stepsInit = StepsService.instance.initialize(appData);
 
-      _setLoadingText("Syncing wellness data...");
-      await Future.wait([
-        stepsInit,
-        MoodService.instance.initialize(appData),
-        JournalService.initialize(appData),
-      ]);
+      _setLoadingText("Preparing local data...");
+      await StepsService.instance.initialize(appData);
 
       unawaited(
         Future.wait([
           profileSync,
           homePreload,
+          _runInBackground(
+            MoodService.instance.initialize(appData),
+            label: 'Mood sync',
+          ),
+          _runInBackground(
+            JournalService.initialize(appData),
+            label: 'Journal sync',
+          ),
           _runInBackground(
             StreakService.preload(appData),
             label: 'Streak sync',
@@ -144,6 +160,25 @@ class _LoadingScreenState extends State<LoadingScreen>
         errorMessage = e.toString();
         loadingText = "Failed to initialize app";
       });
+    }
+  }
+
+  Future<void> _verifyFirestoreAccess() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw const FirestoreStartupException(
+          'Firestore refused access to this account. Check App Check debug token, Firestore rules, and that this signed-in UID is allowed to read users/{uid}.',
+        );
+      }
+
+      throw FirestoreStartupException(
+        'Could not load Firestore account data: ${e.message ?? e.code}',
+      );
     }
   }
 
@@ -370,7 +405,9 @@ class _LoadingScreenState extends State<LoadingScreen>
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 30),
                       child: Text(
-                        "Something went wrong while starting the app.",
+                        errorMessage.isEmpty
+                            ? "Something went wrong while starting the app."
+                            : errorMessage,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           color: Colors.red.shade400,

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'quote_service.dart';
 import '../models/app_data.dart';
@@ -33,10 +34,13 @@ class HomeTabService {
             )
           : null;
 
+      final cachedMood = (decoded['mood'] as num?)?.toInt() ?? -1;
+      final visibleMood = cachedMood >= 0 ? cachedMood : appData.moodIndex;
+
       appData.updateHometabData(
         quote: quote,
         steps: (decoded['steps'] as num?)?.toInt() ?? 0,
-        mood: (decoded['mood'] as num?)?.toInt() ?? -1,
+        mood: visibleMood,
         streak: (decoded['streak'] as num?)?.toInt() ?? 0,
         trend: (decoded['trend'] as num?)?.toDouble() ?? 0,
       );
@@ -68,18 +72,14 @@ class HomeTabService {
 
     final today = _todayKey();
 
-    final futures = await Future.wait([
-      QuoteService.getDailyQuote(),
-
-      stepsRef.doc(today).get(),
-
-      moodRef.doc(today).get(),
-    ]);
+    final quote = await QuoteService.getDailyQuote();
+    final stepsDoc = await _safeGet(stepsRef.doc(today));
+    final moodDoc = await _safeGet(moodRef.doc(today));
 
     // ================= QUOTE =================
 
     try {
-      appData.dailyQuote = futures[0] as Map<String, String>;
+      appData.dailyQuote = quote;
     } catch (_) {
       appData.dailyQuote = {
         "quote": "Stay consistent. Small steps matter.",
@@ -89,13 +89,12 @@ class HomeTabService {
 
     // ================= TODAY DATA =================
 
-    final stepsDoc = futures[1] as DocumentSnapshot;
+    final stepsToday = (stepsDoc?.data()?['steps'] as num?)?.toInt() ?? 0;
 
-    final moodDoc = futures[2] as DocumentSnapshot;
-
-    final stepsToday = (stepsDoc.data() as Map?)?['steps'] ?? 0;
-
-    final moodIndex = (moodDoc.data() as Map?)?['mood_index'] ?? -1;
+    final savedMoodIndex = moodDoc?.data()?['mood_index'];
+    final moodIndex = savedMoodIndex is num
+        ? savedMoodIndex.toInt()
+        : appData.moodIndex;
 
     // ================= LOAD 30 DAYS PARALLEL =================
 
@@ -106,16 +105,24 @@ class HomeTabService {
 
     // ================= MAP DATA =================
 
-    final stepSnapshot = await stepsRef
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: dates.last)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: dates.first)
-        .orderBy(FieldPath.documentId)
-        .get();
-
     final stepMap = {for (final date in dates) date: 0};
 
-    for (final doc in stepSnapshot.docs) {
-      stepMap[doc.id] = (doc.data()['steps'] as num?)?.toInt() ?? 0;
+    try {
+      final stepSnapshot = await stepsRef
+          .where(FieldPath.documentId, isGreaterThanOrEqualTo: dates.last)
+          .where(FieldPath.documentId, isLessThanOrEqualTo: dates.first)
+          .orderBy(FieldPath.documentId)
+          .get();
+
+      for (final doc in stepSnapshot.docs) {
+        stepMap[doc.id] = (doc.data()['steps'] as num?)?.toInt() ?? 0;
+      }
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint('Home step trend skipped: permission-denied');
+      } else {
+        rethrow;
+      }
     }
 
     // ================= TREND =================
@@ -176,6 +183,21 @@ class HomeTabService {
       streak: streak,
       trend: trendPercent,
     );
+  }
+
+  static Future<DocumentSnapshot<Map<String, dynamic>>?> _safeGet(
+    DocumentReference<Map<String, dynamic>> ref,
+  ) async {
+    try {
+      return await ref.get();
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        debugPrint('Home preload document skipped: permission-denied');
+        return null;
+      }
+
+      rethrow;
+    }
   }
 
   static Future<void> _cacheHomeData({

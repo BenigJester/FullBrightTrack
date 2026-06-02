@@ -69,6 +69,11 @@ Future<Response> _stress(Request request, String? apiKey) async {
       return Response.ok(jsonEncode(result));
     }
 
+    if (payload is Map<String, dynamic> && payload['mode'] == 'task-content') {
+      final result = await _taskContentWithGroq(payload, apiKey);
+      return Response.ok(jsonEncode(result));
+    }
+
     input = _readInputFromDecoded(decoded);
     final result = await _scoreWithGroq(input, apiKey);
 
@@ -82,6 +87,101 @@ Future<Response> _stress(Request request, String? apiKey) async {
     final fallback = _localScore(input ?? await _tryReadInput(request));
     fallback['fallbackReason'] = 'request_error';
     return Response.ok(jsonEncode(fallback));
+  }
+}
+
+Future<Map<String, dynamic>> _taskContentWithGroq(
+  Map<String, dynamic> payload,
+  String? apiKey,
+) async {
+  final title = (payload['taskTitle'] as String?)?.trim() ?? '';
+  final localBlocked = RegExp(
+    r'\b(kill myself|suicide|end my life|hurt myself|harm myself|magpakamatay|cheat on exam|hurt someone)\b',
+    caseSensitive: false,
+  ).hasMatch(title);
+
+  if (title.isEmpty || apiKey == null || apiKey.isEmpty) {
+    return {
+      'allow': title.isNotEmpty && !localBlocked,
+      'label': localBlocked
+          ? 'unsafe or inappropriate task wording'
+          : 'appropriate',
+      'feedback': localBlocked
+          ? 'Please rewrite this as a safe, constructive support action before saving.'
+          : 'Task wording appears appropriate.',
+      'modelVersion': _fallbackVersion,
+    };
+  }
+
+  try {
+    final response = await http
+        .post(
+          Uri.parse(_groqEndpoint),
+          headers: {
+            HttpHeaders.authorizationHeader: 'Bearer $apiKey',
+            HttpHeaders.contentTypeHeader: 'application/json',
+          },
+          body: jsonEncode({
+            'model': _groqModel(),
+            'messages': [
+              {
+                'role': 'system',
+                'content':
+                    'Review a student task title for safety and appropriateness. Return only compact JSON.',
+              },
+              {
+                'role': 'user',
+                'content':
+                    'Return exactly {"allow":true,"label":"","feedback":""}. Block self-harm intent, threats, harassment, explicit content, cheating, or harmful instructions. Title: ${jsonEncode(title)}',
+              },
+            ],
+            'temperature': 0,
+            'max_tokens': 140,
+            'response_format': {'type': 'json_object'},
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return {
+        'allow': !localBlocked,
+        'label': localBlocked ? 'unsafe task wording' : 'appropriate',
+        'feedback': localBlocked
+            ? 'Please rewrite this as a safe support action before saving.'
+            : 'Task wording appears appropriate.',
+        'modelVersion': _fallbackVersion,
+      };
+    }
+
+    final parsed = _extractJson(_groqMessageContent(jsonDecode(response.body)));
+    if (parsed == null) {
+      return {
+        'allow': !localBlocked,
+        'label': localBlocked ? 'unsafe task wording' : 'appropriate',
+        'feedback': localBlocked
+            ? 'Please rewrite this as a safe support action before saving.'
+            : 'Task wording appears appropriate.',
+        'modelVersion': _fallbackVersion,
+      };
+    }
+
+    return {
+      'allow': parsed['allow'] == true,
+      'label': ((parsed['label'] as String?) ?? '').trim(),
+      'feedback': ((parsed['feedback'] as String?) ?? '').trim(),
+      'modelVersion': '$_modelVersion+task-content',
+    };
+  } catch (error) {
+    return {
+      'allow': !localBlocked,
+      'label': localBlocked ? 'unsafe task wording' : 'appropriate',
+      'feedback': localBlocked
+          ? 'Please rewrite this as a safe support action before saving.'
+          : 'Task wording appears appropriate.',
+      'modelVersion': _fallbackVersion,
+      'fallbackReason': 'task_content_failed',
+      'providerError': _shortError(error.toString()),
+    };
   }
 }
 

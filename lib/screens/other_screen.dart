@@ -491,117 +491,6 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     }
   }
 
-  Future<void> _sendPasswordReset() async {
-    final email = FirebaseAuth.instance.currentUser?.email;
-    if (email == null || email.isEmpty) {
-      _showMessage("No email address is linked to this account");
-      return;
-    }
-
-    setState(() => _saving = true);
-    try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
-      if (!mounted) return;
-      await _showEmailActionDialog(
-        title: "Password reset sent",
-        message:
-            "Firebase sent the Password reset template to $email. Check your inbox and spam folder, then open the secure reset link.",
-        icon: Icons.lock_reset_rounded,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage(
-        "Could not send password reset email. Check Firebase Authentication templates and authorized domains.",
-      );
-      debugPrint("Password reset error: $e");
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _sendAccountConfirmation() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final email = user?.email;
-    if (user == null || email == null || email.isEmpty) {
-      _showMessage("No email address is linked to this account");
-      return;
-    }
-
-    setState(() => _saving = true);
-    try {
-      await user.reload();
-      final refreshed = FirebaseAuth.instance.currentUser;
-      if (refreshed?.emailVerified == true) {
-        if (!mounted) return;
-        _showMessage("Email is already confirmed");
-        setState(() {});
-        return;
-      }
-
-      await refreshed?.sendEmailVerification();
-      if (!mounted) return;
-      await _showEmailActionDialog(
-        title: "Confirmation email sent",
-        message:
-            "Firebase sent the Email address verification template to $email. Open the link in that email, then refresh this screen.",
-        icon: Icons.mark_email_read_outlined,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage("Could not send account confirmation email");
-      debugPrint("Account confirmation error: $e");
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _showEmailActionDialog({
-    required String title,
-    required String message,
-    required IconData icon,
-  }) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.deepOrange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: Colors.deepOrange),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            message,
-            style: TextStyle(color: Colors.grey.shade800, height: 1.4),
-          ),
-          actions: [
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Got it"),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _addPasswordSignIn() async {
     final user = FirebaseAuth.instance.currentUser;
     final email = user?.email;
@@ -771,7 +660,6 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     final providers =
         user?.providerData.map((info) => info.providerId).toSet() ?? {};
     final hasPassword = providers.contains('password');
-    final emailVerified = user?.emailVerified == true;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
@@ -810,28 +698,6 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                   ),
                   const SizedBox(height: 14),
                   _infoRow("Sign-in method", provider),
-                  const SizedBox(height: 14),
-                  _accountStatusCard(
-                    icon: emailVerified
-                        ? Icons.verified_rounded
-                        : Icons.mark_email_unread_outlined,
-                    title: "Account confirmation",
-                    message: emailVerified
-                        ? "Your email address is confirmed."
-                        : "Confirm your email before using email/password sign-in. Firebase uses the Email address verification template.",
-                    color: emailVerified ? Colors.green : Colors.deepOrange,
-                    actionLabel: emailVerified
-                        ? "Refresh"
-                        : "Send confirmation",
-                    onPressed: _saving
-                        ? null
-                        : emailVerified
-                        ? () async {
-                            await user?.reload();
-                            if (mounted) setState(() {});
-                          }
-                        : _sendAccountConfirmation,
-                  ),
                   const SizedBox(height: 12),
                   _accountStatusCard(
                     icon: Icons.security_rounded,
@@ -851,16 +717,14 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
               icon: Icons.save_rounded,
               onPressed: _saving ? null : _saveProfile,
             ),
-            const SizedBox(height: 12),
-            _secondaryButton(
-              label: hasPassword
-                  ? "Send Firebase Password Reset Email"
-                  : "Add Password",
-              icon: hasPassword
-                  ? Icons.lock_reset_rounded
-                  : Icons.add_moderator_outlined,
-              onPressed: hasPassword ? _sendPasswordReset : _addPasswordSignIn,
-            ),
+            if (!hasPassword) ...[
+              const SizedBox(height: 12),
+              _secondaryButton(
+                label: "Add Password",
+                icon: Icons.add_moderator_outlined,
+                onPressed: _addPasswordSignIn,
+              ),
+            ],
           ],
         ),
       ),
