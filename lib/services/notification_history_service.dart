@@ -31,6 +31,7 @@ class NotificationHistoryService {
       'title': item.title,
       'body': item.body,
       'type': item.type,
+      'userId': item.userId,
       'createdAt': Timestamp.fromDate(item.createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -79,6 +80,7 @@ class NotificationHistoryItem {
     required this.body,
     required this.type,
     required this.createdAt,
+    this.userId,
   });
 
   final String id;
@@ -86,6 +88,7 @@ class NotificationHistoryItem {
   final String body;
   final String type;
   final DateTime createdAt;
+  final String? userId;
 
   factory NotificationHistoryItem.fromFirestore(
     QueryDocumentSnapshot<Map<String, dynamic>> doc,
@@ -98,6 +101,7 @@ class NotificationHistoryItem {
       title: data['title'] as String? ?? 'Notification',
       body: data['body'] as String? ?? '',
       type: data['type'] as String? ?? 'general',
+      userId: data['userId'] as String?,
       createdAt: createdAt is Timestamp
           ? createdAt.toDate()
           : DateTime.fromMillisecondsSinceEpoch(0),

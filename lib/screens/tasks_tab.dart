@@ -248,7 +248,15 @@ class _TasksTabState extends State<TasksTab> {
       'isCompleted': false,
       'createdAt': FieldValue.serverTimestamp(),
     });
-    await WellnessSignalService.publishCurrentUserSignals();
+    unawaited(_refreshTaskWellnessSignals());
+  }
+
+  Future<void> _refreshTaskWellnessSignals() async {
+    try {
+      await WellnessSignalService.publishCurrentUserSignals();
+    } catch (e) {
+      debugPrint('Task background wellness refresh failed: $e');
+    }
   }
 
   Future<void> deleteTaskGroup({
@@ -1357,10 +1365,34 @@ class _TasksTabState extends State<TasksTab> {
                                 if (!mounted) return;
 
                                 navigator.pop();
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 120),
+                                );
+                                if (!mounted) return;
+                                _showTaskFeedback(
+                                  title: "Task created",
+                                  message:
+                                      "Your task was added. Wellness signals will refresh in the background.",
+                                  icon: Icons.check_circle_outline_rounded,
+                                  iconColor: Colors.greenAccent,
+                                );
                               } on TaskContentBlockedException catch (e) {
-                                if (!context.mounted) return;
-                                await _showTaskBlockedDialog(context, e.result);
+                                if (!mounted) return;
+                                navigator.pop();
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 120),
+                                );
+                                if (!mounted) return;
+                                await _showTaskBlockedDialog(
+                                  this.context,
+                                  e.result,
+                                );
                               } catch (e) {
+                                if (!mounted) return;
+                                navigator.pop();
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 120),
+                                );
                                 if (!mounted) return;
 
                                 _showTaskFeedback(

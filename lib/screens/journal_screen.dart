@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +10,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../models/app_data.dart';
+import '../services/admin_alert_service.dart';
+import '../services/genkit_stress_ai_service.dart';
 import '../services/journal_service.dart';
 import 'journal_history.dart';
 
@@ -504,9 +508,11 @@ class _JournalScreenState extends State<JournalScreen> {
         _saving = true;
       });
 
-      final warningSummary = JournalWarningService.analyze(text);
+      final warningSummary = await GenkitStressAiService.analyzeJournalWarning(
+        text,
+      );
 
-      await FirebaseFirestore.instance
+      final journalRef = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('journal')
@@ -522,14 +528,23 @@ class _JournalScreenState extends State<JournalScreen> {
                 warningSummary.severity == JournalWarningSeverity.critical,
             'created_at': FieldValue.serverTimestamp(),
           });
-      await WellnessSignalService.publishCurrentUserSignals();
-      await MoodService.instance.applyJournalMood(text);
+      final isCritical =
+          warningSummary.severity == JournalWarningSeverity.critical;
+      if (isCritical) {
+        unawaited(
+          AdminAlertService.publishImmediateCriticalJournalWarning(
+            user: user,
+            warningSignature: _warningSignature(journalRef.id, warningSummary),
+          ),
+        );
+      }
+      unawaited(_refreshJournalAiSignals(text, force: isCritical));
 
       if (mounted) {
         await _showJournalFeedbackDialog(
           title: "Journal saved",
           message:
-              "AI refreshed today's mood from your new journal entry and updated your wellness signals.",
+              "Your entry was saved. AI mood and wellness signals will refresh in the background.",
           icon: Icons.check_circle_outline_rounded,
           color: Colors.green,
         );
@@ -560,5 +575,24 @@ class _JournalScreenState extends State<JournalScreen> {
         });
       }
     }
+  }
+
+  Future<void> _refreshJournalAiSignals(
+    String text, {
+    bool force = false,
+  }) async {
+    try {
+      await MoodService.instance.applyJournalMood(text);
+      await WellnessSignalService.publishCurrentUserSignals(force: force);
+    } catch (e) {
+      debugPrint("Journal background AI refresh failed: $e");
+    }
+  }
+
+  String _warningSignature(
+    String journalId,
+    JournalWarningSummary warningSummary,
+  ) {
+    return '$journalId:${warningSummary.signatures.take(3).join('|')}';
   }
 }

@@ -64,10 +64,24 @@ class LeaderboardResult {
 
 class LeaderboardService {
   static const int stepGoal = 4000;
+  static const _cacheTtl = Duration(seconds: 45);
 
   static final _firestore = FirebaseFirestore.instance;
+  static LeaderboardResult? _cachedResult;
+  static DateTime? _cachedAt;
 
-  static Future<LeaderboardResult> loadMonthlyLeaderboard() async {
+  static Future<LeaderboardResult> loadMonthlyLeaderboard({
+    bool forceRefresh = false,
+  }) async {
+    final cached = _cachedResult;
+    final cachedAt = _cachedAt;
+    if (!forceRefresh &&
+        cached != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _cacheTtl) {
+      return cached;
+    }
+
     final currentUser = FirebaseAuth.instance.currentUser;
     final now = DateTime.now();
     final monthKey = _monthKey(now);
@@ -114,12 +128,15 @@ class LeaderboardService {
       }
     }
 
-    return LeaderboardResult(
+    final result = LeaderboardResult(
       entries: ranked,
       currentUser: current,
       monthLabel: _monthLabel(now),
       totalCount: ranked.length,
     );
+    _cachedResult = result;
+    _cachedAt = DateTime.now();
+    return result;
   }
 
   static Future<void> publishCurrentUserSummary({

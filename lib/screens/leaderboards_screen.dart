@@ -28,7 +28,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   }
 
   Future<void> _refresh() async {
-    final next = LeaderboardService.loadMonthlyLeaderboard();
+    final next = LeaderboardService.loadMonthlyLeaderboard(forceRefresh: true);
     setState(() => _leaderboard = next);
     await next;
   }
@@ -95,7 +95,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 _Podium(entries: data.podium),
                 const SizedBox(height: 34),
                 const Text(
-                  "Global Rankings",
+                  "FullBrightCollege Rankings",
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 18),

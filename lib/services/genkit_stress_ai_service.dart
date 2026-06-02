@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'local_stress_model_service.dart';
@@ -8,9 +9,21 @@ import 'journal_warning_service.dart';
 class GenkitStressAiService {
   const GenkitStressAiService._();
 
-  static const _flowUrl = String.fromEnvironment('GENKIT_STRESS_FLOW_URL');
+  static const _configuredFlowUrl = String.fromEnvironment(
+    'GENKIT_STRESS_FLOW_URL',
+  );
+  static const _debugLocalFlowUrl = String.fromEnvironment(
+    'GENKIT_STRESS_DEBUG_URL',
+    defaultValue: 'http://10.0.2.2:8080/stress',
+  );
 
-  static bool get isConfigured => _flowUrl.trim().isNotEmpty;
+  static String get _flowUrl {
+    final configured = _configuredFlowUrl.trim();
+    if (configured.isNotEmpty) return configured;
+    return kReleaseMode ? '' : _debugLocalFlowUrl.trim();
+  }
+
+  static bool get isConfigured => _flowUrl.isNotEmpty;
 
   static Future<StressModelResult> analyze({
     required StressModelInput input,
@@ -18,8 +31,12 @@ class GenkitStressAiService {
     required List<String> warningSnippets,
     required double journalWarningWeight,
     required String journalWarningSeverity,
+    Map<String, dynamic> adminResolutionContext = const {},
   }) async {
     if (!isConfigured) {
+      debugPrint(
+        'Stress AI fallback: GENKIT_STRESS_FLOW_URL is not configured.',
+      );
       return LocalStressModelService.analyze(input);
     }
 
@@ -43,11 +60,17 @@ class GenkitStressAiService {
               'warningSnippets': warningSnippets.take(3).toList(),
               'journalWarningWeight': journalWarningWeight.clamp(0, 1),
               'journalWarningSeverity': journalWarningSeverity,
+              'adminResolutionContext': adminResolutionContext,
+              'instructions':
+                  'If adminResolutionContext.hasResolvedWarning is true, treat matching resolved warning journals as historical resolved context after therapist/support contact, not active unresolved danger. Score high only when fresh unresolved mood, journal, task, or activity signals still show current risk.',
             }),
           )
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint(
+          'Stress AI fallback: backend returned ${response.statusCode}.',
+        );
         return LocalStressModelService.analyze(input);
       }
 
@@ -59,7 +82,7 @@ class GenkitStressAiService {
           ? data['result'] as Map<String, dynamic>
           : data;
 
-      return StressModelResult(
+      final result = StressModelResult(
         score: ((output['score'] as num?)?.toDouble() ?? 0)
             .clamp(0, 100)
             .toDouble(),
@@ -79,7 +102,15 @@ class GenkitStressAiService {
                 .toList() ??
             const ['AI flow result'],
       );
+      final fallbackReason = output['fallbackReason'] as String?;
+      if (fallbackReason != null && fallbackReason.trim().isNotEmpty) {
+        debugPrint('Stress AI backend used fallback: $fallbackReason');
+      } else {
+        debugPrint('Stress AI backend result: ${result.modelVersion}');
+      }
+      return result;
     } catch (_) {
+      debugPrint('Stress AI fallback: backend request failed.');
       return LocalStressModelService.analyze(input);
     }
   }
@@ -99,7 +130,7 @@ class GenkitStressAiService {
               'mode': 'journal-warning',
               'rawJournalText': journalText,
               'instructions':
-                  'Classify safety severity from raw student journal text. Understand English, Tagalog, Cebuano, Ilocano, Hiligaynon, and mixed Philippine languages. Return severity, weight, and warningSignalTerm.',
+                  'Classify safety severity from raw student journal text. Understand English and Philippine languages such as Tagalog, Cebuano, Ilocano, Hiligaynon, Waray, Kapampangan, Pangasinan, Bicolano, and mixed local-English writing. Detect self-harm, threats or harm toward other people, violent intent, coercion, harassment, and explicit unsafe wording. If wording is clearly slang, a harmless joke, quoted media, or not an actual safety concern, return severity none with confidence. Return severity, weight, warningSignalTerm, and confidence.',
             }),
           )
           .timeout(const Duration(seconds: 8));
@@ -115,9 +146,22 @@ class GenkitStressAiService {
       final output = data['result'] is Map<String, dynamic>
           ? data['result'] as Map<String, dynamic>
           : data;
+      final fallbackReason = output['fallbackReason'] as String?;
+      if (fallbackReason != null && fallbackReason.trim().isNotEmpty) {
+        return fallback;
+      }
+      final severity = ((output['severity'] as String?) ?? 'none')
+          .trim()
+          .toLowerCase();
+      final confidence = ((output['confidence'] as num?)?.toDouble() ?? 0)
+          .clamp(0, 1)
+          .toDouble();
+      if (severity == 'none' && confidence < 0.65) {
+        return fallback;
+      }
 
       return JournalWarningService.fromAi(
-        severity: (output['severity'] as String?) ?? 'none',
+        severity: severity,
         weight: ((output['weight'] as num?)?.toDouble() ?? fallback.weight)
             .clamp(0, 1)
             .toDouble(),
@@ -146,7 +190,7 @@ class GenkitStressAiService {
               'mode': 'journal-mood',
               'rawJournalText': journalText,
               'instructions':
-                  'Read the raw journal and estimate moodIndex 0 sad, 1 low/neutral, 2 okay, 3 happy, plus moodIntensity 0.0 to 1.0. Return criteria.',
+                  'Read the raw journal and estimate moodIndex 0 sad, 1 low/neutral, 2 okay/positive, 3 energized/very happy/excited/grateful/proud, plus moodIntensity 0.0 to 1.0. Strong happy journals should be allowed to return moodIndex 3. Return criteria.',
             }),
           )
           .timeout(const Duration(seconds: 8));
@@ -269,7 +313,7 @@ class JournalMoodResult {
     var criteria = 'Local journal mood estimate';
 
     if (RegExp(
-      r'\b(happy|great|grateful|excited|proud|relieved|masaya|salamat)\b',
+      r'\b(happy|happiest|amazing|great|grateful|excited|energized|proud|relieved|joyful|masaya|sobrang saya|salamat)\b',
     ).hasMatch(normalized)) {
       index = 3;
       intensity = 0.72;

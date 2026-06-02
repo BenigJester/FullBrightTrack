@@ -8,7 +8,9 @@ import '../services/admin_alert_service.dart';
 import '../services/local_stress_model_service.dart';
 
 class AdminMonitoringScreen extends StatefulWidget {
-  const AdminMonitoringScreen({super.key});
+  const AdminMonitoringScreen({super.key, this.initialUserId});
+
+  final String? initialUserId;
 
   @override
   State<AdminMonitoringScreen> createState() => _AdminMonitoringScreenState();
@@ -21,10 +23,12 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   final TextEditingController _pageController = TextEditingController(
     text: '1',
   );
+  final ScrollController _scrollController = ScrollController();
   _AdminRange _range = _AdminRange.week;
   _StressRankFilter _rankFilter = _StressRankFilter.all;
   _ConfidenceSort _confidenceSort = _ConfidenceSort.descending;
   int _page = 1;
+  bool _scrolledToHighlightedUser = false;
 
   @override
   void initState() {
@@ -35,6 +39,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -101,15 +106,21 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     }).toList();
 
     filtered.sort((a, b) {
-      final confidenceCompare = a.mlFeatures.modelResult.confidence.compareTo(
-        b.mlFeatures.modelResult.confidence,
+      final highlightedUserId = widget.initialUserId;
+      if (highlightedUserId != null && highlightedUserId.isNotEmpty) {
+        if (a.uid == highlightedUserId && b.uid != highlightedUserId) return -1;
+        if (b.uid == highlightedUserId && a.uid != highlightedUserId) return 1;
+      }
+
+      final confidenceOrdered = b.mlFeatures.modelResult.confidence.compareTo(
+        a.mlFeatures.modelResult.confidence,
       );
-      final confidenceOrdered = _confidenceSort == _ConfidenceSort.descending
-          ? -confidenceCompare
-          : confidenceCompare;
       if (confidenceOrdered != 0) return confidenceOrdered;
 
-      return b.stressScore.compareTo(a.stressScore);
+      final scoreCompare = a.stressScore.compareTo(b.stressScore);
+      return _confidenceSort == _ConfidenceSort.ascending
+          ? scoreCompare
+          : -scoreCompare;
     });
 
     return filtered;
@@ -132,9 +143,15 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     final warningSignature = (data['warningSignature'] as String?) ?? '';
     final resolvedWarningSignature =
         (data['resolvedWarningSignature'] as String?) ?? '';
-    final warningResolved =
+    final exactWarningResolved =
         warningSignature.isNotEmpty &&
         warningSignature == resolvedWarningSignature;
+    final supportResolved =
+        resolvedWarningSignature.isNotEmpty &&
+        ((data['hasDangerWarning'] as bool?) != true) &&
+        (warningSignature.isEmpty ||
+            warningSignature == resolvedWarningSignature);
+    final warningResolved = exactWarningResolved || supportResolved;
     final warningJournals = _warningJournalsFromData(
       data,
       warningResolved: warningResolved,
@@ -168,6 +185,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
               completedTaskCount: completedTaskCount,
               overdueTaskCount: overdueTaskCount,
             ),
+            supportResolved: supportResolved,
           )
         : storedModelResult;
     final dailyStress = _stressHistory(data, dateKeys);
@@ -281,10 +299,12 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   StressModelResult _resolvedWarningModelResult({
     required StressModelResult storedModelResult,
     required StressModelInput input,
+    required bool supportResolved,
   }) {
     final resolvedResult = LocalStressModelService.analyze(input);
     final rationale = <String>[
-      'critical warning marked resolved',
+      if (supportResolved) 'therapist support was provided',
+      'warning reviewed by admin',
       ...resolvedResult.rationale.where(
         (reason) => !reason.toLowerCase().contains('journal warning'),
       ),
@@ -344,6 +364,18 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             });
           }
           final safePage = min(_page, totalPages);
+          if (!_scrolledToHighlightedUser &&
+              (widget.initialUserId ?? '').isNotEmpty) {
+            _scrolledToHighlightedUser = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeOutCubic,
+              );
+            });
+          }
           final startIndex = (safePage - 1) * _pageSize;
           final pagedStudents = filteredStudents
               .skip(startIndex)
@@ -354,6 +386,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             color: Colors.deepOrange,
             onRefresh: _refresh,
             child: ListView(
+              controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 28),
               children: [
@@ -399,6 +432,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                   _StudentCard(
                     student: student,
                     range: _range,
+                    highlighted: student.uid == widget.initialUserId,
                     onResolved: _refresh,
                   ),
                 if (filteredStudents.isEmpty)
@@ -510,7 +544,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                   icon: Icons.translate_rounded,
                   title: "Language support",
                   text:
-                      "Supported non-English warning phrases are matched locally and converted to privacy-safe English labels before scoring.",
+                      "Local warning detection supports English and Philippine languages such as Tagalog, Cebuano, Ilocano, Hiligaynon, Waray, Kapampangan, Pangasinan, and Bicolano, then converts matches to privacy-safe English labels before scoring.",
                 ),
                 _GuideNote(
                   icon: Icons.insights_rounded,
@@ -822,7 +856,6 @@ class _RangeSelector extends StatelessWidget {
         }),
       ),
       segments: const [
-        ButtonSegment(value: _AdminRange.day, label: Text("Day")),
         ButtonSegment(value: _AdminRange.week, label: Text("Week")),
         ButtonSegment(value: _AdminRange.month, label: Text("Month")),
       ],
@@ -975,11 +1008,13 @@ class _StudentCard extends StatelessWidget {
   const _StudentCard({
     required this.student,
     required this.range,
+    required this.highlighted,
     required this.onResolved,
   });
 
   final _StudentWellnessSummary student;
   final _AdminRange range;
+  final bool highlighted;
   final Future<void> Function() onResolved;
 
   @override
@@ -996,6 +1031,9 @@ class _StudentCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
+        border: highlighted
+            ? Border.all(color: Colors.deepOrange, width: 2)
+            : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -1227,6 +1265,9 @@ class _WarningVerificationScreenState
           .where((item) => item.signature != warning.signature)
           .toList();
       final allResolved = remaining.isEmpty;
+      final resolvedState = _resolvedAiStateForRemainingWarnings(remaining);
+      final primaryWarning = remaining.isEmpty ? null : remaining.first;
+      final todayKey = _todayKey();
 
       await FirebaseFirestore.instance
           .collection('admin_monitoring')
@@ -1238,6 +1279,40 @@ class _WarningVerificationScreenState
             ]),
             'resolvedWarningAt': FieldValue.serverTimestamp(),
             'warningJournals': remaining.map((item) => item.toJson()).toList(),
+            'stressScore': resolvedState.stressScore,
+            'stressRank': resolvedState.stressRank,
+            'confidence': resolvedState.confidence,
+            'aiMoodIndex': resolvedState.moodIndex,
+            'aiMoodIntensity': resolvedState.moodIntensity,
+            'aiMoodStatus': resolvedState.aiMoodStatus,
+            'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
+            'rationale': resolvedState.rationale,
+            'supportResolutionStatus': 'therapist_support_provided',
+            'supportResolutionNote':
+                'Admin verified this warning after the student talked with a therapist/support provider.',
+            'supportResolutionUpdatedAt': FieldValue.serverTimestamp(),
+            'stressHistory.$todayKey': resolvedState.stressScore,
+            'updatedAt': FieldValue.serverTimestamp(),
+            if (!allResolved && primaryWarning != null) ...{
+              'warningSnippets': primaryWarning.snippets,
+              'warningFindings': remaining
+                  .map(
+                    (item) => {
+                      'journalId': item.id,
+                      'signature': item.signature,
+                      'severity': item.severity,
+                      'snippets': item.snippets,
+                    },
+                  )
+                  .toList(),
+              'warningSignature': primaryWarning.signature,
+              'warningJournalId': primaryWarning.id,
+              'warningJournalText': primaryWarning.text,
+              'warningJournalCreatedAt': primaryWarning.createdAt,
+              'journalWarningWeight': resolvedState.warningWeight,
+              'journalWarningSeverity': primaryWarning.severity,
+              'hasDangerWarning': resolvedState.hasDangerWarning,
+            },
             if (allResolved) ...{
               'warningSnippets': <String>[],
               'warningFindings': <Map<String, dynamic>>[],
@@ -1248,12 +1323,6 @@ class _WarningVerificationScreenState
               'journalWarningWeight': 0.0,
               'journalWarningSeverity': 'none',
               'hasDangerWarning': false,
-              'aiMoodStatus': 'Warning reviewed by admin',
-              'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
-              'rationale': [
-                'critical journal warning reviewed by admin',
-                'continue monitoring recent signals',
-              ],
             },
           }, SetOptions(merge: true));
       await AdminAlertService.markResolvedForSignature(
@@ -1279,6 +1348,126 @@ class _WarningVerificationScreenState
         setState(() => _savingSignatures.remove(warning.signature));
       }
     }
+  }
+
+  _ResolvedAiState _resolvedAiStateForRemainingWarnings(
+    List<_WarningJournalReview> remaining,
+  ) {
+    if (remaining.isEmpty) {
+      return const _ResolvedAiState(
+        stressScore: 0,
+        stressRank: 'Low',
+        confidence: 0,
+        moodIndex: 2,
+        moodIntensity: 0.35,
+        warningWeight: 0,
+        hasDangerWarning: false,
+        aiMoodStatus: 'Support conversation completed',
+        rationale: [
+          'therapist support was provided',
+          'admin verified the warning as resolved',
+          'fresh signals will guide the next analysis',
+        ],
+      );
+    }
+
+    final highest = remaining.reduce((current, next) {
+      return _severityPriority(next.severity) >
+              _severityPriority(current.severity)
+          ? next
+          : current;
+    });
+
+    switch (_normalizedSeverity(highest.severity)) {
+      case 'critical':
+        return const _ResolvedAiState(
+          stressScore: 88,
+          stressRank: 'High',
+          confidence: 0.86,
+          moodIndex: 0,
+          moodIntensity: 0.88,
+          warningWeight: 1,
+          hasDangerWarning: true,
+          aiMoodStatus: 'Active critical warning still needs review',
+          rationale: [
+            'another critical journal warning remains active',
+            'admin verification still pending',
+          ],
+        );
+      case 'elevated':
+      case 'high':
+        return const _ResolvedAiState(
+          stressScore: 68,
+          stressRank: 'Elevated',
+          confidence: 0.74,
+          moodIndex: 1,
+          moodIntensity: 0.68,
+          warningWeight: 0.72,
+          hasDangerWarning: false,
+          aiMoodStatus: 'Active elevated warning still needs review',
+          rationale: [
+            'another elevated journal warning remains active',
+            'admin verification still pending',
+          ],
+        );
+      case 'moderate':
+      case 'warning':
+        return const _ResolvedAiState(
+          stressScore: 46,
+          stressRank: 'Moderate',
+          confidence: 0.62,
+          moodIndex: 1,
+          moodIntensity: 0.52,
+          warningWeight: 0.45,
+          hasDangerWarning: false,
+          aiMoodStatus: 'Moderate journal warning still needs review',
+          rationale: [
+            'another journal warning remains active',
+            'admin verification still pending',
+          ],
+        );
+      default:
+        return const _ResolvedAiState(
+          stressScore: 24,
+          stressRank: 'Low',
+          confidence: 0.48,
+          moodIndex: 2,
+          moodIntensity: 0.38,
+          warningWeight: 0.2,
+          hasDangerWarning: false,
+          aiMoodStatus: 'Lower-risk warning still needs review',
+          rationale: [
+            'a lower-risk journal warning remains active',
+            'admin verification still pending',
+          ],
+        );
+    }
+  }
+
+  static int _severityPriority(String severity) {
+    switch (_normalizedSeverity(severity)) {
+      case 'critical':
+        return 4;
+      case 'elevated':
+      case 'high':
+        return 3;
+      case 'moderate':
+      case 'warning':
+        return 2;
+      case 'low':
+        return 1;
+      default:
+        return 0;
+    }
+  }
+
+  static String _normalizedSeverity(String severity) {
+    return severity.trim().toLowerCase();
+  }
+
+  static String _todayKey() {
+    final now = DateTime.now();
+    return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
   }
 
   Future<void> _showAdminFeedback({
@@ -1857,7 +2046,13 @@ class _RankBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _stressColor(score);
+    final isResolved = rank.trim().toLowerCase() == 'resolved';
+    final color = isResolved ? Colors.green : _stressColor(score);
+    final label = isResolved
+        ? "Resolved"
+        : confidence > 0
+        ? rank
+        : "Pending";
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1868,10 +2063,10 @@ class _RankBadge extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            confidence > 0 ? rank : "Pending",
+            label,
             style: TextStyle(color: color, fontWeight: FontWeight.bold),
           ),
-          if (confidence > 0)
+          if (!isResolved && confidence > 0)
             Text(
               score.toStringAsFixed(0),
               style: TextStyle(color: color, fontSize: 12),
@@ -1997,12 +2192,14 @@ class _StudentWellnessSummary {
   final _PersonalMlFeatures mlFeatures;
 
   bool get warningResolved {
-    return warningSignature.isNotEmpty &&
+    if (resolvedWarningSignature.isEmpty) return false;
+    return warningSignature.isEmpty ||
         warningSignature == resolvedWarningSignature;
   }
 
   String get normalizedStressRank {
     final normalized = stressRank.trim().toLowerCase();
+    if (normalized == 'resolved') return 'Resolved';
     if (normalized == 'high') return 'High';
     if (normalized == 'elevated') return 'Elevated';
     if (normalized == 'moderate') return 'Moderate';
@@ -2037,6 +2234,30 @@ class _WarningJournalReview {
       'severity': severity,
     };
   }
+}
+
+class _ResolvedAiState {
+  const _ResolvedAiState({
+    required this.stressScore,
+    required this.stressRank,
+    required this.confidence,
+    required this.moodIndex,
+    required this.moodIntensity,
+    required this.warningWeight,
+    required this.hasDangerWarning,
+    required this.aiMoodStatus,
+    required this.rationale,
+  });
+
+  final double stressScore;
+  final String stressRank;
+  final double confidence;
+  final int moodIndex;
+  final double moodIntensity;
+  final double warningWeight;
+  final bool hasDangerWarning;
+  final String aiMoodStatus;
+  final List<String> rationale;
 }
 
 class _PersonalMlFeatures {
@@ -2184,7 +2405,7 @@ class _ChartPoint {
   bool get hasData => count > 0;
 }
 
-enum _AdminRange { day, week, month }
+enum _AdminRange { week, month }
 
 enum _StressRankFilter { all, high, elevated, moderate, low }
 
@@ -2269,8 +2490,6 @@ List<String> _keysForRange(List<String> keys, _AdminRange range) {
   if (keys.isEmpty) return const [];
 
   switch (range) {
-    case _AdminRange.day:
-      return keys.sublist(max(0, keys.length - 1));
     case _AdminRange.week:
       return keys.sublist(max(0, keys.length - 7));
     case _AdminRange.month:
@@ -2316,8 +2535,6 @@ String _shortLabel(String key, _AdminRange range) {
 
 String _rangeLabel(_AdminRange range) {
   switch (range) {
-    case _AdminRange.day:
-      return 'Day';
     case _AdminRange.week:
       return 'Week';
     case _AdminRange.month:

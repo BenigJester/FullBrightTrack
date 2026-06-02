@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/app_data.dart';
+import 'admin_alert_service.dart';
+import 'genkit_stress_ai_service.dart';
 import 'journal_warning_service.dart';
 import 'wellness_signal_service.dart';
 import 'moodscreen_service.dart';
@@ -79,9 +81,11 @@ class JournalService {
 
     if (user == null) return;
 
-    final warningSummary = JournalWarningService.analyze(text);
+    final warningSummary = await GenkitStressAiService.analyzeJournalWarning(
+      text,
+    );
 
-    await _journalCollection(user.uid).add({
+    final journalRef = await _journalCollection(user.uid).add({
       'text': text,
       'tag': tag,
       'prompt': prompt,
@@ -93,8 +97,36 @@ class JournalService {
           warningSummary.severity == JournalWarningSeverity.critical,
       'created_at': FieldValue.serverTimestamp(),
     });
-    await WellnessSignalService.publishCurrentUserSignals();
-    await MoodService.instance.applyJournalMood(text);
+    final isCritical =
+        warningSummary.severity == JournalWarningSeverity.critical;
+    if (isCritical) {
+      unawaited(
+        AdminAlertService.publishImmediateCriticalJournalWarning(
+          user: user,
+          warningSignature: _warningSignature(journalRef.id, warningSummary),
+        ),
+      );
+    }
+    unawaited(_refreshJournalAiSignals(text, force: isCritical));
+  }
+
+  static Future<void> _refreshJournalAiSignals(
+    String text, {
+    bool force = false,
+  }) async {
+    try {
+      await MoodService.instance.applyJournalMood(text);
+      await WellnessSignalService.publishCurrentUserSignals(force: force);
+    } catch (e) {
+      debugPrint('Journal background AI refresh failed: $e');
+    }
+  }
+
+  static String _warningSignature(
+    String journalId,
+    JournalWarningSummary warningSummary,
+  ) {
+    return '$journalId:${warningSummary.signatures.take(3).join('|')}';
   }
 
   // =========================================================

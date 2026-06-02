@@ -12,10 +12,40 @@ import 'local_stress_model_service.dart';
 class WellnessSignalService {
   const WellnessSignalService._();
 
+  static const _rawAiStepDays = 14;
+  static const _rawAiMoodDays = 14;
+  static const _rawAiJournalLimit = 5;
+  static const _rawAiTaskLimit = 20;
+  static const _rawAiJournalTextLimit = 700;
+  static const _rawAiTaskTitleLimit = 140;
+  static const _publishCooldown = Duration(seconds: 45);
+
   static final _firestore = FirebaseFirestore.instance;
   static final _auth = FirebaseAuth.instance;
+  static Future<void>? _inFlightPublish;
+  static DateTime? _lastPublishStartedAt;
 
-  static Future<void> publishCurrentUserSignals() async {
+  static Future<void> publishCurrentUserSignals({bool force = false}) async {
+    final now = DateTime.now();
+    if (_inFlightPublish != null && !force) return _inFlightPublish!;
+    final lastStarted = _lastPublishStartedAt;
+    if (!force &&
+        lastStarted != null &&
+        now.difference(lastStarted) < _publishCooldown) {
+      return;
+    }
+    if (_inFlightPublish != null) {
+      await _inFlightPublish;
+    }
+
+    _lastPublishStartedAt = now;
+    _inFlightPublish = _publishCurrentUserSignalsNow().whenComplete(() {
+      _inFlightPublish = null;
+    });
+    return _inFlightPublish!;
+  }
+
+  static Future<void> _publishCurrentUserSignalsNow() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -98,6 +128,7 @@ class WellnessSignalService {
     var warningJournalCreatedAt = '';
     var journalWarningWeight = 0.0;
     var journalWarningSeverity = JournalWarningSeverity.none;
+    final resolvedWarningJournals = <Map<String, dynamic>>[];
     final monitoringRef = _firestore
         .collection('admin_monitoring')
         .doc(user.uid);
@@ -115,14 +146,33 @@ class WellnessSignalService {
 
     for (final doc in journalSnapshot.docs) {
       final text = (doc.data()['text'] as String?) ?? '';
-      final warningSummary = hasRawAiConsent
-          ? await GenkitStressAiService.analyzeJournalWarning(text)
-          : JournalWarningService.analyze(text);
+      final warningSummary =
+          _warningSummaryFromStoredJournal(doc.data()) ??
+          JournalWarningService.analyze(text);
       if (warningSummary.findings.isEmpty) continue;
 
       final signature =
           '${doc.id}:${warningSummary.signatures.take(3).join('|')}';
-      if (resolvedSignatures.contains(signature)) continue;
+      if (resolvedSignatures.contains(signature)) {
+        resolvedWarningJournals.add({
+          'id': doc.id,
+          'signature': signature,
+          'severityBeforeResolution': warningSummary.severity.name,
+          'resolvedByAdmin': true,
+          'supportResolutionStatus':
+              previousMonitoringData['supportResolutionStatus'] ??
+              'therapist_support_provided',
+          'supportResolutionNote':
+              previousMonitoringData['supportResolutionNote'] ??
+              'Admin verified this warning after the student talked with a therapist/support provider.',
+          'resolvedAt': _timestampText(
+            previousMonitoringData['resolvedWarningAt'],
+          ),
+          'createdAt': _timestampText(doc.data()['created_at']) ?? '',
+          'text': '',
+        });
+        continue;
+      }
 
       final snippets = warningSummary.snippets;
       final findings = warningSummary.toJsonList();
@@ -157,6 +207,26 @@ class WellnessSignalService {
     final effectiveWarningFindings = warningFindings;
     final effectiveWarningWeight = journalWarningWeight;
     final effectiveWarningSeverity = journalWarningSeverity;
+    final hasSupportResolution =
+        resolvedWarningJournals.isNotEmpty ||
+        resolvedSignatures.isNotEmpty ||
+        (previousMonitoringData['supportResolutionStatus'] as String? ?? '')
+            .isNotEmpty;
+    final adminResolutionContext = {
+      'hasResolvedWarning': hasSupportResolution,
+      'status': hasSupportResolution
+          ? (previousMonitoringData['supportResolutionStatus'] ??
+                'therapist_support_provided')
+          : 'none',
+      'note': hasSupportResolution
+          ? (previousMonitoringData['supportResolutionNote'] ??
+                'Admin verified a previous warning after the student talked with a therapist/support provider.')
+          : '',
+      'resolvedWarningSignatures': resolvedSignatures.toList(),
+      'resolvedWarningJournals': resolvedWarningJournals,
+      'activeWarningCount': warningJournals.length,
+      'activeWarningSeverity': effectiveWarningSeverity.name,
+    };
 
     final input = StressModelInput(
       avgMoodIndex: avgMoodIndex,
@@ -179,16 +249,19 @@ class WellnessSignalService {
       warningFindings: effectiveWarningFindings,
       warningWeight: effectiveWarningWeight,
       warningSeverity: effectiveWarningSeverity.name,
+      adminResolutionContext: adminResolutionContext,
     );
-    final result = hasRawAiConsent
+    final analyzedResult = hasRawAiConsent
         ? await GenkitStressAiService.analyze(
             input: input,
             rawData: rawData,
             warningSnippets: effectiveWarningSnippets,
             journalWarningWeight: effectiveWarningWeight,
             journalWarningSeverity: effectiveWarningSeverity.name,
+            adminResolutionContext: adminResolutionContext,
           )
         : LocalStressModelService.analyze(input);
+    final result = _resultForStorage(analyzedResult, previousMonitoringData);
     final displayName = DisplayNameService.cleanForDisplay(
       profileData['name'] as String? ?? user.displayName,
       fallback: 'Student',
@@ -226,6 +299,13 @@ class WellnessSignalService {
       'journalWarningSeverity': effectiveWarningSeverity.name,
       'hasDangerWarning':
           effectiveWarningSeverity == JournalWarningSeverity.critical,
+      'supportResolutionStatus': adminResolutionContext['status'] == 'none'
+          ? FieldValue.delete()
+          : adminResolutionContext['status'],
+      'supportResolutionNote': adminResolutionContext['note'] == ''
+          ? FieldValue.delete()
+          : adminResolutionContext['note'],
+      'resolvedWarningJournals': resolvedWarningJournals,
       'stressScore': result.score,
       'stressRank': result.rank,
       'confidence': result.confidence,
@@ -234,7 +314,9 @@ class WellnessSignalService {
       'aiMoodStatus': _moodStatusFor(result),
       'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
       'stressHistory': stressHistory,
-      'source': result.modelVersion == LocalStressModelService.modelVersion
+      'source':
+          result.modelVersion == LocalStressModelService.modelVersion ||
+              result.modelVersion.startsWith('server-local-fallback')
           ? 'local_fallback'
           : 'ai_raw_payload',
       'rawAiDataConsent': hasRawAiConsent,
@@ -266,11 +348,144 @@ class WellnessSignalService {
     return total / positiveSteps.length;
   }
 
+  static StressModelResult _resultForStorage(
+    StressModelResult analyzedResult,
+    Map<String, dynamic> previousMonitoringData,
+  ) {
+    if (!_isTemporaryBackendFallback(analyzedResult)) {
+      return analyzedResult;
+    }
+
+    final previousScore = (previousMonitoringData['stressScore'] as num?)
+        ?.toDouble();
+    final previousRank = previousMonitoringData['stressRank'] as String?;
+    final previousConfidence = (previousMonitoringData['confidence'] as num?)
+        ?.toDouble();
+    final previousModelVersion =
+        previousMonitoringData['modelVersion'] as String?;
+    if (previousScore == null ||
+        previousRank == null ||
+        previousConfidence == null ||
+        previousModelVersion == null ||
+        previousModelVersion.startsWith('server-local-fallback') ||
+        previousModelVersion == LocalStressModelService.modelVersion) {
+      return analyzedResult;
+    }
+
+    return StressModelResult(
+      score: previousScore.clamp(0, 100).toDouble(),
+      rank: previousRank,
+      confidence: previousConfidence.clamp(0, 1).toDouble(),
+      modelVersion: '$previousModelVersion+preserved-during-cooldown',
+      rationale:
+          (previousMonitoringData['rationale'] as List?)
+              ?.whereType<String>()
+              .take(3)
+              .toList() ??
+          analyzedResult.rationale,
+    );
+  }
+
+  static bool _isTemporaryBackendFallback(StressModelResult result) {
+    return result.modelVersion.startsWith('server-local-fallback');
+  }
+
   static JournalWarningSeverity _maxSeverity(
     JournalWarningSeverity current,
     JournalWarningSeverity next,
   ) {
     return next.index > current.index ? next : current;
+  }
+
+  static JournalWarningSummary? _warningSummaryFromStoredJournal(
+    Map<String, dynamic> data,
+  ) {
+    final rawFindings = data['warningFindings'];
+    if (rawFindings is List && rawFindings.isNotEmpty) {
+      final findings = rawFindings
+          .whereType<Map>()
+          .map((item) {
+            final severity = _severityFromName(item['severity'] as String?);
+            if (severity == JournalWarningSeverity.none) return null;
+            final matchedTerms =
+                (item['matchedTerms'] as List?)?.whereType<String>().toList() ??
+                [
+                  if ((item['snippet'] as String? ?? '').trim().isNotEmpty)
+                    (item['snippet'] as String).trim(),
+                  severity.label.toLowerCase(),
+                ];
+            return JournalWarningFinding(
+              snippet: (item['snippet'] as String?) ?? '',
+              severity: severity,
+              weight:
+                  ((item['weight'] as num?)?.toDouble() ??
+                          _defaultWarningWeight(severity))
+                      .clamp(0.0, 1.0)
+                      .toDouble(),
+              matchedTerms: matchedTerms,
+            );
+          })
+          .whereType<JournalWarningFinding>()
+          .toList();
+      if (findings.isNotEmpty) {
+        return JournalWarningSummary(findings: findings);
+      }
+    }
+
+    final severity = _severityFromName(
+      data['journalWarningSeverity'] as String?,
+    );
+    final weight =
+        ((data['journalWarningWeight'] as num?)?.toDouble() ??
+                _defaultWarningWeight(severity))
+            .clamp(0.0, 1.0)
+            .toDouble();
+    if (severity == JournalWarningSeverity.none || weight <= 0) return null;
+
+    final snippets =
+        (data['warningSnippets'] as List?)?.whereType<String>().toList() ??
+        const <String>[];
+    return JournalWarningSummary(
+      findings: [
+        JournalWarningFinding(
+          snippet:
+              severity == JournalWarningSeverity.critical && snippets.isNotEmpty
+              ? snippets.first
+              : '',
+          severity: severity,
+          weight: weight,
+          matchedTerms: snippets.isNotEmpty
+              ? snippets
+              : [severity.label.toLowerCase()],
+        ),
+      ],
+    );
+  }
+
+  static JournalWarningSeverity _severityFromName(String? value) {
+    switch ((value ?? '').trim().toLowerCase()) {
+      case 'critical':
+        return JournalWarningSeverity.critical;
+      case 'elevated':
+        return JournalWarningSeverity.elevated;
+      case 'stress':
+        return JournalWarningSeverity.stress;
+      default:
+        return JournalWarningSeverity.none;
+    }
+  }
+
+  static double _defaultWarningWeight(JournalWarningSeverity severity) {
+    switch (severity) {
+      case JournalWarningSeverity.critical:
+        return 1.0;
+      case JournalWarningSeverity.elevated:
+        return 0.65;
+      case JournalWarningSeverity.stress:
+        return 0.3;
+      case JournalWarningSeverity.none:
+        return 0;
+    }
   }
 
   static Map<String, dynamic> _rawAiPayload({
@@ -283,14 +498,17 @@ class WellnessSignalService {
     required List<Map<String, dynamic>> warningFindings,
     required double warningWeight,
     required String warningSeverity,
+    required Map<String, dynamic> adminResolutionContext,
   }) {
     return {
       'period': {
         'days': dateKeys.length,
         'startDate': dateKeys.first,
         'endDate': dateKeys.last,
+        'rawDetailNote':
+            'Raw details are compacted to recent records to stay within free model token limits. Numeric baseline still uses the full query window.',
       },
-      'steps': stepsSnapshot.docs.map((doc) {
+      'steps': _takeLast(stepsSnapshot.docs, _rawAiStepDays).map((doc) {
         final data = doc.data();
         return {
           'date': doc.id,
@@ -299,7 +517,7 @@ class WellnessSignalService {
           'updatedAt': _timestampText(data['updatedAt']),
         };
       }).toList(),
-      'moods': moodSnapshot.docs.map((doc) {
+      'moods': _takeLast(moodSnapshot.docs, _rawAiMoodDays).map((doc) {
         final data = doc.data();
         return {
           'date': doc.id,
@@ -308,37 +526,134 @@ class WellnessSignalService {
           'updatedAt': _timestampText(data['updated_at']),
         };
       }).toList(),
-      'journals': journalSnapshot.docs.map((doc) {
+      'journals': journalSnapshot.docs.take(_rawAiJournalLimit).map((doc) {
         final data = doc.data();
+        final resolvedJournal =
+            (adminResolutionContext['resolvedWarningJournals'] as List?)
+                ?.whereType<Map>()
+                .where((item) => item['id'] == doc.id)
+                .firstOrNull;
         return {
           'id': doc.id,
-          'text': data['text'],
-          'tag': data['tag'],
-          'prompt': data['prompt'],
+          'text': resolvedJournal == null
+              ? _truncateForAi(data['text'], _rawAiJournalTextLimit)
+              : '',
+          'tag': _truncateForAi(data['tag'], 80),
+          'prompt': _truncateForAi(data['prompt'], 180),
           'createdAt': _timestampText(data['created_at']),
-          'warningSnippets': data['warningSnippets'],
-          'warningFindings': data['warningFindings'],
-          'journalWarningWeight': data['journalWarningWeight'],
-          'journalWarningSeverity': data['journalWarningSeverity'],
+          'adminResolution': resolvedJournal == null
+              ? null
+              : {
+                  'resolvedByAdmin': true,
+                  'status': resolvedJournal['supportResolutionStatus'],
+                  'note': _truncateForAi(
+                    resolvedJournal['supportResolutionNote'],
+                    220,
+                  ),
+                  'resolvedAt': resolvedJournal['resolvedAt'],
+                  'instruction':
+                      'This journal warning was already verified by an admin after therapist/support contact. Treat it as resolved historical context, not an active unresolved warning.',
+                },
+          'warningSnippets': resolvedJournal == null
+              ? data['warningSnippets']
+              : const [],
+          'warningFindings': resolvedJournal == null
+              ? data['warningFindings']
+              : const [],
+          'journalWarningWeight': resolvedJournal == null
+              ? data['journalWarningWeight']
+              : 0,
+          'journalWarningSeverity': resolvedJournal == null
+              ? data['journalWarningSeverity']
+              : 'resolved',
         };
       }).toList(),
-      'tasks': taskSnapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'id': doc.id,
-          'title': data['title'],
-          'isCompleted': data['isCompleted'],
-          'deadline': _timestampText(data['deadline']),
-          'createdAt': _timestampText(data['createdAt']),
-        };
-      }).toList(),
+      'tasks': _compactTasksForAi(taskSnapshot.docs),
       'latestWarning': {
         'snippets': warningSnippets,
-        'findings': warningFindings,
+        'findings': warningFindings.take(3).toList(),
         'weight': warningWeight,
         'severity': warningSeverity,
       },
+      'adminResolutionContext': _compactResolutionContext(
+        adminResolutionContext,
+      ),
     };
+  }
+
+  static List<Map<String, dynamic>> _compactTasksForAi(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final sorted = [...docs];
+    sorted.sort((a, b) {
+      final aCreated = a.data()['createdAt'];
+      final bCreated = b.data()['createdAt'];
+      final aTime = aCreated is Timestamp
+          ? aCreated.toDate()
+          : DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = bCreated is Timestamp
+          ? bCreated.toDate()
+          : DateTime.fromMillisecondsSinceEpoch(0);
+      return bTime.compareTo(aTime);
+    });
+
+    return sorted.take(_rawAiTaskLimit).map((doc) {
+      final data = doc.data();
+      return {
+        'id': doc.id,
+        'title': _truncateForAi(data['title'], _rawAiTaskTitleLimit),
+        'isCompleted': data['isCompleted'],
+        'deadline': _timestampText(data['deadline']),
+        'createdAt': _timestampText(data['createdAt']),
+      };
+    }).toList();
+  }
+
+  static Map<String, dynamic> _compactResolutionContext(
+    Map<String, dynamic> context,
+  ) {
+    final resolvedJournals =
+        (context['resolvedWarningJournals'] as List?)
+            ?.whereType<Map>()
+            .take(3)
+            .map(
+              (item) => {
+                'id': item['id'],
+                'signature': item['signature'],
+                'severityBeforeResolution': item['severityBeforeResolution'],
+                'resolvedByAdmin': true,
+                'status': item['supportResolutionStatus'],
+                'resolvedAt': item['resolvedAt'],
+              },
+            )
+            .toList() ??
+        const [];
+
+    return {
+      'hasResolvedWarning': context['hasResolvedWarning'] == true,
+      'status': context['status'],
+      'note': _truncateForAi(context['note'], 220),
+      'resolvedWarningSignatures':
+          (context['resolvedWarningSignatures'] as List?)
+              ?.whereType<String>()
+              .take(5)
+              .toList() ??
+          const [],
+      'resolvedWarningJournals': resolvedJournals,
+      'activeWarningCount': context['activeWarningCount'],
+      'activeWarningSeverity': context['activeWarningSeverity'],
+    };
+  }
+
+  static String _truncateForAi(Object? value, int maxLength) {
+    final text = (value ?? '').toString().trim();
+    if (text.length <= maxLength) return text;
+    return '${text.substring(0, maxLength).trim()}...';
+  }
+
+  static List<T> _takeLast<T>(List<T> values, int count) {
+    if (values.length <= count) return values;
+    return values.sublist(values.length - count);
   }
 
   static String? _timestampText(Object? value) {

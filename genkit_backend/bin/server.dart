@@ -12,9 +12,15 @@ const _modelVersion = 'groq-llama-stress-v1';
 const _fallbackVersion = 'server-local-fallback-v1';
 const _groqEndpoint = 'https://api.groq.com/openai/v1/chat/completions';
 const _defaultGroqModel = 'llama-3.1-8b-instant';
+const _stressGroqCooldown = Duration(seconds: 70);
+
+DateTime? _lastGroqStressStartedAt;
+String? _lastGroqStressInputKey;
+Map<String, dynamic>? _lastGroqStressResult;
 
 Future<void> main() async {
   final apiKey = Platform.environment['GROQ_API_KEY']?.trim();
+  final googleApiKey = Platform.environment['GOOGLE_API_KEY']?.trim();
 
   final router = Router()
     ..get('/health', _health)
@@ -31,6 +37,13 @@ Future<void> main() async {
   stdout.writeln(
     'Groq API key: ${apiKey == null || apiKey.isEmpty ? 'missing' : 'configured'}',
   );
+  if ((apiKey == null || apiKey.isEmpty) &&
+      googleApiKey != null &&
+      googleApiKey.isNotEmpty) {
+    stdout.writeln(
+      'Note: GOOGLE_API_KEY is ignored by this backend. Set GROQ_API_KEY for AI calls, or leave it empty to use local fallback scoring.',
+    );
+  }
   stdout.writeln('Groq model: ${_groqModel()}');
 }
 
@@ -75,7 +88,25 @@ Future<Response> _stress(Request request, String? apiKey) async {
     }
 
     input = _readInputFromDecoded(decoded);
+    final inputKey = jsonEncode(input);
+    if (_shouldUseStressFallbackNow()) {
+      final cached = _lastGroqStressResult;
+      if (cached != null && _lastGroqStressInputKey == inputKey) {
+        return Response.ok(
+          jsonEncode({...cached, 'cacheStatus': 'reused_recent_groq_result'}),
+        );
+      }
+      final fallback = _localScore(input)
+        ..['fallbackReason'] = 'server_stress_groq_cooldown_no_cache';
+      return Response.ok(jsonEncode(fallback));
+    }
+
+    _lastGroqStressStartedAt = DateTime.now();
     final result = await _scoreWithGroq(input, apiKey);
+    if ((result['modelVersion'] as String?) == _modelVersion) {
+      _lastGroqStressInputKey = inputKey;
+      _lastGroqStressResult = Map<String, dynamic>.from(result);
+    }
 
     return Response.ok(jsonEncode(result));
   } catch (error) {
@@ -299,6 +330,12 @@ Map<String, dynamic> _readInputFromDecoded(Object? decoded) {
   final rawData = payload['rawData'] is Map<String, dynamic>
       ? payload['rawData'] as Map<String, dynamic>
       : <String, dynamic>{};
+  final adminResolutionContext =
+      payload['adminResolutionContext'] is Map<String, dynamic>
+      ? payload['adminResolutionContext'] as Map<String, dynamic>
+      : rawData['adminResolutionContext'] is Map<String, dynamic>
+      ? rawData['adminResolutionContext'] as Map<String, dynamic>
+      : <String, dynamic>{};
 
   return {
     'avgMoodIndex': _number(baseline, 'avgMoodIndex'),
@@ -314,6 +351,7 @@ Map<String, dynamic> _readInputFromDecoded(Object? decoded) {
     'journalWarningWeight': _optionalNumber(payload, 'journalWarningWeight'),
     'journalWarningSeverity':
         (payload['journalWarningSeverity'] as String?) ?? 'none',
+    'adminResolutionContext': adminResolutionContext,
   };
 }
 
@@ -362,7 +400,7 @@ Future<Map<String, dynamic>> _journalWarningWithGroq(
               {
                 'role': 'user',
                 'content':
-                    'Understand English, Tagalog, Cebuano, Ilocano, Hiligaynon, and mixed Philippine languages. Return exactly {"severity":"none|stress|elevated|critical","weight":0,"warningSignalTerm":"","confidence":0}. Use a short non-graphic warningSignalTerm. Journal: ${jsonEncode(text)}',
+                    'Understand English, Tagalog, Cebuano, Ilocano, Hiligaynon, Waray, Kapampangan, Pangasinan, Bicolano, and mixed Philippine languages. Detect self-harm, suicide, harm toward another person, threats, violent intent, coercion, harassment, and explicit unsafe wording. If the wording is clearly slang, a harmless joke, quoted media, academic discussion, or not an actual safety concern, return severity none with confidence. Return exactly {"severity":"none|stress|elevated|critical","weight":0,"warningSignalTerm":"","confidence":0}. Use a short non-graphic warningSignalTerm such as "harm toward others" or "explicit unsafe wording". Journal: ${jsonEncode(text)}',
               },
             ],
             'temperature': 0,
@@ -440,6 +478,12 @@ Future<Map<String, dynamic>> _tryReadInput(Request request) async {
       'journalWarningSeverity': 'none',
     };
   }
+}
+
+bool _shouldUseStressFallbackNow() {
+  final lastStarted = _lastGroqStressStartedAt;
+  if (lastStarted == null) return false;
+  return DateTime.now().difference(lastStarted) < _stressGroqCooldown;
 }
 
 Future<Map<String, dynamic>> _scoreWithGroq(
@@ -534,18 +578,19 @@ Return only valid compact JSON. Do not use markdown. Do not include prose before
 The JSON object must use exactly these keys:
 {"score": 0, "confidence": 0, "rationale": ["short signal label"]}
 
-Use the raw recent wellness data below as the primary evidence.
-Use the local numeric baseline only for calibration and safety floors.
+Use compact raw recent wellness data as primary evidence.
+Use the local numeric baseline for calibration and safety floors.
 Do not diagnose. Do not mention medical certainty.
 Mood scale is important: avgMoodIndex 0 = sad/high stress risk, 1 = low mood, 2 = okay, 3 = happy/low stress risk.
-avgMoodIntensity is 0 to 1. High intensity amplifies the current mood. High intensity with sad/low mood increases stress risk.
+avgMoodIntensity is 0 to 1. High intensity amplifies the current mood. High intensity with sad/low mood increases stress risk, but high intensity with happy/energized mood should reduce stress risk.
 Step activity is protective. More avgDailySteps must never increase stress risk by itself.
 avgDailySteps is the average across recorded positive step days, not a 30-day total.
 4000 avgDailySteps or higher meets the activity goal and is highly positive/protective.
 Low avgDailySteps may increase risk, but high avgDailySteps should reduce or balance activity-related risk.
 Treat journalWarningWeight as numeric severity: 0 normal, about 0.3 normal stress day, about 0.65 elevated concern, 1.0 critical danger/self-harm concern.
+If adminResolutionContext.hasResolvedWarning is true and activeWarningCount is 0, matching resolved warning journals are historical resolved events after therapist/support contact. Do not treat those resolved journals as active current danger. Use fresh unresolved mood, journal, task, and activity signals for the current score.
 Never return Low if avgMoodIndex is 0 and avgMoodIntensity is 0.8 or higher. That should be at least Elevated.
-Never return below High if journalWarningWeight is 1.0.
+Never return below High if journalWarningWeight is 1.0 for an active unresolved warning.
 score must be a number from 0 to 100.
 confidence must be a number from 0 to 1.
 rationale must be an array of 1 to 3 short signal labels.
@@ -556,10 +601,10 @@ Rank thresholds used by the app:
 25-44 Moderate
 <25 Low
 
-Local baseline result for calibration:
+Local baseline result:
 ${jsonEncode(local)}
 
-Raw input and local baseline:
+Compact raw input and baseline:
 $sanitized
 ''';
 }
@@ -590,10 +635,11 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
     journalWarningWeight,
     warningSnippets.isEmpty ? 0.0 : 0.3,
   );
+  final moodIntensityWeight = avgMoodIndex <= 1.5 ? 16 : -9;
 
   final weighted =
       lowMoodSignal * 32 +
-      moodIntensitySignal * (avgMoodIndex <= 1.5 ? 16 : 7) +
+      moodIntensitySignal * moodIntensityWeight +
       lowActivitySignal * 14 +
       journalSignal * 7 +
       overdueTaskSignal * 14 +
@@ -648,6 +694,9 @@ double _calibratedScore(
   final localScore = local['score'] as double;
   final safetyFloor = _safetyFloor(input);
   var calibrated = rawScore;
+  if (_hasResolvedSupportWithoutActiveWarning(input)) {
+    calibrated = min(calibrated, localScore + 12);
+  }
 
   if (avgDailySteps >= 10000) {
     calibrated = min(calibrated, localScore + 4);
@@ -658,6 +707,20 @@ double _calibratedScore(
   }
 
   return max(calibrated, safetyFloor).clamp(0, 100).toDouble();
+}
+
+bool _hasResolvedSupportWithoutActiveWarning(Map<String, dynamic> input) {
+  final context = input['adminResolutionContext'];
+  if (context is! Map<String, dynamic>) return false;
+  final hasResolved = context['hasResolvedWarning'] == true;
+  final activeWarningCount = context['activeWarningCount'] is num
+      ? (context['activeWarningCount'] as num).toInt()
+      : 0;
+  final journalWarningWeight = (input['journalWarningWeight'] as double).clamp(
+    0,
+    1,
+  );
+  return hasResolved && activeWarningCount <= 0 && journalWarningWeight <= 0;
 }
 
 double _safetyFloor(Map<String, dynamic> input) {

@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_data.dart';
@@ -18,6 +21,12 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
+  static const _supportNumber = '+639171234567';
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _aiSupportSubscription;
+  bool _supportDialogVisible = false;
+
   @override
   void initState() {
     super.initState();
@@ -26,7 +35,211 @@ class _HomeTabState extends State<HomeTab> {
       await showDailyMotivation(context);
       if (!mounted) return;
       await showMoodPopupIfNeeded(context);
+      if (!mounted) return;
+      _listenForHighStressSupport();
     });
+  }
+
+  @override
+  void dispose() {
+    _aiSupportSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _listenForHighStressSupport() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    _aiSupportSubscription?.cancel();
+    _aiSupportSubscription = FirebaseFirestore.instance
+        .collection('admin_monitoring')
+        .doc(user.uid)
+        .snapshots()
+        .listen((snapshot) {
+          final data = snapshot.data();
+          if (data == null || !mounted) return;
+          final confidence = ((data['confidence'] as num?)?.toDouble() ?? 0);
+          final rank = ((data['stressRank'] as String?) ?? '').trim();
+          if (rank == 'High' && confidence > 0) {
+            _showHighStressSupportDialog();
+          }
+        });
+  }
+
+  Future<void> _showHighStressSupportDialog() async {
+    if (_supportDialogVisible || !mounted) return;
+    _supportDialogVisible = true;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
+          backgroundColor: Colors.transparent,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 430),
+            child: SingleChildScrollView(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.18),
+                      blurRadius: 28,
+                      offset: const Offset(0, 16),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFDC2626),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(28),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.health_and_safety_rounded,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          const Expanded(
+                            child: Text(
+                              "Support is available",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(22, 22, 22, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Your latest wellness analysis shows a high support need. You do not have to handle this alone.",
+                            style: TextStyle(
+                              color: Color(0xFF111827),
+                              height: 1.45,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          _supportBullet(
+                            Icons.phone_rounded,
+                            "Contact a trusted person or support staff now.",
+                          ),
+                          _supportBullet(
+                            Icons.groups_rounded,
+                            "If this feels urgent, stay near someone safe.",
+                          ),
+                          _supportBullet(
+                            Icons.favorite_rounded,
+                            "Open AI Analysis for the support contact button.",
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                      child: Column(
+                        children: [
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFFDC2626),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size.fromHeight(50),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            onPressed: () async {
+                              final uri = Uri(
+                                scheme: 'tel',
+                                path: _supportNumber,
+                              );
+                              final launched = await launchUrl(uri);
+                              if (launched || !dialogContext.mounted) return;
+                              ScaffoldMessenger.of(dialogContext).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Could not open the phone dialer',
+                                  ),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.call_rounded),
+                            label: const Text(
+                              "Call support",
+                              style: TextStyle(fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: const Text("I understand"),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    _supportDialogVisible = false;
+  }
+
+  Widget _supportBullet(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: const Color(0xFFDC2626), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> showDailyMotivation(BuildContext context) async {

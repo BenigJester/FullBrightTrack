@@ -69,20 +69,26 @@ class _AiAnalysisScreenState extends State<AiAnalysisScreen> {
                       stream: stream,
                       builder: (context, snapshot) {
                         final status = _AiMoodStatus.fromDoc(snapshot.data);
-                        return _AiStatusHero(
-                          status: status,
-                          isLoading:
-                              stream != null &&
-                              snapshot.connectionState ==
-                                  ConnectionState.waiting,
-                          isOffline: stream == null,
+                        return Column(
+                          children: [
+                            _AiStatusHero(
+                              status: status,
+                              isLoading:
+                                  stream != null &&
+                                  snapshot.connectionState ==
+                                      ConnectionState.waiting,
+                              isOffline: stream == null,
+                            ),
+                            if (status.rank == 'High') ...[
+                              const SizedBox(height: 16),
+                              const _SupportContactCard(),
+                            ],
+                          ],
                         );
                       },
                     ),
                     const SizedBox(height: 16),
                     const _DataUseCard(),
-                    const SizedBox(height: 16),
-                    const _SupportContactCard(),
                     const SizedBox(height: 16),
                     const _GuidelinesCard(),
                     const SizedBox(height: 12),
@@ -257,12 +263,7 @@ class _ScorePanel extends StatelessWidget {
               ],
             )
           else
-            const _MetricBlock(
-              label: 'Stress level',
-              value: 'Pending',
-              icon: Icons.hourglass_empty_rounded,
-              color: Color(0xFF64748B),
-            ),
+            _StressLevelBlock(status: status, color: color),
           if (hasScore) ...[
             const SizedBox(height: 14),
             ClipRRect(
@@ -294,60 +295,6 @@ class _ScorePanel extends StatelessWidget {
   }
 }
 
-class _MetricBlock extends StatelessWidget {
-  const _MetricBlock({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(height: 8),
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: const Color(0xFF64748B),
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: const Color(0xFF111827),
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _StressLevelBlock extends StatelessWidget {
   const _StressLevelBlock({required this.status, required this.color});
 
@@ -357,6 +304,7 @@ class _StressLevelBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final hasScore = status.confidence > 0;
 
     return Container(
       width: double.infinity,
@@ -402,21 +350,23 @@ class _StressLevelBlock extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text(
-              '${status.score.toStringAsFixed(0)} / 100',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: color,
-                fontWeight: FontWeight.w900,
+          if (hasScore) ...[
+            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Text(
+                '${status.score.toStringAsFixed(0)} / 100',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -955,22 +905,41 @@ class _AiMoodStatus {
     final confidence = ((data['confidence'] as num?)?.toDouble() ?? 0)
         .clamp(0.0, 1.0)
         .toDouble();
-    final safeRank = confidence <= 0 ? 'Pending' : rank;
+    final resolvedWarningSignature =
+        (data['resolvedWarningSignature'] as String?) ?? '';
+    final warningSignature = (data['warningSignature'] as String?) ?? '';
+    final hasActiveWarning =
+        (data['hasDangerWarning'] as bool?) == true ||
+        (warningSignature.isNotEmpty &&
+            warningSignature != resolvedWarningSignature);
+    final supportResolved =
+        resolvedWarningSignature.isNotEmpty && !hasActiveWarning;
+    final visibleScore = ((data['stressScore'] as num?)?.toDouble() ?? 0)
+        .clamp(0.0, 100.0)
+        .toDouble();
+    final safeRank = confidence <= 0 && !supportResolved ? 'Pending' : rank;
     final title = (data['aiMoodStatus'] as String?) ?? _titleForRank(safeRank);
-    final rationale =
+    final rawRationale =
         (data['rationale'] as List?)
             ?.whereType<String>()
             .where((item) => item.trim().isNotEmpty)
             .take(4)
             .toList() ??
         const ['recent wellness signals'];
+    final rationale = supportResolved
+        ? [
+            'therapist support was provided',
+            ...rawRationale.where(
+              (reason) =>
+                  !reason.toLowerCase().contains('critical journal warning'),
+            ),
+          ].take(4).toList()
+        : rawRationale;
 
     return _AiMoodStatus(
       title: title,
       rank: safeRank,
-      score: ((data['stressScore'] as num?)?.toDouble() ?? 0)
-          .clamp(0.0, 100.0)
-          .toDouble(),
+      score: visibleScore,
       confidence: confidence,
       rationale: rationale,
       message: _messageForRank(safeRank),

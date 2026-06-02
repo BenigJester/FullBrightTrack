@@ -12,18 +12,18 @@ Current app version: `0.4.0-alpha+5`
 - Mood check-in with intensity tracking and daily popup reminder.
 - Professional AI mood status view based on the latest consented wellness signal output.
 - Journal entries with prompts, history, filters, and Firestore storage.
-- Weighted journal warning detection for normal stress, elevated concern, and critical danger phrases.
+- AI-assisted journal warning detection for normal stress, elevated concern, critical danger phrases, harm toward others, threats, harassment/coercion, explicit unsafe wording, and Philippine language signals.
 - Task management with deadlines, overdue state, completion, and collapsible sections.
 - Streak dashboard for step and mood consistency.
-- Firestore leaderboard using combined step and mood streak points.
-- Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, charts, and warning signals.
+- Firestore leaderboard using combined step and mood streak points with short cache on reopen and pull-to-refresh reload.
+- Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, Week/Month charts, warning signals, and alert-target highlighting.
 - Admin warning resolution workflow and daily stress history charting.
 - Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads and local fallback scoring.
 - Account flows for email/password and Google sign-in.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - Step reminder notification support with 1, 2, or 3 hour intervals.
-- Firebase Cloud Functions support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`.
+- Firebase Cloud Functions support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
 - Daily motivation popup.
 
 ## Tech Stack
@@ -139,6 +139,7 @@ flutter pub get
 - Deploy `genkit_backend` to Render or another Docker host.
 - Set `GROQ_API_KEY` as a server environment variable.
 - Use the deployed `/stress` endpoint when running or building Flutter.
+- Debug builds default to `http://10.0.2.2:8080/stress` if `GENKIT_STRESS_FLOW_URL` is not provided, which is useful for Android emulator testing against a local backend.
 - Users must agree to the raw wellness data processing consent on login before raw mood, journal, task, and step records are sent to the AI backend. Without consent, the app uses local fallback scoring.
 
 4. Configure admin FCM alerts, optional but recommended for admin safety review:
@@ -162,6 +163,8 @@ For local Android emulator testing against a local backend, use:
 ```bash
 flutter run --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
 ```
+
+For debug builds only, the app also falls back to this local emulator URL when `GENKIT_STRESS_FLOW_URL` is omitted.
 
 ## Firestore Data
 
@@ -193,6 +196,8 @@ These summaries contain numeric wellbeing signals, weighted journal warning seve
 
 When a user gives raw AI processing consent at login, recent raw mood, journal, task, and step records may be sent to the configured AI backend for scoring. That raw payload is used by the backend request and is not copied into `admin_monitoring`.
 
+If the Groq backend temporarily returns a server-local fallback during cooldown, the app preserves the last real AI result when available so AI Analysis and Admin Monitoring do not visibly drop to local scoring during rapid updates.
+
 Privacy-safe admin alert records are stored under:
 
 ```text
@@ -201,6 +206,8 @@ admin_fcm_tokens/{adminUid}/tokens/{token}
 ```
 
 `admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, warning signature, and push delivery status. It does not store raw journal text. `admin_fcm_tokens` stores verified admin device tokens so the Firebase Function can send FCM push notifications for active alerts.
+
+When an admin taps an active safety alert or its notification history item, the app opens Admin Monitoring and highlights the matching user.
 
 ## Suggested Firestore Rules
 
@@ -260,9 +267,20 @@ service cloud.firestore {
             'journalWarningWeight',
             'journalWarningSeverity',
             'hasDangerWarning',
+            'stressScore',
+            'stressRank',
+            'confidence',
+            'aiMoodIndex',
+            'aiMoodIntensity',
             'aiMoodStatus',
             'aiMoodStatusUpdatedAt',
-            'rationale'
+            'rationale',
+            'supportResolutionStatus',
+            'supportResolutionNote',
+            'supportResolutionUpdatedAt',
+            'resolvedWarningJournals',
+            'stressHistory',
+            'updatedAt'
           ]);
       allow delete: if false;
     }
@@ -345,8 +363,10 @@ Current test coverage includes:
 - Step counts are saved locally first and synced to Firestore when possible.
 - The leaderboard is Firestore-only and uses public summary documents.
 - Raw AI scoring is consent-gated. If consent is unavailable, the local deterministic stress model is used.
-- Admin Monitoring lists are filtered locally by rank, sorted by confidence, and displayed in pages of 100 students.
+- Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, and charted by Week or Month.
 - Admin FCM alerts require deployed Firebase Functions; client-side token registration alone does not send push notifications.
+- Leaderboard results use a short in-memory cache when reopening the screen; pull-to-refresh bypasses the cache.
+- Journal warning review uses the AI backend when available, with local privacy-safe fallback labels for self-harm, harm toward others, threats, explicit unsafe wording, and Philippine language warning signals. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.
 - Step streaks preserve the current streak during the unfinished current day and reset the next day if no goal is reached.
 - Midnight step rollover saves the previous day under its correct date before starting the new day.
 - Native step counter and detector events are reconciled to avoid double counting while keeping closed-app step updates live.

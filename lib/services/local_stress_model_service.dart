@@ -56,9 +56,10 @@ class LocalStressModelService {
     final completionRelief = min(input.completedTaskCount, 12) / 12;
     final journalWarningSignal = input.journalWarningWeight.clamp(0, 1);
 
+    final moodIntensityWeight = input.avgMoodIndex <= 1.5 ? 18 : -10;
     final weighted =
         lowMoodSignal * 38 +
-        moodIntensitySignal * (input.avgMoodIndex <= 1.5 ? 18 : 8) +
+        moodIntensitySignal * moodIntensityWeight +
         lowActivitySignal * 16 +
         journalSignal * 8 +
         overdueTaskSignal * 16 +

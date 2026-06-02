@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_access_service.dart';
+import '../services/admin_alert_service.dart';
 import '../services/auth_service.dart';
 import '../services/device_readiness_service.dart';
 import '../services/display_name_service.dart';
@@ -181,14 +182,38 @@ class _MoreScreenState extends State<MoreScreen> {
 
                     _tile(
                       icon: Icons.notifications_none_rounded,
-                      title: "Notifications",
-                      subtitle: "Manage reminders and alerts",
+                      title: "Step Reminders",
+                      subtitle: "Manage step reminder notifications",
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => const NotificationSettingsScreen(),
                           ),
+                        );
+                      },
+                    ),
+
+                    FutureBuilder<bool>(
+                      future: AdminAccessService.isCurrentUserAdmin(),
+                      builder: (context, snapshot) {
+                        if (snapshot.data != true) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return _tile(
+                          icon: Icons.history_rounded,
+                          title: "Notification History",
+                          subtitle: "View and clear admin safety alerts",
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    const NotificationHistoryScreen(),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),
@@ -217,20 +242,6 @@ class _MoreScreenState extends State<MoreScreen> {
 
                         return Column(
                           children: [
-                            _tile(
-                              icon: Icons.history_rounded,
-                              title: "Notification History",
-                              subtitle: "View and clear admin safety alerts",
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const NotificationHistoryScreen(),
-                                  ),
-                                );
-                              },
-                            ),
                             _tile(
                               icon: Icons.admin_panel_settings_rounded,
                               title: "Admin Monitoring",
@@ -1162,6 +1173,11 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
                             item: item,
                             busy: _busy,
                             onDelete: () => _delete(item.id),
+                            onReview: item.userId == null
+                                ? null
+                                : () => AdminAlertService.openAdminMonitoring(
+                                    userId: item.userId,
+                                  ),
                           );
                         },
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
@@ -1181,62 +1197,68 @@ class _NotificationHistoryTile extends StatelessWidget {
     required this.item,
     required this.busy,
     required this.onDelete,
+    required this.onReview,
   });
 
   final NotificationHistoryItem item;
   final bool busy;
   final VoidCallback onDelete;
+  final VoidCallback? onReview;
 
   @override
   Widget build(BuildContext context) {
-    return _settingsCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.red.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(15),
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: onReview,
+      child: _settingsCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Colors.red),
             ),
-            child: const Icon(Icons.warning_amber_rounded, color: Colors.red),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.body,
-                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _formatHistoryTime(item.createdAt),
-                  style: TextStyle(
-                    color: Colors.grey.shade500,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(height: 4),
+                  Text(
+                    item.body,
+                    style: TextStyle(color: Colors.grey.shade700, height: 1.35),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  Text(
+                    _formatHistoryTime(item.createdAt),
+                    style: TextStyle(
+                      color: Colors.grey.shade500,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: "Delete",
-            onPressed: busy ? null : onDelete,
-            icon: const Icon(Icons.delete_outline_rounded),
-          ),
-        ],
+            IconButton(
+              tooltip: "Delete",
+              onPressed: busy ? null : onDelete,
+              icon: const Icon(Icons.delete_outline_rounded),
+            ),
+          ],
+        ),
       ),
     );
   }

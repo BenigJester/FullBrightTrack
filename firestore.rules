@@ -50,9 +50,20 @@ service cloud.firestore {
             'journalWarningWeight',
             'journalWarningSeverity',
             'hasDangerWarning',
+            'stressScore',
+            'stressRank',
+            'confidence',
+            'aiMoodIndex',
+            'aiMoodIntensity',
             'aiMoodStatus',
             'aiMoodStatusUpdatedAt',
-            'rationale'
+            'rationale',
+            'supportResolutionStatus',
+            'supportResolutionNote',
+            'supportResolutionUpdatedAt',
+            'resolvedWarningJournals',
+            'stressHistory',
+            'updatedAt'
           ]);
       allow delete: if false;
     }

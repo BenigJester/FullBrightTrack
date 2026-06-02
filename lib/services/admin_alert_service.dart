@@ -4,12 +4,15 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import 'app_navigator_service.dart';
+import 'display_name_service.dart';
 import 'local_stress_model_service.dart';
 import 'notification_history_service.dart';
 import 'notification_service.dart';
+import '../screens/admin_monitoring_screen.dart';
 
 class AdminAlertService {
   const AdminAlertService._();
@@ -17,6 +20,7 @@ class AdminAlertService {
   static final _firestore = FirebaseFirestore.instance;
   static final _seenAlertIds = <String>{};
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
+  static StreamSubscription<RemoteMessage>? _messageOpenSubscription;
   static bool _listenerPrimed = false;
 
   static Future<void> publishCriticalWarningAlert({
@@ -47,6 +51,27 @@ class AdminAlertService {
     }, SetOptions(merge: true));
   }
 
+  static Future<void> publishImmediateCriticalJournalWarning({
+    required User user,
+    required String warningSignature,
+  }) {
+    return publishCriticalWarningAlert(
+      userId: user.uid,
+      displayName: DisplayNameService.cleanForDisplay(
+        user.displayName ?? user.email,
+        fallback: 'Student',
+      ),
+      warningSignature: warningSignature,
+      modelResult: const StressModelResult(
+        score: 100,
+        rank: 'High',
+        confidence: 1,
+        modelVersion: 'journal-warning-direct-v1',
+        rationale: ['critical journal warning'],
+      ),
+    );
+  }
+
   static Future<void> markResolvedForSignature({
     required String userId,
     required String warningSignature,
@@ -54,14 +79,20 @@ class AdminAlertService {
     if (warningSignature.isEmpty) return;
 
     try {
-      await _firestore
+      final alertRef = _firestore
           .collection('admin_alerts')
-          .doc(_alertId(userId, warningSignature))
-          .update({
-            'status': 'resolved',
-            'resolvedAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          .doc(_alertId(userId, warningSignature));
+      final alertSnapshot = await alertRef.get();
+      if (!alertSnapshot.exists) {
+        debugPrint('Admin alert resolve skipped: alert document not found');
+        return;
+      }
+
+      await alertRef.update({
+        'status': 'resolved',
+        'resolvedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
     } on FirebaseException catch (error) {
       if (error.code == 'not-found' || error.code == 'permission-denied') {
         debugPrint('Admin alert resolve skipped: ${error.code}');
@@ -77,12 +108,11 @@ class AdminAlertService {
 
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
     if (userDoc.data()?['isAdmin'] != true) return;
+    await _startNotificationOpenHandler();
 
     _subscription = _firestore
         .collection('admin_alerts')
         .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .limit(10)
         .snapshots()
         .listen(
           (snapshot) {
@@ -100,6 +130,7 @@ class AdminAlertService {
               final data = change.doc.data() ?? <String, dynamic>{};
               final displayName = (data['displayName'] as String?) ?? 'Student';
               final rank = (data['stressRank'] as String?) ?? 'High';
+              final userId = (data['userId'] as String?) ?? '';
               final title = 'Wellness signal needs review';
               final body =
                   '$displayName has a $rank stress signal. Open Admin Monitoring.';
@@ -111,6 +142,7 @@ class AdminAlertService {
                     title: title,
                     body: body,
                     type: 'admin_safety_alert',
+                    userId: userId,
                     createdAt: DateTime.now(),
                   ),
                 ),
@@ -118,8 +150,9 @@ class AdminAlertService {
               NotificationService.showAdminSafetyAlert(
                 displayName: displayName,
                 rank: rank,
+                userId: userId,
               );
-              _showInAppAlert(title: title, body: body);
+              _showInAppAlert(title: title, body: body, userId: userId);
             }
           },
           onError: (error) {
@@ -130,12 +163,36 @@ class AdminAlertService {
 
   static Future<void> stopAdminAlertListener() async {
     await _subscription?.cancel();
+    await _messageOpenSubscription?.cancel();
     _subscription = null;
+    _messageOpenSubscription = null;
     _seenAlertIds.clear();
     _listenerPrimed = false;
   }
 
-  static void _showInAppAlert({required String title, required String body}) {
+  static Future<void> _startNotificationOpenHandler() async {
+    if (_messageOpenSubscription != null) return;
+
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      _handleRemoteMessageOpen(initialMessage);
+    }
+
+    _messageOpenSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+      _handleRemoteMessageOpen,
+    );
+  }
+
+  static void _handleRemoteMessageOpen(RemoteMessage message) {
+    if (message.data['type'] != 'admin_safety_alert') return;
+    openAdminMonitoring(userId: message.data['userId']);
+  }
+
+  static void _showInAppAlert({
+    required String title,
+    required String body,
+    required String userId,
+  }) {
     final context = AppNavigatorService.context;
     if (context == null) return;
 
@@ -182,14 +239,31 @@ class AdminAlertService {
                   backgroundColor: Colors.deepOrange,
                   foregroundColor: Colors.white,
                 ),
-                onPressed: () => Navigator.pop(context),
                 child: const Text('Review'),
+                onPressed: () {
+                  Navigator.pop(context);
+                  openAdminMonitoring(userId: userId);
+                },
               ),
             ],
           );
         },
       );
     });
+  }
+
+  static void openAdminMonitoring({String? userId}) {
+    final context = AppNavigatorService.context;
+    if (context == null || !context.mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminMonitoringScreen(
+          initialUserId: userId == null || userId.isEmpty ? null : userId,
+        ),
+      ),
+    );
   }
 
   static String _alertId(String userId, String warningSignature) {

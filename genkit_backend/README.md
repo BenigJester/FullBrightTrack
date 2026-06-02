@@ -18,9 +18,32 @@ The backend still returns compact structured scoring output only:
 }
 ```
 
+The same `/stress` route also supports focused modes from the Flutter app:
+
+- `mode: "journal-warning"` reviews raw journal text for safety warning severity.
+- `mode: "journal-mood"` estimates mood index and intensity from raw journal text.
+- `mode: "task-content"` checks whether a task title is safe and appropriate to save.
+
+Journal warning review understands English and Philippine languages such as Tagalog, Cebuano, Ilocano, Hiligaynon, Waray, Kapampangan, Pangasinan, Bicolano, and mixed local-English writing. It can detect self-harm, harm toward others, threats, harassment/coercion, and explicit unsafe wording. The prompt also tells the model to ignore clearly safe slang, jokes, quoted media, academic discussion, or non-risk context.
+
 ## Local Run
 
 ```powershell
+dart pub get
+$env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
+dart run bin/server.dart
+```
+
+This backend uses Groq, not Google Gemini. Do not run it with `genkit start`
+or a Google/Gemini provider command. If you see a message about a missing
+Google API key, you are running a different tool or old backend command. For
+this server, only `GROQ_API_KEY` is used for AI calls. If `GROQ_API_KEY` is not
+set, the server still starts and uses local fallback scoring.
+
+Windows PowerShell quick start:
+
+```powershell
+cd genkit_backend
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 dart run bin/server.dart
@@ -31,6 +54,14 @@ Health check:
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8080/health"
 ```
+
+For Android emulator testing, Flutter can call the local backend through:
+
+```powershell
+flutter run --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
+```
+
+Debug Flutter builds also default to `http://10.0.2.2:8080/stress` when `GENKIT_STRESS_FLOW_URL` is omitted.
 
 Stress endpoint:
 
@@ -84,6 +115,17 @@ $body = @{
 Invoke-RestMethod -Uri "http://localhost:8080/stress" -Method Post -ContentType "application/json" -Body $body
 ```
 
+Journal warning mode example:
+
+```powershell
+$body = @{
+  mode = "journal-warning"
+  rawJournalText = "I feel angry and might hurt someone, but I am trying to calm down."
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri "http://localhost:8080/stress" -Method Post -ContentType "application/json" -Body $body
+```
+
 Optional model override:
 
 ```powershell
@@ -91,6 +133,8 @@ $env:GROQ_MODEL="llama-3.3-70b-versatile"
 ```
 
 The backend also has a deterministic local fallback if Groq is unavailable, returns an invalid response, or if only the local baseline is usable. The local fallback never calls Groq.
+
+To protect Groq free-tier token limits, repeated `/stress` scoring calls use a short cooldown. If the same payload repeats during cooldown, the backend can reuse the latest Groq result. If no cached Groq result is available, it returns a `server-local-fallback` response with a `fallbackReason`. The Flutter app preserves the last real AI result when available so temporary cooldown fallback does not overwrite Admin Monitoring or AI Analysis with local scoring.
 
 ## Deploy To Render
 
