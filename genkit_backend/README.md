@@ -29,8 +29,8 @@ Journal warning review understands English and Philippine languages such as Taga
 The backend can also run thesis-demo account and admin alert workflows:
 
 - `/start-registration` creates a pending email confirmation record.
-- `/confirm-registration` marks the pending email as confirmed.
-- `/complete-registration` lets the Flutter app verify the confirmed request before creating the Firebase Auth account.
+- `/confirm-registration` marks the pending email as confirmed and creates the Firebase Auth account automatically.
+- `/complete-registration` lets the Flutter app verify an already confirmed registration request.
 - `/request-password-reset` creates a one-time reset token for an existing Firebase Auth user.
 - `/confirm-password-reset` validates a reset token.
 - `/complete-password-reset` updates the Firebase Auth password through the backend.
@@ -43,6 +43,7 @@ The backend can also run thesis-demo account and admin alert workflows:
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 $env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
+$env:FIREBASE_WEB_API_KEY="YOUR_FIREBASE_WEB_API_KEY"
 $env:PUBLIC_BASE_URL="http://localhost:8080"
 $env:SMTP_HOST="smtp.gmail.com"
 $env:SMTP_PORT="587"
@@ -59,7 +60,7 @@ Google API key, you are running a different tool or old backend command. For
 this server, only `GROQ_API_KEY` is used for AI calls. If `GROQ_API_KEY` is not
 set, the server still starts and uses local fallback scoring.
 
-Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Email confirmation requires SMTP settings. Keep service account JSON and SMTP passwords on the backend only. Never put them in Flutter.
+Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Automatic account creation from the confirmation link also requires `FIREBASE_WEB_API_KEY`. Email confirmation requires SMTP settings. Keep service account JSON and SMTP passwords on the backend only. Never put them in Flutter.
 
 Windows PowerShell quick start:
 
@@ -68,6 +69,7 @@ cd genkit_backend
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 $env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
+$env:FIREBASE_WEB_API_KEY="YOUR_FIREBASE_WEB_API_KEY"
 $env:PUBLIC_BASE_URL="http://localhost:8080"
 $env:SMTP_HOST="smtp.gmail.com"
 $env:SMTP_PORT="587"
@@ -147,11 +149,14 @@ Invoke-RestMethod -Uri "http://localhost:8080/stress" -Method Post -ContentType 
 Registration confirmation demo:
 
 ```powershell
-$body = @{ email = "student@example.com" } | ConvertTo-Json -Compress
+$body = @{
+  email = "student@example.com"
+  password = "studentPassword123"
+} | ConvertTo-Json -Compress
 Invoke-RestMethod -Uri "http://localhost:8080/start-registration" -Method Post -ContentType "application/json" -Body $body
 ```
 
-The backend sends the confirmation link to the user's email. For local testing only, set this before starting the backend if you also want the API response to include the link:
+The backend sends the confirmation link to the user's email. When the user opens the link, the backend confirms the request and creates the Firebase Auth email/password account automatically. For local testing only, set this before starting the backend if you also want the API response to include the link:
 
 ```powershell
 $env:EMAIL_DEBUG_RETURN_LINK="true"
@@ -163,7 +168,7 @@ The backend stores records under:
 pending_registrations/{requestId}
 ```
 
-After opening the confirmation link, the Flutter register screen calls:
+The Flutter register screen no longer creates the account after confirmation. The confirmation link itself creates the Firebase Auth account. `/complete-registration` is kept only as a verification endpoint:
 
 ```powershell
 $body = @{
@@ -174,7 +179,7 @@ $body = @{
 Invoke-RestMethod -Uri "http://localhost:8080/complete-registration" -Method Post -ContentType "application/json" -Body $body
 ```
 
-If confirmed, the app creates the Firebase Auth email/password account and returns the user to Login.
+If confirmed, the endpoint reports that the email is already ready for sign-in.
 
 Password reset demo:
 
@@ -256,6 +261,7 @@ Root Directory: genkit_backend
 Health Check Path: /health
 Environment: GROQ_API_KEY=YOUR_GROQ_API_KEY
 Environment: FIREBASE_SERVICE_ACCOUNT_JSON={...service account json...}
+Environment: FIREBASE_WEB_API_KEY=YOUR_FIREBASE_WEB_API_KEY
 Environment: PUBLIC_BASE_URL=https://YOUR_RENDER_SERVICE.onrender.com
 Environment: SMTP_HOST=smtp.gmail.com
 Environment: SMTP_PORT=587
@@ -275,13 +281,13 @@ ADMIN_ALERT_WORKER_INTERVAL_SECONDS=60
 Then run Flutter with:
 
 ```powershell
-flutter run --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
+flutter run --dart-define=FULLBRIGHT_BACKEND_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
 ```
 
 For release:
 
 ```powershell
-flutter build apk --release --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
+flutter build apk --release --dart-define=FULLBRIGHT_BACKEND_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
 ```
 
 ## Data Handling Notes

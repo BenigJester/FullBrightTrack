@@ -94,6 +94,7 @@ Future<Response> _startRegistration(Request request) async {
     final backend = _requireFirebaseBackend();
     final payload = await _readJsonObject(request);
     final email = _emailFromPayload(payload);
+    final password = _passwordFromPayload(payload);
     final mailer = _SmtpEmailSender.fromEnvironment();
     if (mailer == null) {
       throw const _BadRequest(
@@ -109,6 +110,7 @@ Future<Response> _startRegistration(Request request) async {
 
     await backend.setDocument('pending_registrations/$id', {
       'email': email,
+      'pendingPassword': password,
       'tokenHash': _hashToken(token),
       'status': 'pending',
       'expiresAt': expiresAt.toIso8601String(),
@@ -162,7 +164,9 @@ Future<Response> _confirmRegistration(Request request) async {
     }
     final status = doc['status'] as String? ?? 'pending';
     if (status == 'confirmed') {
-      return Response(409, body: 'This confirmation link was already used.');
+      return Response.ok(
+        'This email is already confirmed. You can now sign in from the app.',
+      );
     }
     if (_isExpired(doc['expiresAt'])) {
       await backend.updateDocument('pending_registrations/$id', {
@@ -175,13 +179,32 @@ Future<Response> _confirmRegistration(Request request) async {
       return Response(403, body: 'Invalid confirmation token.');
     }
 
+    final email = (doc['email'] as String?)?.trim().toLowerCase() ?? '';
+    final password = (doc['pendingPassword'] as String?) ?? '';
+    if (email.isEmpty || password.length < 6) {
+      throw const _BadRequest(
+        'This registration request is missing account credentials.',
+      );
+    }
+
+    final existing = await backend.lookupUserByEmail(email);
+    final uid = existing == null
+        ? await backend.createEmailPasswordUser(email, password)
+        : (existing['localId'] as String?) ?? '';
+    if (uid.isEmpty) {
+      throw const _BadRequest('Could not create the Firebase Auth account.');
+    }
+
     await backend.updateDocument('pending_registrations/$id', {
       'status': 'confirmed',
+      'uid': uid,
+      'pendingPassword': null,
+      'accountCreatedAt': DateTime.now().toUtc().toIso8601String(),
       'confirmedAt': DateTime.now().toUtc().toIso8601String(),
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
     return Response.ok(
-      'Email confirmed. You can now create the Firebase Auth account in the app.',
+      'Email confirmed. Your FullBrightTrack account was created. You can now sign in from the app.',
     );
   } catch (error) {
     return _errorResponse(error);
@@ -423,6 +446,14 @@ String _emailFromPayload(Map<String, dynamic> payload) {
     throw const _BadRequest('A valid email is required.');
   }
   return email;
+}
+
+String _passwordFromPayload(Map<String, dynamic> payload) {
+  final password = ((payload['password'] as String?) ?? '').trim();
+  if (password.length < 6) {
+    throw const _BadRequest('Password must be at least 6 characters.');
+  }
+  return password;
 }
 
 String _publicBaseUrl(Request request) {
@@ -1781,6 +1812,44 @@ class _FirebaseBackend {
       return Map<String, dynamic>.from(users.first as Map);
     }
     return null;
+  }
+
+  Future<String> createEmailPasswordUser(String email, String password) async {
+    final apiKey = Platform.environment['FIREBASE_WEB_API_KEY']?.trim();
+    if (apiKey == null || apiKey.isEmpty) {
+      throw const _BadRequest(
+        'Firebase Auth account creation is not configured. Set FIREBASE_WEB_API_KEY.',
+      );
+    }
+
+    final response = await http
+        .post(
+          Uri.parse(
+            'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${Uri.encodeQueryComponent(apiKey)}',
+          ),
+          headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+          body: jsonEncode({
+            'email': email,
+            'password': password,
+            'returnSecureToken': false,
+          }),
+        )
+        .timeout(const Duration(seconds: 12));
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      return (decoded['localId'] as String?) ?? '';
+    }
+
+    final body = response.body;
+    if (body.contains('EMAIL_EXISTS')) {
+      final existing = await lookupUserByEmail(email);
+      return (existing?['localId'] as String?) ?? '';
+    }
+
+    throw _BadRequest(
+      'Could not create Firebase Auth user: ${response.statusCode} ${_shortError(body)}',
+    );
   }
 
   Future<void> updateUserPassword(String uid, String password) async {

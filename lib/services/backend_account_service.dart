@@ -42,6 +42,7 @@ class BackendAccountService {
 
   static Future<PendingRegistrationResult> startRegistration({
     required String email,
+    required String password,
   }) async {
     if (!isConfigured) {
       throw const BackendAccountException(
@@ -53,7 +54,7 @@ class BackendAccountService {
         .post(
           Uri.parse('$_baseUrl/start-registration'),
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'email': email}),
+          body: jsonEncode({'email': email, 'password': password}),
         )
         .timeout(const Duration(seconds: 12));
 

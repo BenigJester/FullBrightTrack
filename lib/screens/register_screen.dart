@@ -73,10 +73,11 @@ class _RegisterTabState extends State<RegisterTab> {
 
       final confirmation = await BackendAccountService.startRegistration(
         email: email,
+        password: password,
       );
 
       if (!mounted) return;
-      await _showConfirmationStartedDialog(confirmation, password);
+      await _showConfirmationStartedDialog(confirmation);
     } on FirebaseAuthException catch (e) {
       if (FirebaseAuth.instance.currentUser?.email == email) {
         await FirebaseAuth.instance.signOut();
@@ -104,10 +105,7 @@ class _RegisterTabState extends State<RegisterTab> {
 
   Future<void> _showConfirmationStartedDialog(
     PendingRegistrationResult confirmation,
-    String password,
   ) async {
-    var isCreatingAccount = false;
-
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -117,47 +115,7 @@ class _RegisterTabState extends State<RegisterTab> {
             ? 'This link will expire soon.'
             : 'Expires at ${TimeOfDay.fromDateTime(expiresAt.toLocal()).format(context)}.';
 
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> createConfirmedAccount() async {
-              final dialogNavigator = Navigator.of(context);
-              final rootNavigator = Navigator.of(this.context);
-              setDialogState(() => isCreatingAccount = true);
-              var shouldUpdateDialog = true;
-              try {
-                await BackendAccountService.completeRegistration(
-                  requestId: confirmation.requestId,
-                  email: confirmation.email,
-                );
-                await auth.register(confirmation.email, password);
-                await FirebaseAuth.instance.signOut();
-
-                if (!mounted) return;
-                shouldUpdateDialog = false;
-                dialogNavigator.pop();
-                rootNavigator.pop();
-                _showSnackBar(
-                  'Email confirmed. You can now sign in with your account.',
-                );
-              } on FirebaseAuthException catch (e) {
-                if (FirebaseAuth.instance.currentUser?.email ==
-                    confirmation.email) {
-                  await FirebaseAuth.instance.signOut();
-                }
-
-                if (!mounted) return;
-                _showSnackBar(_authErrorMessage(e));
-              } catch (e) {
-                if (!mounted) return;
-                _showSnackBar(e.toString());
-              } finally {
-                if (mounted && shouldUpdateDialog) {
-                  setDialogState(() => isCreatingAccount = false);
-                }
-              }
-            }
-
-            return AlertDialog(
+        return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(24),
               ),
@@ -182,7 +140,7 @@ class _RegisterTabState extends State<RegisterTab> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'A confirmation link was sent to ${confirmation.email}. Open it from your email inbox, then return here to create the account.',
+                    'A confirmation link was sent to ${confirmation.email}. Open it from your email inbox. Your account will be created automatically after confirmation.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Colors.grey.shade700, height: 1.45),
                   ),
@@ -211,22 +169,16 @@ class _RegisterTabState extends State<RegisterTab> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: isCreatingAccount
-                          ? null
-                          : () async {
-                              final uri = Uri.parse(
-                                confirmation.confirmationUrl,
-                              );
-                              final opened = await launchUrl(
-                                uri,
-                                mode: LaunchMode.externalApplication,
-                              );
-                              if (!opened && mounted) {
-                                _showSnackBar(
-                                  'Could not open confirmation link',
-                                );
-                              }
-                            },
+                      onPressed: () async {
+                        final uri = Uri.parse(confirmation.confirmationUrl);
+                        final opened = await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                        if (!opened && mounted) {
+                          _showSnackBar('Could not open confirmation link');
+                        }
+                      },
                       icon: const Icon(Icons.open_in_new_rounded),
                       label: const Text('Open Confirmation Link'),
                       style: ElevatedButton.styleFrom(
@@ -244,48 +196,15 @@ class _RegisterTabState extends State<RegisterTab> {
                 ],
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: isCreatingAccount
-                        ? null
-                        : createConfirmedAccount,
-                    icon: isCreatingAccount
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_circle_outline_rounded),
-                    label: Text(
-                      isCreatingAccount
-                          ? 'Creating Account...'
-                          : 'I Confirmed, Create Account',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFFFF7A59),
-                      side: const BorderSide(color: Color(0xFFFF7A59)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
                   child: TextButton(
-                    onPressed: isCreatingAccount
-                        ? null
-                        : () {
-                            Navigator.pop(context);
-                            Navigator.pop(this.context);
-                          },
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.pop(this.context);
+                    },
                     child: const Text('Back to Login'),
                   ),
                 ),
               ],
-            );
-          },
         );
       },
     );
