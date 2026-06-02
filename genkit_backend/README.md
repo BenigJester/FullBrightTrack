@@ -57,7 +57,7 @@ Google API key, you are running a different tool or old backend command. For
 this server, only `GROQ_API_KEY` is used for AI calls. If `GROQ_API_KEY` is not
 set, the server still starts and uses local fallback scoring.
 
-Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Automatic account creation from the confirmation link also requires `FIREBASE_WEB_API_KEY`. Email confirmation on Render free services should use the Brevo HTTPS API because Render blocks outbound SMTP ports on free web services. Keep service account JSON and email API keys on the backend only. Never put them in Flutter.
+Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Automatic account creation from the confirmation link uses the service account plus `FIREBASE_WEB_API_KEY` to identify the Firebase project. Email confirmation on Render free services should use the Brevo HTTPS API because Render blocks outbound SMTP ports on free web services. Keep service account JSON and email API keys on the backend only. Never put them in Flutter.
 
 Windows PowerShell quick start:
 

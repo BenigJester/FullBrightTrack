@@ -1919,16 +1919,18 @@ class _FirebaseBackend {
       );
     }
 
-    final response = await http
+    final client = await _authClient();
+    final response = await client
         .post(
           Uri.parse(
-            'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${Uri.encodeQueryComponent(apiKey)}',
+            'https://identitytoolkit.googleapis.com/v1/projects/$projectId/accounts?key=${Uri.encodeQueryComponent(apiKey)}',
           ),
           headers: {HttpHeaders.contentTypeHeader: 'application/json'},
           body: jsonEncode({
             'email': email,
             'password': password,
-            'returnSecureToken': false,
+            'emailVerified': true,
+            'targetProjectId': projectId,
           }),
         )
         .timeout(const Duration(seconds: 12));
