@@ -95,10 +95,10 @@ Future<Response> _startRegistration(Request request) async {
     final payload = await _readJsonObject(request);
     final email = _emailFromPayload(payload);
     final password = _passwordFromPayload(payload);
-    final mailer = _SmtpEmailSender.fromEnvironment();
+    final mailer = _EmailSender.fromEnvironment();
     if (mailer == null) {
       throw const _BadRequest(
-        'Email delivery is not configured. Set SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL.',
+        'Email delivery is not configured. Set BREVO_API_KEY and BREVO_SENDER_EMAIL, or configure SMTP settings.',
       );
     }
     final id = _randomToken(12);
@@ -1400,7 +1400,102 @@ String _shortError(String value) {
       : '${normalized.substring(0, 220)}...';
 }
 
-class _SmtpEmailSender {
+abstract class _EmailSender {
+  const _EmailSender();
+
+  static _EmailSender? fromEnvironment() {
+    final brevo = _BrevoEmailSender.fromEnvironment();
+    if (brevo != null) return brevo;
+    return _SmtpEmailSender.fromEnvironment();
+  }
+
+  Future<void> sendRegistrationConfirmation({
+    required String toEmail,
+    required String confirmationUrl,
+    required DateTime expiresAt,
+  });
+}
+
+class _BrevoEmailSender extends _EmailSender {
+  const _BrevoEmailSender({
+    required this.apiKey,
+    required this.senderEmail,
+    required this.senderName,
+  });
+
+  final String apiKey;
+  final String senderEmail;
+  final String senderName;
+
+  static _BrevoEmailSender? fromEnvironment() {
+    final apiKey = Platform.environment['BREVO_API_KEY']?.trim() ?? '';
+    final senderEmail =
+        Platform.environment['BREVO_SENDER_EMAIL']?.trim().isNotEmpty == true
+        ? Platform.environment['BREVO_SENDER_EMAIL']!.trim()
+        : Platform.environment['SMTP_FROM_EMAIL']?.trim() ?? '';
+    final senderName =
+        Platform.environment['BREVO_SENDER_NAME']?.trim().isNotEmpty == true
+        ? Platform.environment['BREVO_SENDER_NAME']!.trim()
+        : Platform.environment['SMTP_FROM_NAME']?.trim().isNotEmpty == true
+        ? Platform.environment['SMTP_FROM_NAME']!.trim()
+        : 'FullBrightTrack';
+
+    if (apiKey.isEmpty || senderEmail.isEmpty) return null;
+
+    return _BrevoEmailSender(
+      apiKey: apiKey,
+      senderEmail: senderEmail,
+      senderName: senderName,
+    );
+  }
+
+  @override
+  Future<void> sendRegistrationConfirmation({
+    required String toEmail,
+    required String confirmationUrl,
+    required DateTime expiresAt,
+  }) async {
+    final textBody =
+        '''
+Hello,
+
+Please confirm your FullBrightTrack registration by opening this link:
+
+$confirmationUrl
+
+This link expires at ${expiresAt.toLocal()}.
+
+If you did not request this account, you can ignore this email.
+''';
+
+    final response = await http
+        .post(
+          Uri.parse('https://api.brevo.com/v3/smtp/email'),
+          headers: {
+            HttpHeaders.acceptHeader: 'application/json',
+            HttpHeaders.contentTypeHeader: 'application/json',
+            'api-key': apiKey,
+          },
+          body: jsonEncode({
+            'sender': {'name': senderName, 'email': senderEmail},
+            'to': [
+              {'email': toEmail},
+            ],
+            'subject': 'Confirm your FullBrightTrack registration',
+            'textContent': textBody,
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _BadRequest(
+        'Brevo email send failed: ${response.statusCode} ${_shortError(response.body)}',
+      );
+    }
+  }
+}
+
+class _SmtpEmailSender extends _EmailSender {
   const _SmtpEmailSender({
     required this.host,
     required this.port,
@@ -1455,6 +1550,7 @@ class _SmtpEmailSender {
     );
   }
 
+  @override
   Future<void> sendRegistrationConfirmation({
     required String toEmail,
     required String confirmationUrl,

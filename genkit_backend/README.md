@@ -45,12 +45,9 @@ $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 $env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
 $env:FIREBASE_WEB_API_KEY="YOUR_FIREBASE_WEB_API_KEY"
 $env:PUBLIC_BASE_URL="http://localhost:8080"
-$env:SMTP_HOST="smtp.gmail.com"
-$env:SMTP_PORT="587"
-$env:SMTP_USERNAME="your_sender_email@gmail.com"
-$env:SMTP_PASSWORD="YOUR_EMAIL_APP_PASSWORD"
-$env:SMTP_FROM_EMAIL="your_sender_email@gmail.com"
-$env:SMTP_FROM_NAME="FullBrightTrack"
+$env:BREVO_API_KEY="YOUR_BREVO_API_KEY"
+$env:BREVO_SENDER_EMAIL="your_verified_sender@example.com"
+$env:BREVO_SENDER_NAME="FullBrightTrack"
 dart run bin/server.dart
 ```
 
@@ -60,7 +57,7 @@ Google API key, you are running a different tool or old backend command. For
 this server, only `GROQ_API_KEY` is used for AI calls. If `GROQ_API_KEY` is not
 set, the server still starts and uses local fallback scoring.
 
-Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Automatic account creation from the confirmation link also requires `FIREBASE_WEB_API_KEY`. Email confirmation requires SMTP settings. Keep service account JSON and SMTP passwords on the backend only. Never put them in Flutter.
+Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Automatic account creation from the confirmation link also requires `FIREBASE_WEB_API_KEY`. Email confirmation on Render free services should use the Brevo HTTPS API because Render blocks outbound SMTP ports on free web services. Keep service account JSON and email API keys on the backend only. Never put them in Flutter.
 
 Windows PowerShell quick start:
 
@@ -71,13 +68,22 @@ $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 $env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
 $env:FIREBASE_WEB_API_KEY="YOUR_FIREBASE_WEB_API_KEY"
 $env:PUBLIC_BASE_URL="http://localhost:8080"
+$env:BREVO_API_KEY="YOUR_BREVO_API_KEY"
+$env:BREVO_SENDER_EMAIL="your_verified_sender@example.com"
+$env:BREVO_SENDER_NAME="FullBrightTrack"
+dart run bin/server.dart
+```
+
+Optional local SMTP fallback, useful only outside Render free services:
+
+```powershell
 $env:SMTP_HOST="smtp.gmail.com"
-$env:SMTP_PORT="587"
+$env:SMTP_PORT="465"
+$env:SMTP_STARTTLS="false"
 $env:SMTP_USERNAME="your_sender_email@gmail.com"
 $env:SMTP_PASSWORD="YOUR_EMAIL_APP_PASSWORD"
 $env:SMTP_FROM_EMAIL="your_sender_email@gmail.com"
 $env:SMTP_FROM_NAME="FullBrightTrack"
-dart run bin/server.dart
 ```
 
 Health check:
@@ -263,12 +269,9 @@ Environment: GROQ_API_KEY=YOUR_GROQ_API_KEY
 Environment: FIREBASE_SERVICE_ACCOUNT_JSON={...service account json...}
 Environment: FIREBASE_WEB_API_KEY=YOUR_FIREBASE_WEB_API_KEY
 Environment: PUBLIC_BASE_URL=https://YOUR_RENDER_SERVICE.onrender.com
-Environment: SMTP_HOST=smtp.gmail.com
-Environment: SMTP_PORT=587
-Environment: SMTP_USERNAME=your_sender_email@gmail.com
-Environment: SMTP_PASSWORD=YOUR_EMAIL_APP_PASSWORD
-Environment: SMTP_FROM_EMAIL=your_sender_email@gmail.com
-Environment: SMTP_FROM_NAME=FullBrightTrack
+Environment: BREVO_API_KEY=YOUR_BREVO_API_KEY
+Environment: BREVO_SENDER_EMAIL=your_verified_sender@example.com
+Environment: BREVO_SENDER_NAME=FullBrightTrack
 ```
 
 Optional environment:

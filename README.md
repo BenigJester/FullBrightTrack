@@ -19,7 +19,7 @@ Current app version: `0.4.0-alpha+5`
 - Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, Week/Month charts, warning signals, and alert-target highlighting.
 - Admin warning resolution workflow and daily stress history charting.
 - Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads and local fallback scoring.
-- Account flows for email/password and Google sign-in.
+- Account flows for email/password and Google sign-in, with backend-sent registration confirmation links that create Firebase Auth accounts after confirmation.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - Step reminder notification support with 1, 2, or 3 hour intervals.
@@ -39,6 +39,7 @@ Current app version: `0.4.0-alpha+5`
 - Native Android Kotlin foreground service
 - Firebase App Check
 - Groq AI backend on Render or another Docker host
+- Brevo HTTPS email API for Render-friendly registration confirmation delivery
 - Firebase Cloud Functions for trusted admin FCM alert delivery
 
 ## Project Structure
@@ -138,7 +139,8 @@ flutter pub get
 
 - Deploy `genkit_backend` to Render or another Docker host.
 - Set `GROQ_API_KEY` as a server environment variable.
-- Use the deployed `/stress` endpoint when running or building Flutter.
+- Set `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_WEB_API_KEY`, `PUBLIC_BASE_URL`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` on the backend if registration confirmation emails are enabled.
+- Use both the deployed backend base URL and `/stress` endpoint when running or building Flutter.
 - Debug builds default to `http://10.0.2.2:8080/stress` if `GENKIT_STRESS_FLOW_URL` is not provided, which is useful for Android emulator testing against a local backend.
 - Users must agree to the raw wellness data processing consent on login before raw mood, journal, task, and step records are sent to the AI backend. Without consent, the app uses local fallback scoring.
 
@@ -155,13 +157,13 @@ The function watches `admin_alerts/{alertId}`, reads registered admin device tok
 5. Run the app:
 
 ```bash
-flutter run --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
+flutter run --dart-define=FULLBRIGHT_BACKEND_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
 ```
 
 For local Android emulator testing against a local backend, use:
 
 ```bash
-flutter run --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
+flutter run --dart-define=FULLBRIGHT_BACKEND_URL=http://10.0.2.2:8080 --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
 ```
 
 For debug builds only, the app also falls back to this local emulator URL when `GENKIT_STRESS_FLOW_URL` is omitted.
