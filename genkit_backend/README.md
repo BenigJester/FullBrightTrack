@@ -26,11 +26,30 @@ The same `/stress` route also supports focused modes from the Flutter app:
 
 Journal warning review understands English and Philippine languages such as Tagalog, Cebuano, Ilocano, Hiligaynon, Waray, Kapampangan, Pangasinan, Bicolano, and mixed local-English writing. It can detect self-harm, harm toward others, threats, harassment/coercion, and explicit unsafe wording. The prompt also tells the model to ignore clearly safe slang, jokes, quoted media, academic discussion, or non-risk context.
 
+The backend can also run thesis-demo account and admin alert workflows:
+
+- `/start-registration` creates a pending email confirmation record.
+- `/confirm-registration` marks the pending email as confirmed.
+- `/complete-registration` lets the Flutter app verify the confirmed request before creating the Firebase Auth account.
+- `/request-password-reset` creates a one-time reset token for an existing Firebase Auth user.
+- `/confirm-password-reset` validates a reset token.
+- `/complete-password-reset` updates the Firebase Auth password through the backend.
+- `/admin-alert-worker` polls Firestore `admin_alerts`, reads admin FCM tokens, and sends push notifications through FCM HTTP v1.
+- `/developer-delete-user` lets the developer app delete Firebase Auth login credentials for a target UID or email after verifying the signed-in caller is an admin.
+
 ## Local Run
 
 ```powershell
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
+$env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
+$env:PUBLIC_BASE_URL="http://localhost:8080"
+$env:SMTP_HOST="smtp.gmail.com"
+$env:SMTP_PORT="587"
+$env:SMTP_USERNAME="your_sender_email@gmail.com"
+$env:SMTP_PASSWORD="YOUR_EMAIL_APP_PASSWORD"
+$env:SMTP_FROM_EMAIL="your_sender_email@gmail.com"
+$env:SMTP_FROM_NAME="FullBrightTrack"
 dart run bin/server.dart
 ```
 
@@ -40,12 +59,22 @@ Google API key, you are running a different tool or old backend command. For
 this server, only `GROQ_API_KEY` is used for AI calls. If `GROQ_API_KEY` is not
 set, the server still starts and uses local fallback scoring.
 
+Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Email confirmation requires SMTP settings. Keep service account JSON and SMTP passwords on the backend only. Never put them in Flutter.
+
 Windows PowerShell quick start:
 
 ```powershell
 cd genkit_backend
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
+$env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
+$env:PUBLIC_BASE_URL="http://localhost:8080"
+$env:SMTP_HOST="smtp.gmail.com"
+$env:SMTP_PORT="587"
+$env:SMTP_USERNAME="your_sender_email@gmail.com"
+$env:SMTP_PASSWORD="YOUR_EMAIL_APP_PASSWORD"
+$env:SMTP_FROM_EMAIL="your_sender_email@gmail.com"
+$env:SMTP_FROM_NAME="FullBrightTrack"
 dart run bin/server.dart
 ```
 
@@ -115,6 +144,87 @@ $body = @{
 Invoke-RestMethod -Uri "http://localhost:8080/stress" -Method Post -ContentType "application/json" -Body $body
 ```
 
+Registration confirmation demo:
+
+```powershell
+$body = @{ email = "student@example.com" } | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri "http://localhost:8080/start-registration" -Method Post -ContentType "application/json" -Body $body
+```
+
+The backend sends the confirmation link to the user's email. For local testing only, set this before starting the backend if you also want the API response to include the link:
+
+```powershell
+$env:EMAIL_DEBUG_RETURN_LINK="true"
+```
+
+The backend stores records under:
+
+```text
+pending_registrations/{requestId}
+```
+
+After opening the confirmation link, the Flutter register screen calls:
+
+```powershell
+$body = @{
+  requestId = "REQUEST_ID"
+  email = "student@example.com"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri "http://localhost:8080/complete-registration" -Method Post -ContentType "application/json" -Body $body
+```
+
+If confirmed, the app creates the Firebase Auth email/password account and returns the user to Login.
+
+Password reset demo:
+
+```powershell
+$body = @{ email = "student@example.com" } | ConvertTo-Json -Compress
+Invoke-RestMethod -Uri "http://localhost:8080/request-password-reset" -Method Post -ContentType "application/json" -Body $body
+```
+
+Open the returned `resetUrl`, then complete it:
+
+```powershell
+$body = @{
+  id = "REQUEST_ID"
+  token = "TOKEN_FROM_RESET_URL"
+  newPassword = "newPassword123"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri "http://localhost:8080/complete-password-reset" -Method Post -ContentType "application/json" -Body $body
+```
+
+Admin FCM worker demo:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8080/admin-alert-worker" -Method Post
+```
+
+Developer user delete demo:
+
+```powershell
+$body = @{
+  email = "student@example.com"
+  uid = ""
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/developer-delete-user" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Headers @{ Authorization = "Bearer ADMIN_FIREBASE_ID_TOKEN" } `
+  -Body $body
+```
+
+The backend verifies the admin token against Firebase Auth and checks `users/{adminUid}.isAdmin == true` before deleting the target Firebase Auth user. This deletes sign-in credentials only; Firestore profile/data documents are kept unless deleted separately.
+
+For automatic polling on a free backend host, set:
+
+```powershell
+$env:ADMIN_ALERT_WORKER_INTERVAL_SECONDS="60"
+```
+
 Journal warning mode example:
 
 ```powershell
@@ -145,12 +255,21 @@ Runtime: Docker
 Root Directory: genkit_backend
 Health Check Path: /health
 Environment: GROQ_API_KEY=YOUR_GROQ_API_KEY
+Environment: FIREBASE_SERVICE_ACCOUNT_JSON={...service account json...}
+Environment: PUBLIC_BASE_URL=https://YOUR_RENDER_SERVICE.onrender.com
+Environment: SMTP_HOST=smtp.gmail.com
+Environment: SMTP_PORT=587
+Environment: SMTP_USERNAME=your_sender_email@gmail.com
+Environment: SMTP_PASSWORD=YOUR_EMAIL_APP_PASSWORD
+Environment: SMTP_FROM_EMAIL=your_sender_email@gmail.com
+Environment: SMTP_FROM_NAME=FullBrightTrack
 ```
 
 Optional environment:
 
 ```text
 GROQ_MODEL=llama-3.3-70b-versatile
+ADMIN_ALERT_WORKER_INTERVAL_SECONDS=60
 ```
 
 Then run Flutter with:

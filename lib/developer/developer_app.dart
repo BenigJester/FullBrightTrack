@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,11 +49,14 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
   final _passwordController = TextEditingController();
   final _pathController = TextEditingController();
   final _jsonController = TextEditingController();
+  final _targetUidController = TextEditingController();
+  final _targetEmailController = TextEditingController();
 
   String _collection = _collections.first;
   String? _message;
   bool _authBusy = false;
   bool _saving = false;
+  bool _deletingAuthUser = false;
 
   @override
   void dispose() {
@@ -60,7 +64,32 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
     _passwordController.dispose();
     _pathController.dispose();
     _jsonController.dispose();
+    _targetUidController.dispose();
+    _targetEmailController.dispose();
     super.dispose();
+  }
+
+  String get _backendBaseUrl {
+    const configured = String.fromEnvironment('FULLBRIGHT_BACKEND_URL');
+    if (configured.trim().isNotEmpty) {
+      return configured.trim().replaceAll(RegExp(r'/+$'), '');
+    }
+
+    const stressUrl = String.fromEnvironment('GENKIT_STRESS_FLOW_URL');
+    final stressUri = Uri.tryParse(stressUrl.trim());
+    if (stressUri != null) {
+      final segments = stressUri.pathSegments.where((part) => part != 'stress');
+      return stressUri
+          .replace(pathSegments: segments, query: '', fragment: '')
+          .toString()
+          .replaceAll(RegExp(r'/+$'), '');
+    }
+
+    const debugUrl = String.fromEnvironment(
+      'FULLBRIGHT_BACKEND_DEBUG_URL',
+      defaultValue: 'http://10.0.2.2:8080',
+    );
+    return debugUrl.trim().replaceAll(RegExp(r'/+$'), '');
   }
 
   DocumentReference<Map<String, dynamic>>? get _selectedDoc {
@@ -172,6 +201,80 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
     }
   }
 
+  Future<void> _deleteAuthUserCredentials() async {
+    final uid = _targetUidController.text.trim();
+    final email = _targetEmailController.text.trim();
+    if (uid.isEmpty && email.isEmpty) {
+      setState(() => _message = 'Enter a target user UID or email.');
+      return;
+    }
+
+    final description = uid.isNotEmpty ? uid : email;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete login credentials?'),
+        content: Text(
+          'This deletes Firebase Auth sign-in credentials for $description, including email/password or Google sign-in. Firestore profile data is not deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete credentials'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final admin = FirebaseAuth.instance.currentUser;
+    if (admin == null) {
+      setState(() => _message = 'Sign in as an admin first.');
+      return;
+    }
+
+    setState(() => _deletingAuthUser = true);
+    try {
+      final token = await admin.getIdToken(true);
+      final response = await http
+          .post(
+            Uri.parse('$_backendBaseUrl/developer-delete-user'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'uid': uid, 'email': email}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      final decoded = response.body.trim().isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+      final data = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{};
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(data['error'] ?? 'Delete request failed.');
+      }
+
+      _targetUidController.clear();
+      _targetEmailController.clear();
+      setState(
+        () => _message =
+            data['message'] as String? ??
+            'Firebase Auth login credentials were deleted.',
+      );
+    } catch (error) {
+      setState(() => _message = 'Delete credentials failed: $error');
+    } finally {
+      if (mounted) setState(() => _deletingAuthUser = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -200,7 +303,13 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
               children: [
                 _hero(user),
                 const SizedBox(height: 14),
-                if (user == null) _signInCard() else _consoleCard(),
+                if (user == null)
+                  _signInCard()
+                else ...[
+                  _userManagementCard(),
+                  const SizedBox(height: 14),
+                  _consoleCard(),
+                ],
                 if (_message != null) ...[
                   const SizedBox(height: 12),
                   _messageCard(_message!),
@@ -287,6 +396,102 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
                   )
                 : const Icon(Icons.login_rounded),
             label: const Text('Sign in'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _userManagementCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.manage_accounts_rounded,
+                  color: Colors.redAccent,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'User management',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Delete Firebase Auth login credentials by UID or email.',
+                      style: TextStyle(color: Colors.black54, height: 1.3),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _targetUidController,
+            decoration: const InputDecoration(
+              labelText: 'Target UID',
+              hintText: 'Firebase Auth UID',
+              prefixIcon: Icon(Icons.badge_outlined),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _targetEmailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Target email',
+              hintText: 'student@example.com',
+              prefixIcon: Icon(Icons.alternate_email_rounded),
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4F1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              'This removes sign-in access from Firebase Auth, including email/password and Google providers. Firestore documents are kept unless you delete them separately below.',
+              style: TextStyle(color: Color(0xFF8A3A24), height: 1.35),
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _deletingAuthUser ? null : _deleteAuthUserCredentials,
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            icon: _deletingAuthUser
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.person_remove_alt_1_rounded),
+            label: Text(
+              _deletingAuthUser
+                  ? 'Deleting credentials...'
+                  : 'Delete login credentials',
+            ),
           ),
         ],
       ),
