@@ -798,7 +798,7 @@ Response _linkPage({
   String actionLabel = 'Back to the app',
 }) {
   final color = switch (tone) {
-    _LinkPageTone.success => '#16a34a',
+    _LinkPageTone.success => '#f97316',
     _LinkPageTone.warning => '#f97316',
     _LinkPageTone.danger => '#dc2626',
   };
@@ -833,7 +833,7 @@ Response _registrationConfirmPage({
   return _htmlResponse(
     _pageShell(
       title: 'Confirm your account',
-      color: '#16a34a',
+      color: '#f97316',
       body:
           '''
         <div class="icon" aria-hidden="true">OK</div>
@@ -858,7 +858,7 @@ Response _passwordResetPage({
   return _htmlResponse(
     _pageShell(
       title: 'Create a new password',
-      color: '#2563eb',
+      color: '#f97316',
       body:
           '''
         <div class="icon" aria-hidden="true">•</div>
