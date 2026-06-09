@@ -7,6 +7,7 @@ import '../services/task_content_guard_service.dart';
 import '../services/task_content_blocked_exception.dart';
 import '../services/wellness_signal_service.dart';
 import '../services/genkit_stress_ai_service.dart';
+import '../widgets/ai_updated_status.dart';
 
 class Task {
   final String id;
@@ -673,6 +674,7 @@ class _TasksTabState extends State<TasksTab> {
           overdue: overdue,
           completed: completed,
         );
+        final statusText = AiUpdatedStatus.fromMonitoring(monitoring);
 
         return Container(
           width: double.infinity,
@@ -725,6 +727,8 @@ class _TasksTabState extends State<TasksTab> {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    const SizedBox(height: 12),
+                    AiUpdatedStatus(statusText: statusText),
                   ],
                 ),
               ),

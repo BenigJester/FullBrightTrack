@@ -199,6 +199,8 @@ class _AiStatusHero extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              const SizedBox(height: 12),
+              _AiUpdatedStatus(statusText: status.updatedStatusText),
               const SizedBox(height: 18),
               _ScorePanel(status: status, progress: progress, color: color),
               const SizedBox(height: 16),
@@ -223,6 +225,45 @@ class _AiStatusHero extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AiUpdatedStatus extends StatelessWidget {
+  const _AiUpdatedStatus({required this.statusText});
+
+  final String statusText;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.schedule_rounded,
+            size: 17,
+            color: Color(0xFF64748B),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              statusText,
+              style: const TextStyle(
+                color: Color(0xFF475569),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -885,6 +926,7 @@ class _AiMoodStatus {
     required this.confidence,
     required this.rationale,
     required this.message,
+    required this.updatedStatusText,
   });
 
   factory _AiMoodStatus.fromDoc(DocumentSnapshot<Map<String, dynamic>>? doc) {
@@ -898,13 +940,16 @@ class _AiMoodStatus {
         rationale: ['waiting for raw data'],
         message:
             'Your AI analysis will appear after FullBrightTrack has recent mood, steps, journal, or task signals to review.',
+        updatedStatusText: 'Status: waiting for AI update',
       );
     }
 
-    final rank = (data['stressRank'] as String?) ?? 'Low';
     final confidence = ((data['confidence'] as num?)?.toDouble() ?? 0)
         .clamp(0.0, 1.0)
         .toDouble();
+    final rank = confidence <= 0
+        ? 'Pending'
+        : (data['stressRank'] as String?) ?? 'Low';
     final resolvedWarningSignature =
         (data['resolvedWarningSignature'] as String?) ?? '';
     final warningSignature = (data['warningSignature'] as String?) ?? '';
@@ -917,8 +962,10 @@ class _AiMoodStatus {
     final visibleScore = ((data['stressScore'] as num?)?.toDouble() ?? 0)
         .clamp(0.0, 100.0)
         .toDouble();
-    final safeRank = confidence <= 0 && !supportResolved ? 'Pending' : rank;
-    final title = (data['aiMoodStatus'] as String?) ?? _titleForRank(safeRank);
+    final safeRank = confidence <= 0 ? 'Pending' : rank;
+    final title = confidence <= 0
+        ? _titleForRank('Pending')
+        : (data['aiMoodStatus'] as String?) ?? _titleForRank(safeRank);
     final rawRationale =
         (data['rationale'] as List?)
             ?.whereType<String>()
@@ -928,7 +975,9 @@ class _AiMoodStatus {
         const ['recent wellness signals'];
     final rationale = supportResolved
         ? [
-            'therapist support was provided',
+            (data['supportResolutionStatus'] as String?) == 'false_positive'
+                ? 'false positive'
+                : 'Support was provided',
             ...rawRationale.where(
               (reason) =>
                   !reason.toLowerCase().contains('critical journal warning'),
@@ -943,6 +992,7 @@ class _AiMoodStatus {
       confidence: confidence,
       rationale: rationale,
       message: _messageForRank(safeRank),
+      updatedStatusText: _statusText(data),
     );
   }
 
@@ -952,6 +1002,7 @@ class _AiMoodStatus {
   final double confidence;
   final List<String> rationale;
   final String message;
+  final String updatedStatusText;
 
   Color get color {
     switch (rank) {
@@ -962,7 +1013,7 @@ class _AiMoodStatus {
       case 'Moderate':
         return const Color(0xFFD97706);
       case 'Pending':
-        return const Color(0xFF64748B);
+        return const Color(0xFF2563EB);
       default:
         return const Color(0xFF16A34A);
     }
@@ -1011,5 +1062,31 @@ class _AiMoodStatus {
       default:
         return 'Recent wellness signals look generally steady. Keep logging honestly so this analysis remains useful.';
     }
+  }
+
+  static String _statusText(Map<String, dynamic> data) {
+    final timestamp = _timestampFromData(data);
+    if (timestamp == null) return 'Status: waiting for AI update';
+    return 'Status: ${_formatTimestamp(timestamp)}';
+  }
+
+  static DateTime? _timestampFromData(Map<String, dynamic> data) {
+    final value = data['aiMoodStatusUpdatedAt'] ?? data['updatedAt'];
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
+  }
+
+  static String _formatTimestamp(DateTime value) {
+    final manila = value.toUtc().add(const Duration(hours: 8));
+    final hour = manila.hour > 12
+        ? manila.hour - 12
+        : manila.hour == 0
+        ? 12
+        : manila.hour;
+    final minute = manila.minute.toString().padLeft(2, '0');
+    final second = manila.second.toString().padLeft(2, '0');
+    final period = manila.hour >= 12 ? 'PM' : 'AM';
+    return '${manila.year}-${manila.month.toString().padLeft(2, '0')}-${manila.day.toString().padLeft(2, '0')} $hour:$minute:$second $period';
   }
 }

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_access_service.dart';
 import '../services/admin_alert_service.dart';
 import '../services/auth_service.dart';
+import '../services/backend_account_service.dart';
 import '../services/device_readiness_service.dart';
 import '../services/display_name_service.dart';
 import '../services/logout_service.dart';
@@ -443,6 +444,8 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _saving = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
 
   @override
   void initState() {
@@ -511,6 +514,15 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
       return;
     }
 
+    final confirmed = await _showAccountActionDialog(
+      title: "Add password sign-in?",
+      message:
+          "This lets you sign in with either Google or email and password using $email.",
+      confirmLabel: "Add password",
+      icon: Icons.add_moderator_outlined,
+    );
+    if (!confirmed) return;
+
     final password = await _showPasswordDialog();
     if (password == null) return;
 
@@ -546,13 +558,173 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     }
   }
 
+  Future<void> _requestPasswordReset() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+
+    if (email == null || email.isEmpty) {
+      _showMessage("No email address is linked to this account");
+      return;
+    }
+
+    final confirmed = await _showAccountActionDialog(
+      title: "Send password reset?",
+      message: "A secure password reset link will be sent to $email.",
+      confirmLabel: "Send reset link",
+      icon: Icons.lock_reset_rounded,
+    );
+    if (!confirmed) return;
+
+    setState(() => _saving = true);
+
+    try {
+      final result = await BackendAccountService.requestPasswordReset(
+        email: email,
+      );
+
+      if (!mounted) return;
+      _showMessage(
+        result.requestId.isEmpty
+            ? "If this email exists, a password reset link will be sent"
+            : "Password reset link sent. Check your email",
+      );
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage("Could not send password reset link");
+      debugPrint("Password reset request error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _linkGoogleSignIn() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email;
+
+    if (email == null || email.isEmpty) {
+      _showMessage("No email address is linked to this account");
+      return;
+    }
+
+    final confirmed = await _showAccountActionDialog(
+      title: "Verify with Google Sign-In?",
+      message:
+          "Choose the Google account for $email. After verification, this account can also use Google Sign-In.",
+      confirmLabel: "Verify with Google",
+      icon: Icons.g_mobiledata_rounded,
+    );
+    if (!confirmed) return;
+
+    setState(() => _saving = true);
+
+    try {
+      await AuthService().linkGoogleToCurrentUser();
+      await user!.reload();
+
+      if (!mounted) return;
+      _showMessage("Google Sign-In verified for this account");
+      setState(() {});
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      if (e.code == 'provider-already-linked') {
+        _showMessage("Google Sign-In is already verified");
+      } else if (e.code == 'credential-already-in-use') {
+        _showMessage("That Google account is already linked elsewhere");
+      } else if (e.code == 'requires-recent-login') {
+        _showMessage("Please log out, sign in again, then retry");
+      } else {
+        _showMessage(e.message ?? "Could not verify Google Sign-In");
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage("Could not verify Google Sign-In");
+      debugPrint("Google link error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<bool> _showAccountActionDialog({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    required IconData icon,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFFF7F8FC),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          icon: Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: Colors.deepOrange.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(icon, color: Colors.deepOrange, size: 30),
+          ),
+          title: Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          content: Text(
+            message,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700, height: 1.45),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.deepOrange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(confirmLabel),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Cancel"),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    return result == true;
+  }
+
   Future<String?> _showPasswordDialog() async {
     _passwordController.clear();
     _confirmPasswordController.clear();
+    _obscurePassword = true;
+    _obscureConfirmPassword = true;
 
     return showDialog<String>(
       context: context,
       builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
         return AlertDialog(
           backgroundColor: const Color(0xFFF7F8FC),
           shape: RoundedRectangleBorder(
@@ -597,14 +769,41 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                   controller: _passwordController,
                   label: "Password",
                   icon: Icons.lock_outline_rounded,
-                  obscureText: true,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    tooltip: _obscurePassword
+                        ? "Show password"
+                        : "Hide password",
+                    onPressed: () => setDialogState(
+                      () => _obscurePassword = !_obscurePassword,
+                    ),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _input(
                   controller: _confirmPasswordController,
                   label: "Confirm password",
                   icon: Icons.lock_person_outlined,
-                  obscureText: true,
+                  obscureText: _obscureConfirmPassword,
+                  suffixIcon: IconButton(
+                    tooltip: _obscureConfirmPassword
+                        ? "Show password"
+                        : "Hide password",
+                    onPressed: () => setDialogState(
+                      () => _obscureConfirmPassword =
+                          !_obscureConfirmPassword,
+                    ),
+                    icon: Icon(
+                      _obscureConfirmPassword
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -644,6 +843,8 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
             ),
           ],
         );
+          },
+        );
       },
     );
   }
@@ -671,6 +872,7 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     final providers =
         user?.providerData.map((info) => info.providerId).toSet() ?? {};
     final hasPassword = providers.contains('password');
+    final hasGoogle = providers.contains('google.com');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
@@ -697,7 +899,7 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                     controller: _nameController,
                     label: "Display name",
                     icon: Icons.badge_outlined,
-                    helperText: "3-6 characters",
+                    helperText: "3-${DisplayNameService.maxLength} characters",
                     maxLength: DisplayNameService.maxLength,
                   ),
                   const SizedBox(height: 14),
@@ -708,16 +910,10 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                     enabled: false,
                   ),
                   const SizedBox(height: 14),
-                  _infoRow("Sign-in method", provider),
-                  const SizedBox(height: 12),
-                  _accountStatusCard(
-                    icon: Icons.security_rounded,
-                    title: "Multi-factor enrollment",
-                    message:
-                        "MFA is not available in this Firebase project yet. Upgrade to Firebase Authentication with Identity Platform to enroll SMS or TOTP factors.",
-                    color: Colors.blueGrey,
-                    actionLabel: "Not enrolled",
-                    onPressed: null,
+                  _accountSummaryCard(
+                    provider: provider,
+                    providers: providers,
+                    email: user?.email ?? '',
                   ),
                 ],
               ),
@@ -728,12 +924,32 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
               icon: Icons.save_rounded,
               onPressed: _saving ? null : _saveProfile,
             ),
-            if (!hasPassword) ...[
+            if (!hasPassword && hasGoogle) ...[
               const SizedBox(height: 12),
               _secondaryButton(
                 label: "Add Password",
                 icon: Icons.add_moderator_outlined,
-                onPressed: _addPasswordSignIn,
+                onPressed: _saving ? null : _addPasswordSignIn,
+              ),
+            ] else if (hasPassword && !hasGoogle) ...[
+              const SizedBox(height: 12),
+              _secondaryButton(
+                label: "Verify with Google Sign-In",
+                icon: Icons.g_mobiledata_rounded,
+                onPressed: _saving ? null : _linkGoogleSignIn,
+              ),
+              const SizedBox(height: 12),
+              _secondaryButton(
+                label: "Reset Password",
+                icon: Icons.lock_reset_rounded,
+                onPressed: _saving ? null : _requestPasswordReset,
+              ),
+            ] else if (hasPassword) ...[
+              const SizedBox(height: 12),
+              _secondaryButton(
+                label: "Reset Password",
+                icon: Icons.lock_reset_rounded,
+                onPressed: _saving ? null : _requestPasswordReset,
               ),
             ],
           ],
@@ -742,57 +958,106 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     );
   }
 
-  Widget _accountStatusCard({
-    required IconData icon,
-    required String title,
-    required String message,
-    required Color color,
-    required String actionLabel,
-    required VoidCallback? onPressed,
+  Widget _accountSummaryCard({
+    required String provider,
+    required Set<String> providers,
+    required String email,
   }) {
+    final label = provider == 'google.com'
+        ? 'Google'
+        : provider == 'password'
+        ? 'Email and password'
+        : provider;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: Colors.deepOrange.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.16)),
+        border: Border.all(color: Colors.deepOrange.withValues(alpha: 0.16)),
       ),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(color: color, fontWeight: FontWeight.bold),
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  message,
-                  style: TextStyle(color: Colors.grey.shade800, height: 1.35),
+                child: const Icon(
+                  Icons.verified_user_outlined,
+                  color: Colors.deepOrange,
                 ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton(
-                    onPressed: onPressed,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: color,
-                      side: BorderSide(color: color.withValues(alpha: 0.45)),
-                    ),
-                    child: Text(actionLabel),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  "Account status",
+                  style: TextStyle(
+                    color: Color(0xFF111827),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _summaryRow("Email", email.isEmpty ? "Not available" : email),
+          const SizedBox(height: 10),
+          _summaryRow("Primary sign-in", label),
+          const SizedBox(height: 10),
+          _summaryRow(
+            "Linked methods",
+            providers.isEmpty
+                ? label
+                : providers
+                      .map(
+                        (value) => value == 'google.com'
+                            ? 'Google'
+                            : value == 'password'
+                            ? 'Password'
+                            : value,
+                      )
+                      .join(', '),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 112,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xFF111827),
+              fontWeight: FontWeight.w800,
+              height: 1.3,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1697,6 +1962,7 @@ Widget _input({
   bool obscureText = false,
   String? helperText,
   int? maxLength,
+  Widget? suffixIcon,
 }) {
   return TextField(
     controller: controller,
@@ -1710,6 +1976,7 @@ Widget _input({
       helperText: helperText,
       counterText: maxLength == null ? null : '',
       prefixIcon: Icon(icon),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: enabled ? const Color(0xFFF7F8FC) : const Color(0xFFEDEFF5),
       border: OutlineInputBorder(
@@ -1717,17 +1984,6 @@ Widget _input({
         borderSide: BorderSide.none,
       ),
     ),
-  );
-}
-
-Widget _infoRow(String label, String value) {
-  return Row(
-    children: [
-      Expanded(
-        child: Text(label, style: TextStyle(color: Colors.grey.shade600)),
-      ),
-      Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
-    ],
   );
 }
 
@@ -1752,7 +2008,7 @@ Widget _primaryButton({
 Widget _secondaryButton({
   required String label,
   required IconData icon,
-  required VoidCallback onPressed,
+  required VoidCallback? onPressed,
 }) {
   return OutlinedButton.icon(
     onPressed: onPressed,

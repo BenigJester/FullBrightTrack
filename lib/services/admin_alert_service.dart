@@ -6,8 +6,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'app_navigator_service.dart';
+import 'admin_access_service.dart';
 import 'display_name_service.dart';
 import 'local_stress_model_service.dart';
 import 'notification_history_service.dart';
@@ -21,6 +23,7 @@ class AdminAlertService {
   static final _seenAlertIds = <String>{};
   static StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subscription;
   static StreamSubscription<RemoteMessage>? _messageOpenSubscription;
+  static StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
   static bool _listenerPrimed = false;
 
   static Future<void> publishCriticalWarningAlert({
@@ -107,7 +110,7 @@ class AdminAlertService {
     if (user == null || _subscription != null) return;
 
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    if (userDoc.data()?['isAdmin'] != true) return;
+    if (!AdminAccessService.dataHasAdminAccess(userDoc.data())) return;
     await _startNotificationOpenHandler();
 
     _subscription = _firestore
@@ -164,28 +167,92 @@ class AdminAlertService {
   static Future<void> stopAdminAlertListener() async {
     await _subscription?.cancel();
     await _messageOpenSubscription?.cancel();
+    await _foregroundMessageSubscription?.cancel();
     _subscription = null;
     _messageOpenSubscription = null;
+    _foregroundMessageSubscription = null;
     _seenAlertIds.clear();
     _listenerPrimed = false;
   }
 
   static Future<void> _startNotificationOpenHandler() async {
-    if (_messageOpenSubscription != null) return;
+    if (_messageOpenSubscription == null) {
+      final initialMessage = await FirebaseMessaging.instance
+          .getInitialMessage();
+      if (initialMessage != null) {
+        _handleRemoteMessageOpen(initialMessage);
+      }
 
-    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      _handleRemoteMessageOpen(initialMessage);
+      _messageOpenSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+        _handleRemoteMessageOpen,
+      );
     }
 
-    _messageOpenSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
-      _handleRemoteMessageOpen,
+    _foregroundMessageSubscription ??= FirebaseMessaging.onMessage.listen(
+      _handleForegroundRemoteMessage,
     );
   }
 
   static void _handleRemoteMessageOpen(RemoteMessage message) {
     if (message.data['type'] != 'admin_safety_alert') return;
     openAdminMonitoring(userId: message.data['userId']);
+  }
+
+  static void _handleForegroundRemoteMessage(RemoteMessage message) {
+    final type = message.data['type'] as String?;
+    if (type != 'admin_safety_alert' && type != 'admin_notification_test') {
+      return;
+    }
+
+    final title = message.notification?.title ?? 'FullBrightTrack alert';
+    final body =
+        message.notification?.body ?? 'Admin notification delivery is working.';
+
+    if (type == 'admin_notification_test') {
+      unawaited(
+        NotificationService.notifications.show(
+          id: 201,
+          title: title,
+          body: body,
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'admin_safety_alerts',
+              'Admin Safety Alerts',
+              channelDescription: 'Privacy-safe alerts for admin review',
+              importance: Importance.high,
+              priority: Priority.high,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final userId = (message.data['userId'] as String?) ?? '';
+    final displayName =
+        (message.data['displayName'] as String?) ?? 'Student';
+    final rank = (message.data['stressRank'] as String?) ?? 'High';
+
+    unawaited(
+      NotificationHistoryService.add(
+        NotificationHistoryItem(
+          id: message.messageId ?? 'remote_${DateTime.now().microsecondsSinceEpoch}',
+          title: title,
+          body: body,
+          type: 'admin_safety_alert',
+          userId: userId,
+          createdAt: DateTime.now(),
+        ),
+      ),
+    );
+    unawaited(
+      NotificationService.showAdminSafetyAlert(
+        displayName: displayName,
+        rank: rank,
+        userId: userId,
+      ),
+    );
+    _showInAppAlert(title: title, body: body, userId: userId);
   }
 
   static void _showInAppAlert({

@@ -28,45 +28,18 @@ class _RegisterTabState extends State<RegisterTab> {
 
     if (email.isEmpty || password.isEmpty) {
       HapticFeedback.mediumImpact();
-
-      final messenger = ScaffoldMessenger.of(context);
-
-      messenger.clearSnackBars();
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text("Please fill all fields"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      );
+      _showSnackBar("Please fill all fields");
       return;
     }
 
     if (password.length < 6) {
       HapticFeedback.mediumImpact();
-
-      final messenger = ScaffoldMessenger.of(context);
-
-      messenger.clearSnackBars();
-
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text("Password must be at least 6 characters"),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      );
+      _showSnackBar("Password must be at least 6 characters");
       return;
     }
+
+    final confirmed = await _confirmRegistrationRequest(email);
+    if (confirmed != true) return;
 
     try {
       setState(() => isLoading = true);
@@ -116,95 +89,175 @@ class _RegisterTabState extends State<RegisterTab> {
             : 'Expires at ${TimeOfDay.fromDateTime(expiresAt.toLocal()).format(context)}.';
 
         return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
-              icon: Container(
-                width: 62,
-                height: 62,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFFF0EA),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.mark_email_read_rounded,
-                  color: Color(0xFFFF7A59),
-                  size: 32,
-                ),
-              ),
-              title: const Text(
-                'Confirm your registration',
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          icon: Container(
+            width: 68,
+            height: 68,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF0EA),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: const Icon(
+              Icons.mark_email_read_rounded,
+              color: Color(0xFFFF7A59),
+              size: 34,
+            ),
+          ),
+          title: const Text(
+            'Check your email',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'We sent a secure confirmation link to ${confirmation.email}. Open it from your inbox to create your FullBrightTrack account automatically.',
                 textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade700, height: 1.45),
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'A confirmation link was sent to ${confirmation.email}. Open it from your email inbox. Your account will be created automatically after confirmation.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey.shade700, height: 1.45),
+              const SizedBox(height: 14),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8FC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: Colors.black.withValues(alpha: 0.04),
                   ),
-                  const SizedBox(height: 14),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7F8FC),
-                      borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.schedule_rounded,
+                      color: Color(0xFFFF7A59),
+                      size: 20,
                     ),
-                    child: Text(
-                      expiryText,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Color(0xFF4B5563),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              actions: [
-                if (confirmation.confirmationUrl.isNotEmpty) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final uri = Uri.parse(confirmation.confirmationUrl);
-                        final opened = await launchUrl(
-                          uri,
-                          mode: LaunchMode.externalApplication,
-                        );
-                        if (!opened && mounted) {
-                          _showSnackBar('Could not open confirmation link');
-                        }
-                      },
-                      icon: const Icon(Icons.open_in_new_rounded),
-                      label: const Text('Open Confirmation Link'),
-                      style: ElevatedButton.styleFrom(
-                        elevation: 0,
-                        backgroundColor: const Color(0xFFFF7A59),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        expiryText,
+                        style: const TextStyle(
+                          color: Color(0xFF4B5563),
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.pop(this.context);
-                    },
-                    child: const Text('Back to Login'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          actions: [
+            if (confirmation.confirmationUrl.isNotEmpty) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () async {
+                    final uri = Uri.parse(confirmation.confirmationUrl);
+                    final opened = await launchUrl(
+                      uri,
+                      mode: LaunchMode.externalApplication,
+                    );
+                    if (!opened && mounted) {
+                      _showSnackBar('Could not open confirmation link');
+                    }
+                  },
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  label: const Text('Open Confirmation Link'),
+                  style: ElevatedButton.styleFrom(
+                    elevation: 0,
+                    backgroundColor: const Color(0xFFFF7A59),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
-              ],
+              ),
+              const SizedBox(height: 8),
+            ],
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.pop(this.context);
+                },
+                child: const Text('Back to Login'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool?> _confirmRegistrationRequest(String email) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          icon: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF0EA),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: const Icon(
+              Icons.verified_user_outlined,
+              color: Color(0xFFFF7A59),
+              size: 34,
+            ),
+          ),
+          title: const Text(
+            'Confirm registration',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            'We will send a secure confirmation link to $email. Your account is created only after that link is opened.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700, height: 1.45),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: const Color(0xFFFF7A59),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text('Send confirmation email'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -271,6 +324,7 @@ class _RegisterTabState extends State<RegisterTab> {
 
       _showSnackBar(
         "Account merged. You can now sign in with Google or password",
+        isError: false,
       );
       Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
@@ -300,16 +354,48 @@ class _RegisterTabState extends State<RegisterTab> {
     }
   }
 
-  void _showSnackBar(String message) {
+  void _showSnackBar(String message, {bool isError = true}) {
+    final accentColor = isError ? Colors.redAccent : Colors.green;
+    final icon = isError
+        ? Icons.error_outline_rounded
+        : Icons.check_circle_outline_rounded;
+
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text(message),
           behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF2D2D2D),
+          elevation: 0,
+          margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           duration: const Duration(seconds: 3),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          content: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: accentColor, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  message,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );

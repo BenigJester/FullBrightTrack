@@ -67,6 +67,22 @@ android {
         multiDexEnabled = true
     }
 
+    flavorDimensions += "app"
+
+    productFlavors {
+        create("user") {
+            dimension = "app"
+            manifestPlaceholders["appName"] = "FullBrightTrack"
+        }
+
+        create("developer") {
+            dimension = "app"
+            applicationIdSuffix = ".developer"
+            versionNameSuffix = "-developer"
+            manifestPlaceholders["appName"] = "FBT Dev"
+        }
+    }
+
     signingConfigs {
         create("release") {
             if (hasReleaseKeystore) {

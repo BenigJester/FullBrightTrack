@@ -14,7 +14,7 @@ class LeaderboardEntry {
     required this.streakPoints,
     required this.rank,
     required this.isCurrentUser,
-    required this.isAdmin,
+    required this.role,
   });
 
   final String uid;
@@ -27,7 +27,7 @@ class LeaderboardEntry {
   final int streakPoints;
   final int rank;
   final bool isCurrentUser;
-  final bool isAdmin;
+  final String role;
 
   LeaderboardEntry copyWith({int? rank}) {
     return LeaderboardEntry(
@@ -41,7 +41,7 @@ class LeaderboardEntry {
       streakPoints: streakPoints,
       rank: rank ?? this.rank,
       isCurrentUser: isCurrentUser,
-      isAdmin: isAdmin,
+      role: role,
     );
   }
 }
@@ -177,7 +177,7 @@ class LeaderboardService {
       'stepStreak': stepStreak,
       'moodStreak': moodStreak,
       'streakPoints': streakPoints,
-      'isAdmin': profileData['isAdmin'] == true,
+      'role': _role(profileData),
       'monthKey': _monthKey(now),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -221,7 +221,7 @@ class LeaderboardService {
       streakPoints: streakPoints,
       rank: 0,
       isCurrentUser: doc.id == currentUid || data['uid'] == currentUid,
-      isAdmin: data['isAdmin'] == true || profileData['isAdmin'] == true,
+      role: _role({...data, ...profileData}),
     );
   }
 
@@ -328,6 +328,14 @@ class LeaderboardService {
   static String? _photoUrl(Map<String, dynamic> data) {
     final photoUrl = (data['photoUrl'] as String?)?.trim();
     return photoUrl == null || photoUrl.isEmpty ? null : photoUrl;
+  }
+
+  static String _role(Map<String, dynamic> data) {
+    final role = (data['role'] as String?)?.trim().toLowerCase();
+    if (role == 'developer' || role == 'admin') return role!;
+    if (data['isDeveloper'] == true) return 'developer';
+    if (data['isAdmin'] == true) return 'admin';
+    return 'user';
   }
 
   static String _firstName(String name) {

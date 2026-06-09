@@ -33,11 +33,13 @@ Future<void> main() async {
     ..post('/stress', (request) => _stress(request, apiKey))
     ..post('/start-registration', _startRegistration)
     ..get('/confirm-registration', _confirmRegistration)
+    ..post('/confirm-registration', _completeRegistrationFromLink)
     ..post('/complete-registration', _completeRegistration)
     ..post('/request-password-reset', _requestPasswordReset)
     ..get('/confirm-password-reset', _confirmPasswordReset)
     ..post('/complete-password-reset', _completePasswordReset)
     ..post('/admin-alert-worker', _adminAlertWorker)
+    ..post('/test-admin-notification', _testAdminNotification)
     ..post('/developer-delete-user', _developerDeleteUser);
 
   final handler = const Pipeline()
@@ -129,9 +131,7 @@ Future<Response> _startRegistration(Request request) async {
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
 
-    stdout.writeln(
-      'Registration confirmation email sent to $email',
-    );
+    stdout.writeln('Registration confirmation email sent to $email');
     return _jsonResponse({
       'ok': true,
       'email': email,
@@ -152,32 +152,42 @@ Future<Response> _startRegistration(Request request) async {
 Future<Response> _confirmRegistration(Request request) async {
   try {
     final backend = _requireFirebaseBackend();
-    final id = request.url.queryParameters['id']?.trim() ?? '';
-    final token = request.url.queryParameters['token']?.trim() ?? '';
-    if (id.isEmpty || token.isEmpty) {
-      return Response(400, body: 'Missing confirmation id or token.');
-    }
-
-    final doc = await backend.getDocument('pending_registrations/$id');
-    if (doc == null) {
-      return Response(404, body: 'Confirmation request not found.');
-    }
-    final status = doc['status'] as String? ?? 'pending';
-    if (status == 'confirmed') {
-      return Response.ok(
-        'This email is already confirmed. You can now sign in from the app.',
+    final pending = await _validPendingRegistrationRequest(backend, request);
+    return _registrationConfirmPage(
+      email: (pending['email'] as String?) ?? '',
+      requestId: request.url.queryParameters['id'] ?? '',
+      token: request.url.queryParameters['token'] ?? '',
+    );
+  } catch (error) {
+    if (error is _AlreadyCompleted) {
+      return _linkPage(
+        tone: _LinkPageTone.success,
+        title: 'Email already confirmed',
+        message: error.message,
+        actionLabel: 'Open FullBrightTrack',
       );
     }
-    if (_isExpired(doc['expiresAt'])) {
-      await backend.updateDocument('pending_registrations/$id', {
-        'status': 'expired',
-        'updatedAt': DateTime.now().toUtc().toIso8601String(),
-      });
-      return Response(410, body: 'This confirmation link has expired.');
-    }
-    if (doc['tokenHash'] != _hashToken(token)) {
-      return Response(403, body: 'Invalid confirmation token.');
-    }
+    return _linkPage(
+      status: error is _BadRequest ? 400 : 500,
+      tone: _LinkPageTone.danger,
+      title: 'Could not confirm email',
+      message:
+          'We could not complete this confirmation. ${_escapePlainText(error.toString())}',
+    );
+  }
+}
+
+Future<Response> _completeRegistrationFromLink(Request request) async {
+  try {
+    final backend = _requireFirebaseBackend();
+    final payload = await _readJsonObject(request);
+    final id = ((payload['id'] as String?) ?? '').trim();
+    final token = ((payload['token'] as String?) ?? '').trim();
+    final doc = await _validPendingRegistrationRequest(
+      backend,
+      request,
+      queryOverride: {'id': id, 'token': token},
+    );
 
     final email = (doc['email'] as String?)?.trim().toLowerCase() ?? '';
     final password = (doc['pendingPassword'] as String?) ?? '';
@@ -188,11 +198,20 @@ Future<Response> _confirmRegistration(Request request) async {
     }
 
     final existing = await backend.lookupUserByEmail(email);
-    final uid = existing == null
+    final createdNewUser = existing == null;
+    final uid = createdNewUser
         ? await backend.createEmailPasswordUser(email, password)
         : (existing['localId'] as String?) ?? '';
     if (uid.isEmpty) {
       throw const _BadRequest('Could not create the Firebase Auth account.');
+    }
+    if (createdNewUser) {
+      await backend.setDocument('users/$uid', {
+        'email': email,
+        'role': 'user',
+        'createdAt': DateTime.now().toUtc().toIso8601String(),
+        'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      });
     }
 
     await backend.updateDocument('pending_registrations/$id', {
@@ -203,11 +222,29 @@ Future<Response> _confirmRegistration(Request request) async {
       'confirmedAt': DateTime.now().toUtc().toIso8601String(),
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
-    return Response.ok(
-      'Email confirmed. Your FullBrightTrack account was created. You can now sign in from the app.',
+    return _linkPage(
+      tone: _LinkPageTone.success,
+      title: 'Email confirmed',
+      message:
+          'Your FullBrightTrack account was created successfully. You can now return to the app and sign in.',
+      actionLabel: 'Open FullBrightTrack',
     );
   } catch (error) {
-    return _errorResponse(error);
+    if (error is _AlreadyCompleted) {
+      return _linkPage(
+        tone: _LinkPageTone.success,
+        title: 'Email already confirmed',
+        message: error.message,
+        actionLabel: 'Open FullBrightTrack',
+      );
+    }
+    return _linkPage(
+      status: error is _BadRequest ? 400 : 500,
+      tone: _LinkPageTone.danger,
+      title: 'Could not confirm email',
+      message:
+          'We could not complete this confirmation. ${_escapePlainText(error.toString())}',
+    );
   }
 }
 
@@ -257,6 +294,12 @@ Future<Response> _requestPasswordReset(Request request) async {
     final backend = _requireFirebaseBackend();
     final payload = await _readJsonObject(request);
     final email = _emailFromPayload(payload);
+    final mailer = _EmailSender.fromEnvironment();
+    if (mailer == null) {
+      throw const _BadRequest(
+        'Email delivery is not configured. Set BREVO_API_KEY and BREVO_SENDER_EMAIL, or configure SMTP settings.',
+      );
+    }
     final user = await backend.lookupUserByEmail(email);
     if (user == null) {
       return _jsonResponse({
@@ -284,6 +327,12 @@ Future<Response> _requestPasswordReset(Request request) async {
       'updatedAt': now.toIso8601String(),
     });
 
+    await mailer.sendPasswordReset(
+      toEmail: email,
+      resetUrl: resetUrl,
+      expiresAt: expiresAt,
+    );
+
     stdout.writeln('Password reset link for $email: $resetUrl');
     return _jsonResponse({
       'ok': true,
@@ -301,19 +350,24 @@ Future<Response> _confirmPasswordReset(Request request) async {
   try {
     final backend = _requireFirebaseBackend();
     final reset = await _validPasswordResetRequest(backend, request);
-    return _jsonResponse({
-      'ok': true,
-      'email': reset['email'],
-      'requestId': request.url.queryParameters['id'],
-      'message':
-          'Token is valid. Submit id, token, and newPassword to /complete-password-reset.',
-    });
+    return _passwordResetPage(
+      email: (reset['email'] as String?) ?? '',
+      requestId: request.url.queryParameters['id'] ?? '',
+      token: request.url.queryParameters['token'] ?? '',
+    );
   } catch (error) {
-    return _errorResponse(error);
+    return _linkPage(
+      status: error is _BadRequest ? 400 : 500,
+      tone: _LinkPageTone.danger,
+      title: 'Reset link unavailable',
+      message:
+          'This password reset link could not be used. ${_escapePlainText(error.toString())}',
+    );
   }
 }
 
 Future<Response> _completePasswordReset(Request request) async {
+  final wantsHtml = _isFormRequest(request);
   try {
     final backend = _requireFirebaseBackend();
     final payload = await _readJsonObject(request);
@@ -326,8 +380,13 @@ Future<Response> _completePasswordReset(Request request) async {
       },
     );
     final newPassword = (payload['newPassword'] as String?)?.trim() ?? '';
+    final confirmPassword =
+        (payload['confirmPassword'] as String?)?.trim() ?? '';
     if (newPassword.length < 6) {
       throw const _BadRequest('Password must be at least 6 characters.');
+    }
+    if (confirmPassword.isNotEmpty && confirmPassword != newPassword) {
+      throw const _BadRequest('Passwords do not match.');
     }
 
     await backend.updateUserPassword(reset['uid'] as String, newPassword);
@@ -336,8 +395,26 @@ Future<Response> _completePasswordReset(Request request) async {
       'usedAt': DateTime.now().toUtc().toIso8601String(),
       'updatedAt': DateTime.now().toUtc().toIso8601String(),
     });
+    if (wantsHtml) {
+      return _linkPage(
+        tone: _LinkPageTone.success,
+        title: 'Password updated',
+        message:
+            'Your password was updated successfully. You can now return to FullBrightTrack and sign in.',
+        actionLabel: 'Open FullBrightTrack',
+      );
+    }
     return _jsonResponse({'ok': true, 'message': 'Password was updated.'});
   } catch (error) {
+    if (wantsHtml) {
+      return _linkPage(
+        status: error is _BadRequest ? 400 : 500,
+        tone: _LinkPageTone.danger,
+        title: 'Could not update password',
+        message:
+            'Your password was not changed. ${_escapePlainText(error.toString())}',
+      );
+    }
     return _errorResponse(error);
   }
 }
@@ -351,10 +428,58 @@ Future<Response> _adminAlertWorker(Request request) async {
   }
 }
 
+Future<Response> _testAdminNotification(Request request) async {
+  try {
+    final configuredSecret =
+        Platform.environment['ADMIN_NOTIFICATION_TEST_SECRET']?.trim() ?? '';
+    if (configuredSecret.isNotEmpty) {
+      final providedSecret =
+          request.headers['x-admin-test-secret']?.trim() ?? '';
+      if (providedSecret != configuredSecret) {
+        throw const _BadRequest('Invalid admin notification test secret.');
+      }
+    }
+
+    final backend = _requireFirebaseBackend();
+    final payload = await _readJsonObject(request);
+    final title =
+        ((payload['title'] as String?) ?? 'FullBrightTrack test alert').trim();
+    final body =
+        ((payload['body'] as String?) ?? 'Admin FCM token delivery is working.')
+            .trim();
+    final tokens = await backend.adminFcmTokens();
+    var successCount = 0;
+    var failureCount = 0;
+
+    for (final token in tokens) {
+      final sent = await backend.sendFcm(
+        token: token,
+        title: title.isEmpty ? 'FullBrightTrack test alert' : title,
+        body: body.isEmpty ? 'Admin FCM token delivery is working.' : body,
+        data: {'type': 'admin_notification_test', 'source': 'backend'},
+      );
+      if (sent) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    }
+
+    return _jsonResponse({
+      'ok': true,
+      'tokenCount': tokens.length,
+      'successCount': successCount,
+      'failureCount': failureCount,
+    });
+  } catch (error) {
+    return _errorResponse(error);
+  }
+}
+
 Future<Response> _developerDeleteUser(Request request) async {
   try {
     final backend = _requireFirebaseBackend();
-    final adminUid = await _requireAdminToken(backend, request);
+    final developerUid = await _requireDeveloperToken(backend, request);
     final payload = await _readJsonObject(request);
     final rawUid = ((payload['uid'] as String?) ?? '').trim();
     final rawEmail = ((payload['email'] as String?) ?? '').trim().toLowerCase();
@@ -375,7 +500,7 @@ Future<Response> _developerDeleteUser(Request request) async {
     if (targetUid.isEmpty) {
       throw const _BadRequest('Target Firebase Auth user has no UID.');
     }
-    if (targetUid == adminUid) {
+    if (targetUid == developerUid) {
       throw const _BadRequest('You cannot delete your own developer login.');
     }
 
@@ -403,7 +528,7 @@ _FirebaseBackend _requireFirebaseBackend() {
   return backend;
 }
 
-Future<String> _requireAdminToken(
+Future<String> _requireDeveloperToken(
   _FirebaseBackend backend,
   Request request,
 ) async {
@@ -414,30 +539,52 @@ Future<String> _requireAdminToken(
   ).firstMatch(header);
   final idToken = match?.group(1)?.trim() ?? '';
   if (idToken.isEmpty) {
-    throw const _BadRequest('Admin authorization token is required.');
+    throw const _BadRequest('Developer authorization token is required.');
   }
 
-  final adminUser = await backend.lookupUserByIdToken(idToken);
-  final adminUid = (adminUser?['localId'] as String?) ?? '';
-  if (adminUid.isEmpty) {
-    throw const _BadRequest('Invalid admin authorization token.');
+  final developerUser = await backend.lookupUserByIdToken(idToken);
+  final developerUid = (developerUser?['localId'] as String?) ?? '';
+  if (developerUid.isEmpty) {
+    throw const _BadRequest('Invalid developer authorization token.');
   }
 
-  final adminProfile = await backend.getDocument('users/$adminUid');
-  if (adminProfile?['isAdmin'] != true) {
-    throw const _BadRequest('This account is not allowed to manage users.');
+  final developerProfile = await backend.getDocument('users/$developerUid');
+  if (!_hasRole(developerProfile, 'developer')) {
+    throw const _BadRequest(
+      'This account is not allowed to manage developer users.',
+    );
   }
 
-  return adminUid;
+  return developerUid;
+}
+
+bool _hasRole(Map<String, dynamic>? profile, String role) {
+  final value = (profile?['role'] as String?)?.trim().toLowerCase();
+  if (value == role) return true;
+
+  // Compatibility only for profiles created before the role field existed.
+  if (role == 'developer' && profile?['isDeveloper'] == true) return true;
+  if (role == 'admin' && profile?['isAdmin'] == true) return true;
+  return false;
 }
 
 Future<Map<String, dynamic>> _readJsonObject(Request request) async {
   final body = await request.readAsString();
+  if (_isFormRequest(request)) {
+    return <String, dynamic>{...Uri.splitQueryString(body)};
+  }
   final decoded = body.trim().isEmpty ? <String, dynamic>{} : jsonDecode(body);
   if (decoded is! Map<String, dynamic>) {
     throw const _BadRequest('JSON object body is required.');
   }
   return decoded;
+}
+
+bool _isFormRequest(Request request) {
+  final contentType = request.headers[HttpHeaders.contentTypeHeader] ?? '';
+  return contentType.toLowerCase().contains(
+    'application/x-www-form-urlencoded',
+  );
 }
 
 String _emailFromPayload(Map<String, dynamic> payload) {
@@ -479,6 +626,50 @@ bool _isExpired(Object? value) {
   final expiresAt = DateTime.tryParse(value);
   if (expiresAt == null) return true;
   return DateTime.now().toUtc().isAfter(expiresAt.toUtc());
+}
+
+Future<Map<String, dynamic>> _validPendingRegistrationRequest(
+  _FirebaseBackend backend,
+  Request request, {
+  Map<String, String>? queryOverride,
+}) async {
+  final query = queryOverride ?? request.url.queryParameters;
+  final id = query['id']?.trim() ?? '';
+  final token = query['token']?.trim() ?? '';
+  if (id.isEmpty || token.isEmpty) {
+    throw const _BadRequest(
+      'The link is missing required information. Please open the latest confirmation email from FullBrightTrack.',
+    );
+  }
+
+  final doc = await backend.getDocument('pending_registrations/$id');
+  if (doc == null) {
+    throw const _BadRequest(
+      'We could not find this confirmation request. Please start registration again from the app.',
+    );
+  }
+
+  final status = doc['status'] as String? ?? 'pending';
+  if (status == 'confirmed') {
+    throw const _AlreadyCompleted(
+      'Your email is already verified. You can now return to FullBrightTrack and sign in.',
+    );
+  }
+  if (_isExpired(doc['expiresAt'])) {
+    await backend.updateDocument('pending_registrations/$id', {
+      'status': 'expired',
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    });
+    throw const _BadRequest(
+      'For your security, confirmation links only work for a limited time. Please register again to receive a fresh link.',
+    );
+  }
+  if (doc['tokenHash'] != _hashToken(token)) {
+    throw const _BadRequest(
+      'This link could not be verified. Please use the newest email from FullBrightTrack or start registration again.',
+    );
+  }
+  return doc;
 }
 
 Future<Map<String, dynamic>> _validPasswordResetRequest(
@@ -553,6 +744,7 @@ Future<Map<String, dynamic>> _sendPendingAdminAlerts() async {
           'type': 'admin_safety_alert',
           'alertId': alert.id,
           'userId': (data['userId'] as String?) ?? '',
+          'displayName': displayName,
           'stressRank': rank,
         },
       );
@@ -587,6 +779,230 @@ Future<Map<String, dynamic>> _sendPendingAdminAlerts() async {
 Response _jsonResponse(Map<String, dynamic> body) {
   return Response.ok(jsonEncode(body));
 }
+
+Response _htmlResponse(String body, {int status = 200}) {
+  return Response(
+    status,
+    body: body,
+    headers: {HttpHeaders.contentTypeHeader: 'text/html; charset=utf-8'},
+  );
+}
+
+enum _LinkPageTone { success, warning, danger }
+
+Response _linkPage({
+  int status = 200,
+  required _LinkPageTone tone,
+  required String title,
+  required String message,
+  String actionLabel = 'Back to the app',
+}) {
+  final color = switch (tone) {
+    _LinkPageTone.success => '#16a34a',
+    _LinkPageTone.warning => '#f97316',
+    _LinkPageTone.danger => '#dc2626',
+  };
+  final icon = switch (tone) {
+    _LinkPageTone.success => '✓',
+    _LinkPageTone.warning => '!',
+    _LinkPageTone.danger => '!',
+  };
+
+  return _htmlResponse(
+    _pageShell(
+      title: title,
+      color: color,
+      body:
+          '''
+        <div class="icon" aria-hidden="true">$icon</div>
+        <h1>${_html(title)}</h1>
+        <p>${_html(message)}</p>
+        <a class="button" href="fullbrighttrack://login">${_html(actionLabel)}</a>
+        <p class="hint">If the app does not open automatically, return to FullBrightTrack and sign in manually.</p>
+      ''',
+    ),
+    status: status,
+  );
+}
+
+Response _registrationConfirmPage({
+  required String email,
+  required String requestId,
+  required String token,
+}) {
+  return _htmlResponse(
+    _pageShell(
+      title: 'Confirm your account',
+      color: '#16a34a',
+      body:
+          '''
+        <div class="icon" aria-hidden="true">OK</div>
+        <h1>Confirm your account</h1>
+        <p>Confirm that you want to create a FullBrightTrack account for ${_html(email)}. Nothing is created until you press the button below.</p>
+        <form method="post" action="/confirm-registration" class="form">
+          <input type="hidden" name="id" value="${_html(requestId)}" />
+          <input type="hidden" name="token" value="${_html(token)}" />
+          <button class="button" type="submit">Confirm and create account</button>
+        </form>
+        <p class="hint">If you did not request this account, close this page. The link will expire automatically.</p>
+      ''',
+    ),
+  );
+}
+
+Response _passwordResetPage({
+  required String email,
+  required String requestId,
+  required String token,
+}) {
+  return _htmlResponse(
+    _pageShell(
+      title: 'Create a new password',
+      color: '#2563eb',
+      body:
+          '''
+        <div class="icon" aria-hidden="true">•</div>
+        <h1>Create a new password</h1>
+        <p>Enter a new password for ${_html(email)}. Use at least 6 characters.</p>
+        <form method="post" action="/complete-password-reset" class="form">
+          <input type="hidden" name="id" value="${_html(requestId)}" />
+          <input type="hidden" name="token" value="${_html(token)}" />
+          <label for="newPassword">New password</label>
+          <input id="newPassword" name="newPassword" type="password" minlength="6" autocomplete="new-password" required />
+          <label for="confirmPassword">Confirm new password</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" minlength="6" autocomplete="new-password" required />
+          <button class="button" type="submit">Update password</button>
+        </form>
+        <p class="hint">After updating your password, return to FullBrightTrack and sign in again.</p>
+      ''',
+    ),
+  );
+}
+
+String _pageShell({
+  required String title,
+  required String color,
+  required String body,
+}) {
+  return '''
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${_html(title)} · FullBrightTrack</title>
+  <style>
+    :root { color-scheme: light; --accent: $color; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #f7f8fc;
+      color: #111827;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .card {
+      width: min(100%, 460px);
+      padding: 30px;
+      border-radius: 28px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+      text-align: center;
+    }
+    .brand {
+      margin-bottom: 18px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+    .icon {
+      width: 68px;
+      height: 68px;
+      display: inline-grid;
+      place-items: center;
+      margin-bottom: 18px;
+      border-radius: 22px;
+      background: color-mix(in srgb, var(--accent) 12%, white);
+      color: var(--accent);
+      font-size: 34px;
+      font-weight: 900;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(24px, 6vw, 32px);
+      line-height: 1.1;
+    }
+    p {
+      margin: 0;
+      color: #4b5563;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+    .button {
+      width: 100%;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 22px;
+      padding: 14px 18px;
+      border: 0;
+      border-radius: 16px;
+      background: var(--accent);
+      color: white;
+      font: inherit;
+      font-weight: 800;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .hint {
+      margin-top: 14px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .form {
+      margin-top: 18px;
+      text-align: left;
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #374151;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    input[type="password"] {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid #d1d5db;
+      font: inherit;
+      outline: none;
+    }
+    input[type="password"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">FullBrightTrack</div>
+    $body
+  </main>
+</body>
+</html>
+''';
+}
+
+String _html(String value) => const HtmlEscape().convert(value);
+
+String _escapePlainText(String value) => value.replaceFirst('Exception: ', '');
 
 Response _errorResponse(Object error) {
   final status = error is _BadRequest ? 400 : 500;
@@ -1126,7 +1542,7 @@ avgDailySteps is the average across recorded positive step days, not a 30-day to
 4000 avgDailySteps or higher meets the activity goal and is highly positive/protective.
 Low avgDailySteps may increase risk, but high avgDailySteps should reduce or balance activity-related risk.
 Treat journalWarningWeight as numeric severity: 0 normal, about 0.3 normal stress day, about 0.65 elevated concern, 1.0 critical danger/self-harm concern.
-If adminResolutionContext.hasResolvedWarning is true and activeWarningCount is 0, matching resolved warning journals are historical resolved events after therapist/support contact. Do not treat those resolved journals as active current danger. Use fresh unresolved mood, journal, task, and activity signals for the current score.
+If adminResolutionContext.hasResolvedWarning is true and activeWarningCount is 0, matching resolved warning journals are historical resolved events after support was provided or after admin marked them false positive. Do not treat those resolved journals as active current danger. Use fresh unresolved mood, journal, task, and activity signals for the current score.
 Never return Low if avgMoodIndex is 0 and avgMoodIntensity is 0.8 or higher. That should be at least Elevated.
 Never return below High if journalWarningWeight is 1.0 for an active unresolved warning.
 score must be a number from 0 to 100.
@@ -1414,6 +1830,12 @@ abstract class _EmailSender {
     required String confirmationUrl,
     required DateTime expiresAt,
   });
+
+  Future<void> sendPasswordReset({
+    required String toEmail,
+    required String resetUrl,
+    required DateTime expiresAt,
+  });
 }
 
 class _BrevoEmailSender extends _EmailSender {
@@ -1493,6 +1915,51 @@ If you did not request this account, you can ignore this email.
       );
     }
   }
+
+  @override
+  Future<void> sendPasswordReset({
+    required String toEmail,
+    required String resetUrl,
+    required DateTime expiresAt,
+  }) async {
+    final textBody =
+        '''
+Hello,
+
+Open this secure link to reset your FullBrightTrack password:
+
+$resetUrl
+
+This link expires at ${expiresAt.toLocal()}.
+
+If you did not request a password reset, you can ignore this email.
+''';
+
+    final response = await http
+        .post(
+          Uri.parse('https://api.brevo.com/v3/smtp/email'),
+          headers: {
+            HttpHeaders.acceptHeader: 'application/json',
+            HttpHeaders.contentTypeHeader: 'application/json',
+            'api-key': apiKey,
+          },
+          body: jsonEncode({
+            'sender': {'name': senderName, 'email': senderEmail},
+            'to': [
+              {'email': toEmail},
+            ],
+            'subject': 'Reset your FullBrightTrack password',
+            'textContent': textBody,
+          }),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw _BadRequest(
+        'Brevo email send failed: ${response.statusCode} ${_shortError(response.body)}',
+      );
+    }
+  }
 }
 
 class _SmtpEmailSender extends _EmailSender {
@@ -1526,8 +1993,7 @@ class _SmtpEmailSender extends _EmailSender {
         Platform.environment['SMTP_FROM_NAME']?.trim().isNotEmpty == true
         ? Platform.environment['SMTP_FROM_NAME']!.trim()
         : 'FullBrightTrack';
-    final port =
-        int.tryParse(Platform.environment['SMTP_PORT'] ?? '') ?? 587;
+    final port = int.tryParse(Platform.environment['SMTP_PORT'] ?? '') ?? 587;
     final useStartTls =
         (Platform.environment['SMTP_STARTTLS'] ?? 'true').toLowerCase() !=
         'false';
@@ -1570,11 +2036,30 @@ This link expires at ${expiresAt.toLocal()}.
 If you did not request this account, you can ignore this email.
 ''';
 
-    await _send(
-      toEmail: toEmail,
-      subject: subject,
-      textBody: textBody,
-    );
+    await _send(toEmail: toEmail, subject: subject, textBody: textBody);
+  }
+
+  @override
+  Future<void> sendPasswordReset({
+    required String toEmail,
+    required String resetUrl,
+    required DateTime expiresAt,
+  }) async {
+    final subject = 'Reset your FullBrightTrack password';
+    final textBody =
+        '''
+Hello,
+
+Open this secure link to reset your FullBrightTrack password:
+
+$resetUrl
+
+This link expires at ${expiresAt.toLocal()}.
+
+If you did not request a password reset, you can ignore this email.
+''';
+
+    await _send(toEmail: toEmail, subject: subject, textBody: textBody);
   }
 
   Future<void> _send({
@@ -1605,11 +2090,7 @@ If you did not request this account, you can ignore this email.
       await client.command('RCPT TO:<$toEmail>', [250, 251]);
       await client.command('DATA', [354]);
       await client.writeData(
-        _emailMessage(
-          toEmail: toEmail,
-          subject: subject,
-          textBody: textBody,
-        ),
+        _emailMessage(toEmail: toEmail, subject: subject, textBody: textBody),
       );
       await client.expect([250]);
       await client.command('QUIT', [221]);
@@ -1624,7 +2105,9 @@ If you did not request this account, you can ignore this email.
     required String textBody,
   }) {
     final safeFromName = fromName.replaceAll('"', "'");
-    final escapedBody = textBody.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n');
+    final escapedBody = textBody
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\n', '\r\n');
     return [
       'From: "$safeFromName" <$fromEmail>',
       'To: <$toEmail>',
@@ -2115,6 +2598,9 @@ Middleware _jsonHeaders() {
   return (handler) {
     return (request) async {
       final response = await handler(request);
+      if (response.headers.containsKey(HttpHeaders.contentTypeHeader)) {
+        return response;
+      }
       return response.change(
         headers: {
           ...response.headers,
@@ -2127,6 +2613,15 @@ Middleware _jsonHeaders() {
 
 class _BadRequest implements Exception {
   const _BadRequest(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class _AlreadyCompleted implements Exception {
+  const _AlreadyCompleted(this.message);
 
   final String message;
 

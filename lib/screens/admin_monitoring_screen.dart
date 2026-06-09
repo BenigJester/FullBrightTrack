@@ -24,6 +24,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     text: '1',
   );
   final ScrollController _scrollController = ScrollController();
+  final Map<String, GlobalKey> _studentCardKeys = <String, GlobalKey>{};
   _AdminRange _range = _AdminRange.week;
   _StressRankFilter _rankFilter = _StressRankFilter.all;
   _ConfidenceSort _confidenceSort = _ConfidenceSort.descending;
@@ -89,7 +90,10 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
 
   void _goToPage(int page, int totalPages) {
     final nextPage = page.clamp(1, totalPages);
-    setState(() => _setPage(nextPage));
+    setState(() {
+      _setPage(nextPage);
+      _scrolledToHighlightedUser = false;
+    });
   }
 
   void _applyPageInput(int totalPages) {
@@ -151,6 +155,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         ((data['hasDangerWarning'] as bool?) != true) &&
         (warningSignature.isEmpty ||
             warningSignature == resolvedWarningSignature);
+    final supportResolutionStatus =
+        (data['supportResolutionStatus'] as String?) ?? '';
     final warningResolved = exactWarningResolved || supportResolved;
     final warningJournals = _warningJournalsFromData(
       data,
@@ -186,6 +192,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
               overdueTaskCount: overdueTaskCount,
             ),
             supportResolved: supportResolved,
+            supportResolutionStatus: supportResolutionStatus,
           )
         : storedModelResult;
     final dailyStress = _stressHistory(data, dateKeys);
@@ -196,6 +203,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       name: _displayName(data),
       email: (data['email'] as String?)?.trim() ?? '',
       photoUrl: data['photoUrl'] as String?,
+      aiUpdatedAt: _timestampFromData(data),
       stressScore: modelResult.score,
       stressRank: modelResult.rank,
       averageSteps: ((data['avgDailySteps'] as num?)?.toDouble() ?? 0).round(),
@@ -300,10 +308,14 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     required StressModelResult storedModelResult,
     required StressModelInput input,
     required bool supportResolved,
+    required String supportResolutionStatus,
   }) {
     final resolvedResult = LocalStressModelService.analyze(input);
     final rationale = <String>[
-      if (supportResolved) 'therapist support was provided',
+      if (supportResolved)
+        supportResolutionStatus == 'false_positive'
+            ? 'false positive'
+            : 'Support was provided',
       'warning reviewed by admin',
       ...resolvedResult.rationale.where(
         (reason) => !reason.toLowerCase().contains('journal warning'),
@@ -369,11 +381,24 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             _scrolledToHighlightedUser = true;
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
-              _scrollController.animateTo(
-                0,
-                duration: const Duration(milliseconds: 450),
-                curve: Curves.easeOutCubic,
-              );
+              final targetKey = _studentCardKeys[widget.initialUserId];
+              final targetContext = targetKey?.currentContext;
+              if (targetContext != null) {
+                Scrollable.ensureVisible(
+                  targetContext,
+                  duration: const Duration(milliseconds: 520),
+                  curve: Curves.easeOutCubic,
+                  alignment: 0.16,
+                );
+                return;
+              }
+              if (_scrollController.hasClients) {
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 450),
+                  curve: Curves.easeOutCubic,
+                );
+              }
             });
           }
           final startIndex = (safePage - 1) * _pageSize;
@@ -430,6 +455,10 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 const SizedBox(height: 16),
                 for (final student in pagedStudents)
                   _StudentCard(
+                    key: _studentCardKeys.putIfAbsent(
+                      student.uid,
+                      () => GlobalKey(),
+                    ),
                     student: student,
                     range: _range,
                     highlighted: student.uid == widget.initialUserId,
@@ -1006,6 +1035,7 @@ class _ChartSummaryPill extends StatelessWidget {
 
 class _StudentCard extends StatelessWidget {
   const _StudentCard({
+    super.key,
     required this.student,
     required this.range,
     required this.highlighted,
@@ -1075,6 +1105,17 @@ class _StudentCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Status: ${_formatStatusTimestamp(student.aiUpdatedAt)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -1253,7 +1294,10 @@ class _WarningVerificationScreenState
         .toList();
   }
 
-  Future<void> _markJournalResolved(_WarningJournalReview warning) async {
+  Future<void> _markJournalResolved(
+    _WarningJournalReview warning, {
+    bool falsePositive = false,
+  }) async {
     if (_savingSignatures.contains(warning.signature) ||
         warning.signature.isEmpty) {
       return;
@@ -1287,9 +1331,15 @@ class _WarningVerificationScreenState
             'aiMoodStatus': resolvedState.aiMoodStatus,
             'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
             'rationale': resolvedState.rationale,
-            'supportResolutionStatus': 'therapist_support_provided',
-            'supportResolutionNote':
-                'Admin verified this warning after the student talked with a therapist/support provider.',
+            'supportResolutionStatus': falsePositive
+                ? 'false_positive'
+                : 'support_provided',
+            'supportResolutionType': falsePositive
+                ? 'false_positive'
+                : 'support_provided',
+            'supportResolutionNote': falsePositive
+                ? 'Admin verified this warning as a false positive.'
+                : 'Admin verified this warning after support was provided.',
             'supportResolutionUpdatedAt': FieldValue.serverTimestamp(),
             'stressHistory.$todayKey': resolvedState.stressScore,
             'updatedAt': FieldValue.serverTimestamp(),
@@ -1338,9 +1388,13 @@ class _WarningVerificationScreenState
       _showAdminFeedback(
         title: "Warning verified",
         message: allResolved
-            ? "All active critical journal warnings were resolved. The user's AI analysis has been updated."
+            ? falsePositive
+                  ? "All active journal warnings were marked as false positive. The user's AI analysis has been updated."
+                  : "All active critical journal warnings were resolved. The user's AI analysis has been updated."
+            : falsePositive
+            ? "This journal warning was marked as false positive. Remaining active warnings still need review."
             : "This journal warning was resolved. Remaining active warnings still need review.",
-        color: Colors.green,
+        color: falsePositive ? Colors.blue : Colors.green,
       );
       if (allResolved) Navigator.pop(context);
     } finally {
@@ -1362,9 +1416,9 @@ class _WarningVerificationScreenState
         moodIntensity: 0.35,
         warningWeight: 0,
         hasDangerWarning: false,
-        aiMoodStatus: 'Support conversation completed',
+        aiMoodStatus: 'Support was provided',
         rationale: [
-          'therapist support was provided',
+          'Support was provided',
           'admin verified the warning as resolved',
           'fresh signals will guide the next analysis',
         ],
@@ -1683,6 +1737,25 @@ class _WarningVerificationScreenState
                           ? "Resolving..."
                           : "Mark this warning resolved",
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _savingSignatures.contains(warning.signature)
+                        ? null
+                        : () => _markJournalResolved(
+                            warning,
+                            falsePositive: true,
+                          ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                      side: const BorderSide(color: Colors.blue),
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    icon: const Icon(Icons.fact_check_outlined),
+                    label: const Text("False positive"),
                   ),
                   const SizedBox(height: 18),
                 ],
@@ -2146,6 +2219,7 @@ class _StudentWellnessSummary {
     required this.name,
     required this.email,
     required this.photoUrl,
+    required this.aiUpdatedAt,
     required this.stressScore,
     required this.stressRank,
     required this.averageSteps,
@@ -2171,6 +2245,7 @@ class _StudentWellnessSummary {
   final String name;
   final String email;
   final String? photoUrl;
+  final DateTime? aiUpdatedAt;
   final double stressScore;
   final String stressRank;
   final int averageSteps;
@@ -2520,6 +2595,27 @@ String _displayName(Map<String, dynamic> data) {
   }
 
   return 'Student';
+}
+
+DateTime? _timestampFromData(Map<String, dynamic> data) {
+  final value = data['aiMoodStatusUpdatedAt'] ?? data['updatedAt'];
+  if (value is Timestamp) return value.toDate();
+  if (value is String) return DateTime.tryParse(value);
+  return null;
+}
+
+String _formatStatusTimestamp(DateTime? value) {
+  if (value == null) return 'waiting for AI update';
+  final manila = value.toUtc().add(const Duration(hours: 8));
+  final hour = manila.hour > 12
+      ? manila.hour - 12
+      : manila.hour == 0
+      ? 12
+      : manila.hour;
+  final minute = manila.minute.toString().padLeft(2, '0');
+  final second = manila.second.toString().padLeft(2, '0');
+  final period = manila.hour >= 12 ? 'PM' : 'AM';
+  return '${manila.year}-${manila.month.toString().padLeft(2, '0')}-${manila.day.toString().padLeft(2, '0')} $hour:$minute:$second $period';
 }
 
 String _shortLabel(String key, _AdminRange range) {

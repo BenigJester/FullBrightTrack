@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'admin_access_service.dart';
 
 class DeviceReadinessService {
   const DeviceReadinessService._();
@@ -116,7 +117,7 @@ class DeviceReadinessService {
           .doc(user.uid)
           .get();
 
-      if (userDoc.data()?['isAdmin'] != true) return;
+      if (!AdminAccessService.dataHasAdminAccess(userDoc.data())) return;
 
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null || token.isEmpty) return;

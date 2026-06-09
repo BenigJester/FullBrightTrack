@@ -11,6 +11,7 @@ import '../services/hometab_service.dart';
 import '../services/journal_service.dart';
 import '../services/moodscreen_service.dart';
 import '../services/steps_service.dart';
+import '../widgets/ai_updated_status.dart';
 import 'mood_popup_card.dart';
 
 class HomeTab extends StatefulWidget {
@@ -632,61 +633,7 @@ class _HomeTabState extends State<HomeTab> {
 
               const SizedBox(height: 20),
 
-              // ================= SMART MESSAGE =================
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(18),
-
-                decoration: BoxDecoration(
-                  color: data.stepsToday >= data.stepGoal
-                      ? Colors.green.shade50
-                      : Colors.orange.shade50,
-
-                  borderRadius: BorderRadius.circular(22),
-
-                  border: Border.all(
-                    color: data.stepsToday >= data.stepGoal
-                        ? Colors.green.shade200
-                        : Colors.orange.shade200,
-                  ),
-                ),
-
-                child: Row(
-                  children: [
-                    Icon(
-                      data.stepsToday >= data.stepGoal
-                          ? Icons.emoji_events_rounded
-                          : Icons.directions_walk_rounded,
-
-                      color: data.stepsToday >= data.stepGoal
-                          ? Colors.green
-                          : Colors.deepOrange,
-
-                      size: 30,
-                    ),
-
-                    const SizedBox(width: 14),
-
-                    Expanded(
-                      child: Text(
-                        data.stepsToday >= data.stepGoal
-                            ? "Amazing work today! Keep the momentum going \u{1F389}"
-                            : "A short walk can boost both your mood and productivity \u{1F6B6}",
-
-                        style: TextStyle(
-                          fontSize: 15,
-                          height: 1.4,
-                          fontWeight: FontWeight.w600,
-
-                          color: data.stepsToday >= data.stepGoal
-                              ? Colors.green.shade700
-                              : Colors.deepOrange.shade700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildAiRecommendation(data),
             ],
           ),
         ),
@@ -759,5 +706,113 @@ class _HomeTabState extends State<HomeTab> {
         ],
       ),
     );
+  }
+
+  Widget _buildAiRecommendation(AppData data) {
+    final user = FirebaseAuth.instance.currentUser;
+    final stream = user == null
+        ? null
+        : FirebaseFirestore.instance
+              .collection('admin_monitoring')
+              .doc(user.uid)
+              .snapshots();
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        final monitoring = snapshot.data?.data() ?? const <String, dynamic>{};
+        final recommendation = _recommendationFromAiSignals(data, monitoring);
+        final statusText = AiUpdatedStatus.fromMonitoring(monitoring);
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.orange.withValues(alpha: 0.08),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.deepOrange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.tips_and_updates_rounded,
+                      color: Colors.deepOrange,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      "AI Recommendation",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                recommendation,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.45,
+                  color: Colors.black87,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              AiUpdatedStatus(statusText: statusText),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _recommendationFromAiSignals(
+    AppData data,
+    Map<String, dynamic> monitoring,
+  ) {
+    final rank = (monitoring['stressRank'] as String?) ?? '';
+    final confidence = ((monitoring['confidence'] as num?)?.toDouble() ?? 0);
+    final activeTasks = (monitoring['activeTaskCount'] as num?)?.toInt() ?? 0;
+    final overdueTasks = (monitoring['overdueTaskCount'] as num?)?.toInt() ?? 0;
+
+    if (confidence <= 0) {
+      return "Choose one small action for the next 10 minutes: drink water, stretch, tidy your workspace, or take a short walk. Keep it simple and decide the next step yourself.";
+    }
+
+    if (rank == 'High' || overdueTasks > 2) {
+      return "Pause big goals for a moment. Pick one safe, practical action: message someone you trust, step away from the screen, breathe slowly, or handle only the most urgent task.";
+    }
+
+    if (rank == 'Elevated' || activeTasks > 5) {
+      return "Make today lighter by choosing your top two tasks, then add a short movement break between them. Avoid adding new commitments unless they truly matter.";
+    }
+
+    if (data.stepsToday < data.stepGoal) {
+      final remaining = data.stepGoal - data.stepsToday;
+      return "You can close part of the gap with a calm walk or light movement break. You have $remaining steps left, but stop early if your body needs rest.";
+    }
+
+    return "Keep the rest of the day balanced. You have already made progress, so protect your energy with rest, hydration, and one manageable task at a time.";
   }
 }

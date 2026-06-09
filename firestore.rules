@@ -10,19 +10,43 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
+    function role() {
       return signedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function hasAdminAccess() {
+      return signedIn()
+        && (role() == 'admin' || role() == 'developer');
+    }
+
+    function hasDeveloperRole() {
+      return signedIn()
+        && role() == 'developer';
+    }
+
+    function ownerCreateProfile(userId) {
+      return isOwner(userId)
+        && (!request.resource.data.keys().hasAny(['role'])
+          || request.resource.data.role == 'user');
+    }
+
+    function ownerUpdateProfile(userId) {
+      return isOwner(userId)
+        && !request.resource.data.diff(resource.data).changedKeys()
+          .hasAny(['role']);
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create, update: if isOwner(userId);
+      allow read: if isOwner(userId) || hasAdminAccess();
+      allow create: if ownerCreateProfile(userId);
+      allow update: if ownerUpdateProfile(userId);
       allow delete: if false;
     }
 
     match /users/{userId}/{document=**} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || hasAdminAccess();
       allow create, update, delete: if isOwner(userId);
     }
 
@@ -32,9 +56,9 @@ service cloud.firestore {
     }
 
     match /admin_monitoring/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || hasAdminAccess();
       allow create, update: if isOwner(userId);
-      allow update: if isAdmin()
+      allow update: if hasAdminAccess()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly([
             'resolvedWarningSignature',
@@ -60,6 +84,7 @@ service cloud.firestore {
             'rationale',
             'supportResolutionStatus',
             'supportResolutionNote',
+            'supportResolutionType',
             'supportResolutionUpdatedAt',
             'resolvedWarningJournals',
             'stressHistory',
@@ -69,13 +94,15 @@ service cloud.firestore {
     }
 
     match /admin_alerts/{alertId} {
-      allow read: if isAdmin();
+      allow read: if hasAdminAccess();
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid;
       allow update: if signedIn()
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == resource.data.userId;
-      allow update: if isAdmin()
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['pushStatus', 'pushUpdatedAt', 'updatedAt']);
+      allow update: if hasAdminAccess()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['status', 'resolvedAt', 'updatedAt']);
       allow delete: if false;
@@ -83,7 +110,11 @@ service cloud.firestore {
 
     match /admin_fcm_tokens/{adminUid}/tokens/{tokenId} {
       allow read: if false;
-      allow create, update, delete: if isOwner(adminUid) && isAdmin();
+      allow create, update, delete: if isOwner(adminUid) && hasAdminAccess();
+    }
+
+    match /{document=**} {
+      allow read, write: if hasDeveloperRole();
     }
   }
 }

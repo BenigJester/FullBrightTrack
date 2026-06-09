@@ -24,6 +24,7 @@ class LogoutService {
       await StepsService.instance.fullLogoutCleanup();
       await AdminAlertService.stopAdminAlertListener();
       await JournalService.dispose();
+      await MoodService.instance.flushPendingSave();
       MoodService.instance.dispose();
 
       await Future<void>.delayed(Duration.zero);

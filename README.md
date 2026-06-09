@@ -18,12 +18,13 @@ Current app version: `0.4.0-alpha+5`
 - Firestore leaderboard using combined step and mood streak points with short cache on reopen and pull-to-refresh reload.
 - Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, Week/Month charts, warning signals, and alert-target highlighting.
 - Admin warning resolution workflow and daily stress history charting.
+- Admin warning verification supports support-provided and false-positive outcomes.
 - Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads and local fallback scoring.
 - Account flows for email/password and Google sign-in, with backend-sent registration confirmation links that create Firebase Auth accounts after confirmation.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - Step reminder notification support with 1, 2, or 3 hour intervals.
-- Firebase Cloud Functions support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
+- Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
 - Daily motivation popup.
 
 ## Tech Stack
@@ -40,7 +41,7 @@ Current app version: `0.4.0-alpha+5`
 - Firebase App Check
 - Groq AI backend on Render or another Docker host
 - Brevo HTTPS email API for Render-friendly registration confirmation delivery
-- Firebase Cloud Functions for trusted admin FCM alert delivery
+- Developer console access is controlled with `users/{uid}.role == "developer"`.
 
 ## Project Structure
 
@@ -90,10 +91,6 @@ genkit_backend/
   Dockerfile
   README.md
 
-functions/
-  index.js
-  package.json
-
 android/app/src/main/kotlin/com/productivity/and/wellbeing/
   MainActivity.kt
   StepBootReceiver.kt
@@ -132,10 +129,9 @@ flutter pub get
 - App Check is enabled by default. Debug builds use the debug provider and print the token that must be registered in Firebase Console. Release builds use Play Integrity.
 - Optional explicit debug App Check run command:
   `flutter run --dart-define=USE_APP_CHECK_DEBUG=true`
-- If admin push alerts are needed, deploy the Firebase Functions backend from `functions/`.
 - When using debug App Check, check the Flutter console for `Firebase App Check debug token to register: ...`, then add that exact token in Firebase Console under App Check > your Android app > Manage debug tokens.
 
-3. Configure the AI backend:
+3. Configure the backend:
 
 - Deploy `genkit_backend` to Render or another Docker host.
 - Set `GROQ_API_KEY` as a server environment variable.
@@ -146,27 +142,108 @@ flutter pub get
 
 4. Configure admin FCM alerts, optional but recommended for admin safety review:
 
-```bash
-cd functions
-npm install
-firebase deploy --only functions
+The same backend service watches/polls admin alert records through `/admin-alert-worker`. Set this environment variable on Render or locally if you want automatic polling:
+
+```powershell
+$env:ADMIN_ALERT_WORKER_INTERVAL_SECONDS="60"
 ```
 
-The function watches `admin_alerts/{alertId}`, reads registered admin device tokens from `admin_fcm_tokens/{adminUid}/tokens/{token}`, sends FCM notifications, removes invalid tokens, and updates `pushStatus` fields on the alert record.
+For manual testing, call the worker:
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8080/admin-alert-worker" -Method Post
+```
+
+To test registered admin/developer FCM tokens directly:
+
+```powershell
+$body = @{
+  title = "FullBrightTrack test alert"
+  body  = "Admin FCM token delivery is working."
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/test-admin-notification" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body |
+ConvertTo-Json -Depth 5
+```
 
 5. Run the app:
 
 ```bash
-flutter run --dart-define=FULLBRIGHT_BACKEND_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
+flutter run --flavor user --dart-define=FULLBRIGHT_BACKEND_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com/stress
 ```
 
 For local Android emulator testing against a local backend, use:
 
 ```bash
-flutter run --dart-define=FULLBRIGHT_BACKEND_URL=http://10.0.2.2:8080 --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
+flutter run --flavor user --dart-define=FULLBRIGHT_BACKEND_URL=http://10.0.2.2:8080 --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
 ```
 
 For debug builds only, the app also falls back to this local emulator URL when `GENKIT_STRESS_FLOW_URL` is omitted.
+
+6. Run the developer app:
+
+```bash
+flutter run --flavor developer -t lib/developer/developer_app.dart --dart-define=FULLBRIGHT_BACKEND_URL=http://10.0.2.2:8080
+```
+
+For a release/demo APK with App Check debug token support:
+
+```bash
+flutter build apk --release --flavor developer -t lib/developer/developer_app.dart --dart-define=USE_APP_CHECK_DEBUG=true --dart-define=APP_CHECK_DEBUG_TOKEN=YOUR_VERSION_4_UUID
+```
+
+The developer app uses package `com.productivity.and.wellbeing.developer`, so it must have its own Firebase Android app, OAuth clients, App Check registration, and matching SHA-1/SHA-256 fingerprints.
+
+## Account And Backend How-To
+
+### Registration Confirmation
+
+1. User enters email/password in the register screen.
+2. Flutter calls `/start-registration`.
+3. Backend stores `pending_registrations/{requestId}` and sends a Brevo email.
+4. User opens the email link.
+5. The browser shows a confirmation page.
+6. The Firebase Auth account is created only after the user presses `Confirm and create account`.
+7. User returns to the login screen and signs in.
+
+For local testing, start the backend with:
+
+```powershell
+$env:EMAIL_DEBUG_RETURN_LINK="true"
+```
+
+Then call:
+
+```powershell
+$body = @{
+  email = "student@example.com"
+  password = "studentPassword123"
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod -Uri "http://localhost:8080/start-registration" -Method Post -ContentType "application/json" -Body $body
+```
+
+### Password Reset
+
+1. User chooses reset password in Login or Account Information.
+2. Flutter calls `/request-password-reset`.
+3. Backend emails a one-time reset link.
+4. User opens the link, enters the new password twice, then presses `Update password`.
+5. Backend updates Firebase Auth password only after both passwords match.
+
+### Account Information Actions
+
+Account Information switches its action button based on linked Firebase providers:
+
+- Google-only account: `Add Password`
+- Email/password-only account: `Verify with Google Sign-In` and `Reset Password`
+- Account with both providers: `Reset Password`
+
+The developer app uses the same account action logic and adds hide/show controls to password fields.
 
 ## Firestore Data
 
@@ -207,13 +284,13 @@ admin_alerts/{alertId}
 admin_fcm_tokens/{adminUid}/tokens/{token}
 ```
 
-`admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, warning signature, and push delivery status. It does not store raw journal text. `admin_fcm_tokens` stores verified admin device tokens so the Firebase Function can send FCM push notifications for active alerts.
+`admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, warning signature, and push delivery status. It does not store raw journal text. `admin_fcm_tokens` stores verified admin/developer device tokens so the backend worker can send FCM push notifications for active alerts.
 
 When an admin taps an active safety alert or its notification history item, the app opens Admin Monitoring and highlights the matching user.
 
 ## Suggested Firestore Rules
 
-This app expects users to access their own private data, read public leaderboard summaries, and write only their own minimized admin monitoring summary. Admin access is controlled by `users/{uid}.isAdmin == true`.
+This app expects users to access their own private data, read public leaderboard summaries, and write only their own minimized admin monitoring summary. Admin and developer access is controlled by `users/{uid}.role`, using `user`, `admin`, or `developer`.
 Email verification is not required by the current app flow, so these rules intentionally do not check `request.auth.token.email_verified`.
 
 ```js
@@ -229,19 +306,35 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
+    function role() {
       return signedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+
+    function hasAdminAccess() {
+      return signedIn()
+        && (role() == 'admin' || role() == 'developer');
+    }
+
+    function hasDeveloperRole() {
+      return signedIn()
+        && role() == 'developer';
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create, update: if isOwner(userId);
+      allow read: if isOwner(userId) || hasAdminAccess();
+      allow create: if isOwner(userId)
+        && (!request.resource.data.keys().hasAny(['role'])
+          || request.resource.data.role == 'user');
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).changedKeys()
+          .hasAny(['role']);
       allow delete: if false;
     }
 
     match /users/{userId}/{document=**} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || hasAdminAccess();
       allow create, update, delete: if isOwner(userId);
     }
 
@@ -251,9 +344,9 @@ service cloud.firestore {
     }
 
     match /admin_monitoring/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || hasAdminAccess();
       allow create, update: if isOwner(userId);
-      allow update: if isAdmin()
+      allow update: if hasAdminAccess()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly([
             'resolvedWarningSignature',
@@ -279,6 +372,7 @@ service cloud.firestore {
             'rationale',
             'supportResolutionStatus',
             'supportResolutionNote',
+            'supportResolutionType',
             'supportResolutionUpdatedAt',
             'resolvedWarningJournals',
             'stressHistory',
@@ -288,22 +382,27 @@ service cloud.firestore {
     }
 
     match /admin_alerts/{alertId} {
-      allow read: if isAdmin();
+      allow read: if hasAdminAccess();
       allow create: if signedIn()
         && request.resource.data.userId == request.auth.uid;
       allow update: if signedIn()
         && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == resource.data.userId;
-      allow update: if isAdmin()
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.diff(resource.data).changedKeys()
+          .hasOnly(['pushStatus', 'pushUpdatedAt', 'updatedAt']);
+      allow update: if hasAdminAccess()
         && request.resource.data.diff(resource.data).changedKeys()
           .hasOnly(['status', 'resolvedAt', 'updatedAt']);
-      // Firebase Admin SDK in Cloud Functions bypasses rules for pushStatus fields.
       allow delete: if false;
     }
 
     match /admin_fcm_tokens/{adminUid}/tokens/{tokenId} {
       allow read: if false;
-      allow create, update, delete: if isOwner(adminUid) && isAdmin();
+      allow create, update, delete: if isOwner(adminUid) && hasAdminAccess();
+    }
+
+    match /{document=**} {
+      allow read, write: if hasDeveloperRole();
     }
   }
 }
@@ -366,7 +465,7 @@ Current test coverage includes:
 - The leaderboard is Firestore-only and uses public summary documents.
 - Raw AI scoring is consent-gated. If consent is unavailable, the local deterministic stress model is used.
 - Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, and charted by Week or Month.
-- Admin FCM alerts require deployed Firebase Functions; client-side token registration alone does not send push notifications.
+- Admin FCM alerts require the backend worker route or `ADMIN_ALERT_WORKER_INTERVAL_SECONDS`; client-side token registration alone does not send push notifications.
 - Leaderboard results use a short in-memory cache when reopening the screen; pull-to-refresh bypasses the cache.
 - Journal warning review uses the AI backend when available, with local privacy-safe fallback labels for self-harm, harm toward others, threats, explicit unsafe wording, and Philippine language warning signals. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.
 - Step streaks preserve the current streak during the unfinished current day and reset the next day if no goal is reached.

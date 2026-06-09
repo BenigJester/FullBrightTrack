@@ -116,6 +116,47 @@ class BackendAccountService {
       );
     }
   }
+
+  static Future<PasswordResetRequestResult> requestPasswordReset({
+    required String email,
+  }) async {
+    if (!isConfigured) {
+      throw const BackendAccountException(
+        'Password reset backend is not configured.',
+      );
+    }
+
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/request-password-reset'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'email': email}),
+        )
+        .timeout(const Duration(seconds: 25));
+
+    final decoded = response.body.trim().isEmpty
+        ? <String, dynamic>{}
+        : jsonDecode(response.body);
+    final data = decoded is Map<String, dynamic>
+        ? decoded
+        : <String, dynamic>{};
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = (data['error'] as String?)?.trim();
+      throw BackendAccountException(
+        message == null || message.isEmpty
+            ? 'Could not request password reset.'
+            : message,
+      );
+    }
+
+    return PasswordResetRequestResult(
+      email: (data['email'] as String?) ?? email,
+      requestId: (data['requestId'] as String?) ?? '',
+      resetUrl: (data['resetUrl'] as String?) ?? '',
+      expiresAt: DateTime.tryParse((data['expiresAt'] as String?) ?? ''),
+    );
+  }
 }
 
 class PendingRegistrationResult {
@@ -129,6 +170,20 @@ class PendingRegistrationResult {
   final String email;
   final String requestId;
   final String confirmationUrl;
+  final DateTime? expiresAt;
+}
+
+class PasswordResetRequestResult {
+  const PasswordResetRequestResult({
+    required this.email,
+    required this.requestId,
+    required this.resetUrl,
+    required this.expiresAt,
+  });
+
+  final String email;
+  final String requestId;
+  final String resetUrl;
   final DateTime? expiresAt;
 }
 

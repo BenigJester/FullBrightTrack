@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_data.dart';
 import '../services/steps_service.dart';
+import '../widgets/ai_updated_status.dart';
 
 class StepsTab extends StatelessWidget {
   const StepsTab({super.key});
@@ -338,9 +339,7 @@ class StepsTab extends StatelessWidget {
       builder: (context, snapshot) {
         final monitoring = snapshot.data?.data() ?? const <String, dynamic>{};
         final insight = _stepsInsightFromAi(data, monitoring);
-        final rationale =
-            (monitoring['rationale'] as List?)?.whereType<String>().take(2) ??
-            const <String>[];
+        final statusText = AiUpdatedStatus.fromMonitoring(monitoring);
 
         return Container(
           width: double.infinity,
@@ -396,21 +395,8 @@ class StepsTab extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (rationale.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final reason in rationale)
-                      Chip(
-                        label: Text(reason),
-                        backgroundColor: Colors.orange.shade50,
-                        side: BorderSide.none,
-                      ),
-                  ],
-                ),
-              ],
+              const SizedBox(height: 12),
+              AiUpdatedStatus(statusText: statusText),
             ],
           ),
         );

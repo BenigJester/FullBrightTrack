@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'admin_access_service.dart';
 
 class NotificationHistoryService {
   const NotificationHistoryService._();
@@ -64,7 +65,7 @@ class NotificationHistoryService {
     if (user == null) return null;
 
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    if (userDoc.data()?['isAdmin'] != true) return null;
+    if (!AdminAccessService.dataHasAdminAccess(userDoc.data())) return null;
 
     return _firestore
         .collection('users')

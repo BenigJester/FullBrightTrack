@@ -161,10 +161,10 @@ class WellnessSignalService {
           'resolvedByAdmin': true,
           'supportResolutionStatus':
               previousMonitoringData['supportResolutionStatus'] ??
-              'therapist_support_provided',
+              'support_provided',
           'supportResolutionNote':
               previousMonitoringData['supportResolutionNote'] ??
-              'Admin verified this warning after the student talked with a therapist/support provider.',
+              'Admin verified this warning after support was provided.',
           'resolvedAt': _timestampText(
             previousMonitoringData['resolvedWarningAt'],
           ),
@@ -216,11 +216,11 @@ class WellnessSignalService {
       'hasResolvedWarning': hasSupportResolution,
       'status': hasSupportResolution
           ? (previousMonitoringData['supportResolutionStatus'] ??
-                'therapist_support_provided')
+                'support_provided')
           : 'none',
       'note': hasSupportResolution
           ? (previousMonitoringData['supportResolutionNote'] ??
-                'Admin verified a previous warning after the student talked with a therapist/support provider.')
+                'Admin verified a previous warning after support was provided.')
           : '',
       'resolvedWarningSignatures': resolvedSignatures.toList(),
       'resolvedWarningJournals': resolvedWarningJournals,
@@ -552,7 +552,7 @@ class WellnessSignalService {
                   ),
                   'resolvedAt': resolvedJournal['resolvedAt'],
                   'instruction':
-                      'This journal warning was already verified by an admin after therapist/support contact. Treat it as resolved historical context, not an active unresolved warning.',
+                      'This journal warning was already verified by an admin after support was provided or as a false positive. Treat it as resolved historical context, not an active unresolved warning.',
                 },
           'warningSnippets': resolvedJournal == null
               ? data['warningSnippets']

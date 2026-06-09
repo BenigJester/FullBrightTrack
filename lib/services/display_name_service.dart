@@ -2,7 +2,7 @@ class DisplayNameService {
   const DisplayNameService._();
 
   static const minLength = 3;
-  static const maxLength = 6;
+  static const maxLength = 18;
   static final _spacePattern = RegExp(r'\s+');
 
   static String normalize(String? value) {

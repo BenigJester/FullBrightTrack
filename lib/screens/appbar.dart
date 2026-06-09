@@ -43,162 +43,160 @@ class _HomeAppBarContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final firstName = _firstName(user?.displayName);
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Color(0xFFE65100),
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-      ),
-      child: AppBar(
-        elevation: 0,
-        toolbarHeight: 82,
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        systemOverlayStyle: const SystemUiOverlayStyle(
-          statusBarColor: Color(0xFFE65100),
-          statusBarIconBrightness: Brightness.light,
-          statusBarBrightness: Brightness.dark,
-        ),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFFE65100), Color(0xFFFF8A00)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+    return FutureBuilder<AdminAccessRole>(
+      future: AdminAccessService.currentUserRole(),
+      builder: (context, roleSnapshot) {
+        final role = roleSnapshot.data ?? AdminAccessRole.none;
+
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: const SystemUiOverlayStyle(
+            statusBarColor: Color(0xFFE65100),
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
           ),
-        ),
-        titleSpacing: 18,
-        title: Row(
-          children: [
-            GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MoreScreen()),
-                );
-              },
-              child: Hero(
-                tag: "profile",
-                child: Container(
-                  padding: const EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.deepOrange.shade300,
-                        Colors.orange.shade400,
-                      ],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.orange.withAlpha((0.25 * 255).round()),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: CircleAvatar(
-                    radius: 22,
-                    backgroundColor: Colors.white,
-                    backgroundImage: user?.photoURL != null
-                        ? NetworkImage(user!.photoURL!)
-                        : null,
-                    child: user?.photoURL == null
-                        ? Icon(
-                            Icons.person_rounded,
-                            size: 24,
-                            color: Colors.orange.shade700,
-                          )
-                        : null,
-                  ),
+          child: AppBar(
+            elevation: 0,
+            toolbarHeight: 82,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            systemOverlayStyle: const SystemUiOverlayStyle(
+              statusBarColor: Color(0xFFE65100),
+              statusBarIconBrightness: Brightness.light,
+              statusBarBrightness: Brightness.dark,
+            ),
+            flexibleSpace: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFE65100), Color(0xFFFF8A00)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Welcome Back",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.white.withValues(alpha: 0.82),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          firstName,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      FutureBuilder<bool>(
-                        future: AdminAccessService.isCurrentUserAdmin(),
-                        builder: (context, snapshot) {
-                          if (snapshot.data != true) {
-                            return const SizedBox.shrink();
-                          }
-
-                          return const Padding(
-                            padding: EdgeInsets.only(left: 8),
-                            child: _AdminBadge(),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          FutureBuilder<bool>(
-            future: AdminAccessService.isCurrentUserAdmin(),
-            builder: (context, snapshot) {
-              if (snapshot.data != true) {
-                return const SizedBox.shrink();
-              }
-
-              return Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: _actionButton(
-                  icon: Icons.admin_panel_settings_rounded,
+            titleSpacing: 12,
+            title: Row(
+              children: [
+                GestureDetector(
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const AdminMonitoringScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const MoreScreen()),
                     );
                   },
+                  child: Hero(
+                    tag: "profile",
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.deepOrange.shade300,
+                            Colors.orange.shade400,
+                          ],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.orange.withAlpha(
+                              (0.25 * 255).round(),
+                            ),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Colors.white,
+                        backgroundImage: user?.photoURL != null
+                            ? NetworkImage(user!.photoURL!)
+                            : null,
+                        child: user?.photoURL == null
+                            ? Icon(
+                                Icons.person_rounded,
+                                size: 24,
+                                color: Colors.orange.shade700,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
                 ),
-              );
-            },
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Welcome Back",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.82),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: role.hasAdminAccess ? 150 : 190,
+                            ),
+                            child: Text(
+                              firstName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 19,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          if (role.hasAdminAccess) _RoleBadge(role: role),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              if (role.hasAdminAccess)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: _actionButton(
+                    icon: Icons.admin_panel_settings_rounded,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AdminMonitoringScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              _actionButton(
+                icon: Icons.emoji_events_rounded,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LeaderboardScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(width: 16),
+            ],
           ),
-          _actionButton(
-            icon: Icons.emoji_events_rounded,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const LeaderboardScreen()),
-              );
-            },
-          ),
-          const SizedBox(width: 16),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -225,31 +223,38 @@ class _HomeAppBarContent extends StatelessWidget {
   }
 }
 
-class _AdminBadge extends StatelessWidget {
-  const _AdminBadge();
+class _RoleBadge extends StatelessWidget {
+  const _RoleBadge({required this.role});
+
+  final AdminAccessRole role;
 
   @override
   Widget build(BuildContext context) {
+    final isDeveloper = role == AdminAccessRole.developer;
+    final color = isDeveloper ? const Color(0xFF0F766E) : Colors.deepOrange;
+
     return Tooltip(
-      message: "Admin account",
+      message: role.tooltip,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.22),
+          color: Colors.white.withValues(alpha: 0.24),
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: Colors.white.withValues(alpha: 0.32)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.admin_panel_settings_rounded,
+              isDeveloper
+                  ? Icons.code_rounded
+                  : Icons.admin_panel_settings_rounded,
               size: 13,
-              color: Colors.white,
+              color: color,
             ),
-            SizedBox(width: 4),
+            const SizedBox(width: 4),
             Text(
-              "ADMIN",
+              role.badgeLabel,
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 10,

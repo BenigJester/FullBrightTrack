@@ -29,17 +29,21 @@ Journal warning review understands English and Philippine languages such as Taga
 The backend can also run thesis-demo account and admin alert workflows:
 
 - `/start-registration` creates a pending email confirmation record.
-- `/confirm-registration` marks the pending email as confirmed and creates the Firebase Auth account automatically.
+- `/confirm-registration` shows a confirmation page; the Firebase Auth account is created only after the user presses the confirmation button.
 - `/complete-registration` lets the Flutter app verify an already confirmed registration request.
 - `/request-password-reset` creates a one-time reset token for an existing Firebase Auth user.
-- `/confirm-password-reset` validates a reset token.
-- `/complete-password-reset` updates the Firebase Auth password through the backend.
+- `/confirm-password-reset` validates a reset token and shows the reset form.
+- `/complete-password-reset` updates the Firebase Auth password after the new password and confirmation match.
 - `/admin-alert-worker` polls Firestore `admin_alerts`, reads admin FCM tokens, and sends push notifications through FCM HTTP v1.
-- `/developer-delete-user` lets the developer app delete Firebase Auth login credentials for a target UID or email after verifying the signed-in caller is an admin.
+- `/test-admin-notification` sends a direct test notification to registered admin/developer FCM tokens.
+- `/developer-delete-user` lets the developer app delete Firebase Auth login credentials for a target UID or email after verifying the signed-in caller has `users/{uid}.role == "developer"`.
 
 ## Local Run
 
+Run these commands from the backend folder:
+
 ```powershell
+cd C:\Users\benig\OneDrive\Documents\THESIS\Application\App\productivity_and_wellbeing\genkit_backend
 dart pub get
 $env:GROQ_API_KEY="YOUR_GROQ_API_KEY"
 $env:FIREBASE_SERVICE_ACCOUNT_JSON=(Get-Content ".\service-account.json" -Raw)
@@ -50,6 +54,31 @@ $env:BREVO_SENDER_EMAIL="your_verified_sender@example.com"
 $env:BREVO_SENDER_NAME="FullBrightTrack"
 dart run bin/server.dart
 ```
+
+Expected startup lines:
+
+```text
+FullBrightTrack Groq backend listening on 8080
+Groq API key: configured
+Firebase backend: configured
+```
+
+## Environment Variables
+
+Use these on both local PowerShell and Render:
+
+| Variable | Required | How to use |
+| --- | --- | --- |
+| `GROQ_API_KEY` | Optional for startup, required for Groq AI | Groq console API key. If empty, backend uses local fallback scoring. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Required for account, password, FCM, developer delete | Paste the full service account JSON as one environment variable. Locally, load it with `Get-Content ".\service-account.json" -Raw`. |
+| `FIREBASE_WEB_API_KEY` | Required for automatic Firebase Auth account creation | Firebase Web API key from Google Cloud or Firebase project settings. Keep it on the backend, not inside Flutter. |
+| `PUBLIC_BASE_URL` | Required for online email links | Local: `http://localhost:8080`. Render: `https://YOUR_RENDER_SERVICE.onrender.com`. |
+| `BREVO_API_KEY` | Required for Brevo email delivery | Brevo SMTP & API > API keys. Use normal API key, not MCP key. |
+| `BREVO_SENDER_EMAIL` | Required for Brevo email delivery | A sender email verified in Brevo. |
+| `BREVO_SENDER_NAME` | Optional | Example: `FullBrightTrack`. |
+| `ADMIN_ALERT_WORKER_INTERVAL_SECONDS` | Optional | Set to `60` to poll and send pending admin alerts automatically. |
+| `ADMIN_NOTIFICATION_TEST_SECRET` | Optional | If set, `/test-admin-notification` requires header `x-admin-test-secret`. |
+| `EMAIL_DEBUG_RETURN_LINK` | Optional local testing only | Set to `true` to include confirmation/reset links in API responses. |
 
 This backend uses Groq, not Google Gemini. Do not run it with `genkit start`
 or a Google/Gemini provider command. If you see a message about a missing
@@ -92,10 +121,16 @@ Health check:
 Invoke-RestMethod -Uri "http://localhost:8080/health"
 ```
 
+Use this URL from an Android emulator:
+
+```text
+http://10.0.2.2:8080
+```
+
 For Android emulator testing, Flutter can call the local backend through:
 
 ```powershell
-flutter run --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
+flutter run --flavor user --dart-define=FULLBRIGHT_BACKEND_URL=http://10.0.2.2:8080 --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
 ```
 
 Debug Flutter builds also default to `http://10.0.2.2:8080/stress` when `GENKIT_STRESS_FLOW_URL` is omitted.
@@ -152,9 +187,11 @@ $body = @{
 Invoke-RestMethod -Uri "http://localhost:8080/stress" -Method Post -ContentType "application/json" -Body $body
 ```
 
-Registration confirmation demo:
+## How To Test Registration Confirmation
 
 ```powershell
+$env:EMAIL_DEBUG_RETURN_LINK="true"
+
 $body = @{
   email = "student@example.com"
   password = "studentPassword123"
@@ -162,11 +199,9 @@ $body = @{
 Invoke-RestMethod -Uri "http://localhost:8080/start-registration" -Method Post -ContentType "application/json" -Body $body
 ```
 
-The backend sends the confirmation link to the user's email. When the user opens the link, the backend confirms the request and creates the Firebase Auth email/password account automatically. For local testing only, set this before starting the backend if you also want the API response to include the link:
+The backend sends the confirmation link to the user's email. If `EMAIL_DEBUG_RETURN_LINK=true`, the response also includes `confirmationUrl` for local testing.
 
-```powershell
-$env:EMAIL_DEBUG_RETURN_LINK="true"
-```
+Open the link in a browser. The account is not created yet. The page asks the user to press `Confirm and create account`. Only that button creates the Firebase Auth email/password account.
 
 The backend stores records under:
 
@@ -174,7 +209,7 @@ The backend stores records under:
 pending_registrations/{requestId}
 ```
 
-The Flutter register screen no longer creates the account after confirmation. The confirmation link itself creates the Firebase Auth account. `/complete-registration` is kept only as a verification endpoint:
+`/complete-registration` is kept only as a verification endpoint for the Flutter app:
 
 ```powershell
 $body = @{
@@ -187,32 +222,90 @@ Invoke-RestMethod -Uri "http://localhost:8080/complete-registration" -Method Pos
 
 If confirmed, the endpoint reports that the email is already ready for sign-in.
 
-Password reset demo:
+## How To Test Password Reset
 
 ```powershell
 $body = @{ email = "student@example.com" } | ConvertTo-Json -Compress
 Invoke-RestMethod -Uri "http://localhost:8080/request-password-reset" -Method Post -ContentType "application/json" -Body $body
 ```
 
-Open the returned `resetUrl`, then complete it:
+Open the returned `resetUrl`. The browser page asks for `New password` and `Confirm new password`.
+
+You can also complete it manually:
 
 ```powershell
 $body = @{
   id = "REQUEST_ID"
   token = "TOKEN_FROM_RESET_URL"
   newPassword = "newPassword123"
+  confirmPassword = "newPassword123"
 } | ConvertTo-Json -Compress
 
 Invoke-RestMethod -Uri "http://localhost:8080/complete-password-reset" -Method Post -ContentType "application/json" -Body $body
 ```
 
-Admin FCM worker demo:
+## How To Test Admin FCM Notifications
+
+First sign in to the Flutter user app with an account whose Firestore profile has:
+
+```text
+users/{uid}.role = "admin"
+```
+
+or:
+
+```text
+users/{uid}.role = "developer"
+```
+
+Allow notifications and open the Home screen. The app writes a token under:
+
+```text
+admin_fcm_tokens/{uid}/tokens/{token}
+```
+
+Then test token delivery directly:
+
+```powershell
+$body = @{
+  title = "FullBrightTrack test alert"
+  body  = "Admin FCM token delivery is working."
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/test-admin-notification" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body |
+ConvertTo-Json -Depth 5
+```
+
+Expected:
+
+```json
+{
+  "ok": true,
+  "tokenCount": 1,
+  "successCount": 1,
+  "failureCount": 0
+}
+```
+
+If `tokenCount` is `0`, the app has not registered the admin/developer token yet.
+
+To send pending journal warning alerts:
 
 ```powershell
 Invoke-RestMethod -Uri "http://localhost:8080/admin-alert-worker" -Method Post
 ```
 
-Developer user delete demo:
+For automatic polling:
+
+```powershell
+$env:ADMIN_ALERT_WORKER_INTERVAL_SECONDS="60"
+```
+
+## How To Test Developer User Delete
 
 ```powershell
 $body = @{
@@ -228,13 +321,7 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-The backend verifies the admin token against Firebase Auth and checks `users/{adminUid}.isAdmin == true` before deleting the target Firebase Auth user. This deletes sign-in credentials only; Firestore profile/data documents are kept unless deleted separately.
-
-For automatic polling on a free backend host, set:
-
-```powershell
-$env:ADMIN_ALERT_WORKER_INTERVAL_SECONDS="60"
-```
+The backend verifies the developer token against Firebase Auth and checks `users/{developerUid}.role == "developer"` before deleting the target Firebase Auth user. This deletes sign-in credentials only; Firestore profile/data documents are kept unless deleted separately.
 
 Journal warning mode example:
 

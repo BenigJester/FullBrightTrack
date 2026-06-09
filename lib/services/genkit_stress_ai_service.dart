@@ -62,7 +62,7 @@ class GenkitStressAiService {
               'journalWarningSeverity': journalWarningSeverity,
               'adminResolutionContext': adminResolutionContext,
               'instructions':
-                  'If adminResolutionContext.hasResolvedWarning is true, treat matching resolved warning journals as historical resolved context after therapist/support contact, not active unresolved danger. Score high only when fresh unresolved mood, journal, task, or activity signals still show current risk.',
+                  'If adminResolutionContext.hasResolvedWarning is true, treat matching resolved warning journals as historical resolved context after support was provided or after admin marked them false positive, not active unresolved danger. Score high only when fresh unresolved mood, journal, task, or activity signals still show current risk.',
             }),
           )
           .timeout(const Duration(seconds: 8));

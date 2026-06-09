@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
+import '../services/backend_account_service.dart';
 import 'consent_screen.dart';
 import 'register_screen.dart';
 
@@ -62,6 +63,7 @@ class _LoginTabState extends State<LoginTab>
         'email': user.email,
         'name': user.displayName,
         'photoUrl': user.photoURL,
+        'role': 'user',
         'rawAiDataConsent': rawDataConsent,
         'rawAiDataConsentAt': FieldValue.serverTimestamp(),
         'createdAt': FieldValue.serverTimestamp(),
@@ -175,6 +177,91 @@ class _LoginTabState extends State<LoginTab>
       if (mounted) {
         setState(() => isLoading = false);
       }
+    }
+  }
+
+  Future<void> _requestPasswordReset() async {
+    final email = emailController.text.trim();
+    if (email.isEmpty) {
+      showErrorSnackBar('Enter your email address first.');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        icon: Container(
+          width: 62,
+          height: 62,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF0EA),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Icon(
+            Icons.lock_reset_rounded,
+            color: Color(0xFFFF7A59),
+            size: 32,
+          ),
+        ),
+        title: const Text(
+          'Reset password?',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'We will send a secure password reset link to $email.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade700, height: 1.45),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFF7A59),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text('Send reset link'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      setState(() => isLoading = true);
+      final result = await BackendAccountService.requestPasswordReset(
+        email: email,
+      );
+      if (!mounted) return;
+      showErrorSnackBar(
+        result.requestId.isEmpty
+            ? 'If this email exists, a password reset link will be sent.'
+            : 'Password reset link sent. Check your email.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      showErrorSnackBar(error.toString());
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -356,7 +443,21 @@ class _LoginTabState extends State<LoginTab>
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: isLoading ? null : _requestPasswordReset,
+                    child: const Text(
+                      'Forgot password?',
+                      style: TextStyle(
+                        color: Color(0xFFFF7A59),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
 
                 AnimatedBuilder(
                   animation: _consentShake,

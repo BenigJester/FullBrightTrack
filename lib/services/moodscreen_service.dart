@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'streak_service.dart';
 import '../models/app_data.dart';
 import 'leaderboard_service.dart';
@@ -22,6 +23,8 @@ class MoodService {
   AppData? _appData;
   bool _userEditedTodayMood = false;
   String? _lastAppliedExternalMoodKey;
+  int? _pendingMoodIndex;
+  double? _pendingMoodIntensity;
 
   // ================= SAVE =================
 
@@ -46,10 +49,27 @@ class MoodService {
   // ================= DISPOSE =================
 
   void dispose() {
-    _debounce?.cancel();
+    unawaited(flushPendingSave());
     _wellnessPublishDebounce?.cancel();
     _aiMoodSubscription?.cancel();
     _aiMoodSubscription = null;
+  }
+
+  Future<void> flushPendingSave() async {
+    _debounce?.cancel();
+    _debounce = null;
+    final moodIndex = _pendingMoodIndex;
+    final intensity = _pendingMoodIntensity;
+    if (moodIndex == null || intensity == null) return;
+
+    await _writeMood(
+      moodIndex: moodIndex,
+      intensity: intensity,
+      source: 'manual',
+      updateStreaks: true,
+    );
+    _pendingMoodIndex = null;
+    _pendingMoodIntensity = null;
   }
 
   // ================= DATE =================
@@ -58,6 +78,53 @@ class MoodService {
     final now = DateTime.now();
 
     return "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+  }
+
+  String _moodCachePrefix(String uid, String dateKey) {
+    return 'mood_cache_${uid}_$dateKey';
+  }
+
+  Future<void> _cacheMood({
+    required String uid,
+    required String dateKey,
+    required int moodIndex,
+    required double intensity,
+    required String source,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final prefix = _moodCachePrefix(uid, dateKey);
+    await prefs.setInt('${prefix}_index', moodIndex);
+    await prefs.setDouble('${prefix}_intensity', intensity);
+    await prefs.setInt(
+      '${prefix}_updated_ms',
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    await prefs.setString('${prefix}_source', source);
+  }
+
+  Future<_CachedMood?> _cachedMood(String uid, String dateKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    final prefix = _moodCachePrefix(uid, dateKey);
+    final moodIndex = prefs.getInt('${prefix}_index');
+    final intensity = prefs.getDouble('${prefix}_intensity');
+    final updatedMs = prefs.getInt('${prefix}_updated_ms');
+    if (moodIndex == null || intensity == null || updatedMs == null) {
+      return null;
+    }
+
+    return _CachedMood(
+      moodIndex: moodIndex.clamp(0, moods.length - 1),
+      intensity: intensity.clamp(0.0, 1.0),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(updatedMs),
+      source: prefs.getString('${prefix}_source') ?? 'manual',
+    );
+  }
+
+  DateTime? _remoteMoodUpdatedAt(Map<String, dynamic>? data) {
+    final updatedAt = data?['updated_at'];
+    if (updatedAt is Timestamp) return updatedAt.toDate();
+    if (updatedAt is String) return DateTime.tryParse(updatedAt);
+    return null;
   }
 
   // ================= LOAD TODAY MOOD =================
@@ -71,6 +138,13 @@ class MoodService {
 
     final today = _todayKey();
     _userEditedTodayMood = false;
+    final cached = await _cachedMood(user.uid, today);
+    if (cached != null) {
+      _appData!.updateMoodData(
+        moodIndex: cached.moodIndex,
+        moodIntensity: cached.intensity,
+      );
+    }
 
     final DocumentSnapshot<Map<String, dynamic>> doc;
     try {
@@ -83,7 +157,9 @@ class MoodService {
     } on FirebaseException catch (e) {
       if (e.code == 'permission-denied') {
         debugPrint('Today mood load skipped: permission-denied');
-        _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
+        if (cached == null) {
+          _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
+        }
         return;
       }
 
@@ -91,17 +167,52 @@ class MoodService {
     }
 
     if (!doc.exists) {
+      if (cached != null) {
+        _pendingMoodIndex = cached.moodIndex;
+        _pendingMoodIntensity = cached.intensity;
+        _userEditedTodayMood = cached.source == 'manual';
+        unawaited(flushPendingSave());
+        return;
+      }
       _appData!.updateMoodData(moodIndex: 1, moodIntensity: 0.5);
       await _applyLatestAiMoodAdjustment();
 
       return;
     }
 
-    _appData!.updateMoodData(
-      moodIndex: doc.data()?['mood_index'] ?? 1,
-      moodIntensity: (doc.data()?['intensity'] ?? 0.5).toDouble(),
+    final docData = doc.data();
+    final remoteUpdatedAt = _remoteMoodUpdatedAt(docData);
+    if (cached != null &&
+        (remoteUpdatedAt == null ||
+            cached.updatedAt.isAfter(remoteUpdatedAt))) {
+      _appData!.updateMoodData(
+        moodIndex: cached.moodIndex,
+        moodIntensity: cached.intensity,
+      );
+      _pendingMoodIndex = cached.moodIndex;
+      _pendingMoodIntensity = cached.intensity;
+      _userEditedTodayMood = cached.source == 'manual';
+      unawaited(flushPendingSave());
+      return;
+    }
+
+    final moodIndex = docData?['mood_index'] ?? 1;
+    final intensity = (docData?['intensity'] ?? 0.5).toDouble();
+    final source = (docData?['source'] as String?) ?? 'firestore';
+    _userEditedTodayMood = source == 'manual';
+    _appData!.updateMoodData(moodIndex: moodIndex, moodIntensity: intensity);
+    unawaited(
+      _cacheMood(
+        uid: user.uid,
+        dateKey: today,
+        moodIndex: moodIndex,
+        intensity: intensity,
+        source: source,
+      ),
     );
-    await _applyLatestAiMoodAdjustment();
+    if (!_userEditedTodayMood) {
+      await _applyLatestAiMoodAdjustment();
+    }
   }
 
   void _listenForAiMoodAdjustments() {
@@ -222,12 +333,46 @@ class MoodService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final today = _todayKey();
     final moodIndex = appData.selectedMood;
     final intensity = appData.moodIntensity;
 
     appData.updateMoodData(moodIndex: moodIndex, moodIntensity: intensity);
 
+    await _cacheMood(
+      uid: user.uid,
+      dateKey: _todayKey(),
+      moodIndex: moodIndex,
+      intensity: intensity,
+      source: 'manual',
+    );
+    _pendingMoodIndex = null;
+    _pendingMoodIntensity = null;
+    await _writeMood(
+      moodIndex: moodIndex,
+      intensity: intensity,
+      source: 'manual',
+      updateStreaks: true,
+    );
+    _scheduleMoodWellnessSignalRefresh();
+  }
+
+  Future<void> _writeMood({
+    required int moodIndex,
+    required double intensity,
+    required String source,
+    required bool updateStreaks,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final today = _todayKey();
+    await _cacheMood(
+      uid: user.uid,
+      dateKey: today,
+      moodIndex: moodIndex,
+      intensity: intensity,
+      source: source,
+    );
     await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
@@ -236,16 +381,19 @@ class MoodService {
         .set({
           'mood_index': moodIndex,
           'intensity': intensity,
+          'source': source,
           'updated_at': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
+    if (!updateStreaks || _appData == null) return;
+
+    final appData = _appData!;
     final updatedMoodData = Map<String, int?>.from(appData.streakMoodData);
     updatedMoodData[today] = moodIndex;
     StreakService.refreshMoodStreak(appData, updatedMoodData);
     await LeaderboardService.publishCurrentUserSummary(
       todaySteps: appData.stepsToday,
     );
-    _scheduleMoodWellnessSignalRefresh();
   }
 
   Future<void> applyJournalMood(String journalText) async {
@@ -260,6 +408,13 @@ class MoodService {
       moodIntensity: result.moodIntensity,
     );
 
+    await _cacheMood(
+      uid: user.uid,
+      dateKey: today,
+      moodIndex: result.moodIndex,
+      intensity: result.moodIntensity,
+      source: 'journal_ai',
+    );
     await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
@@ -293,6 +448,13 @@ class MoodService {
 
     final today = _todayKey();
     try {
+      await _cacheMood(
+        uid: user.uid,
+        dateKey: today,
+        moodIndex: moodIndex,
+        intensity: intensity,
+        source: 'external_ai',
+      );
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -327,31 +489,24 @@ class MoodService {
 
     _debounce?.cancel();
 
-    final today = _todayKey();
+    _pendingMoodIndex = _appData!.selectedMood;
+    _pendingMoodIntensity = overrideIntensity ?? _appData!.moodIntensity;
+    unawaited(
+      _cacheMood(
+        uid: user.uid,
+        dateKey: _todayKey(),
+        moodIndex: _pendingMoodIndex!,
+        intensity: _pendingMoodIntensity!,
+        source: 'manual',
+      ),
+    );
 
-    _debounce = Timer(const Duration(milliseconds: 600), () async {
-      final moodIndex = _appData!.selectedMood;
-      final intensity = overrideIntensity ?? _appData!.moodIntensity;
-
-      // 1. SAVE TO FIRESTORE
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('mood')
-          .doc(today)
-          .set({
-            'mood_index': moodIndex,
-            'intensity': intensity,
-            'updated_at': FieldValue.serverTimestamp(),
-          });
-      final updatedMoodData = Map<String, int?>.from(_appData!.streakMoodData);
-
-      updatedMoodData[today] = moodIndex;
-
-      StreakService.refreshMoodStreak(_appData!, updatedMoodData);
-      await LeaderboardService.publishCurrentUserSummary(
-        todaySteps: _appData!.stepsToday,
-      );
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      try {
+        await flushPendingSave();
+      } catch (error) {
+        debugPrint('Mood autosave failed: $error');
+      }
       _scheduleMoodWellnessSignalRefresh();
     });
   }
@@ -387,4 +542,18 @@ class MoodService {
       return "You're doing okay. Stay balanced.";
     }
   }
+}
+
+class _CachedMood {
+  const _CachedMood({
+    required this.moodIndex,
+    required this.intensity,
+    required this.updatedAt,
+    required this.source,
+  });
+
+  final int moodIndex;
+  final double intensity;
+  final DateTime updatedAt;
+  final String source;
 }

@@ -591,8 +591,12 @@ class _PodiumAvatar extends StatelessWidget {
           Center(
             child: _Avatar(entry: entry, radius: 30, color: color),
           ),
-          if (entry?.isAdmin == true)
-            const Positioned(left: 2, top: 2, child: _AdminAvatarMarker()),
+          if (_hasPrivilegedRole(entry?.role))
+            Positioned(
+              left: 2,
+              top: 2,
+              child: _RoleAvatarMarker(role: entry?.role ?? 'user'),
+            ),
         ],
       ),
     );
@@ -619,37 +623,50 @@ class _RankingAvatar extends StatelessWidget {
               color: Colors.orange.shade300,
             ),
           ),
-          if (entry.isAdmin)
-            const Positioned(left: 0, top: 0, child: _AdminAvatarMarker()),
+          if (_hasPrivilegedRole(entry.role))
+            Positioned(
+              left: 0,
+              top: 0,
+              child: _RoleAvatarMarker(role: entry.role),
+            ),
         ],
       ),
     );
   }
 }
 
-class _AdminAvatarMarker extends StatelessWidget {
-  const _AdminAvatarMarker();
+class _RoleAvatarMarker extends StatelessWidget {
+  const _RoleAvatarMarker({required this.role});
+
+  final String role;
 
   @override
   Widget build(BuildContext context) {
+    final isDeveloper = role == 'developer';
+    final color = isDeveloper ? const Color(0xFF0F766E) : Colors.deepOrange;
+
     return Tooltip(
-      message: "Admin account",
+      message: isDeveloper ? "Developer account" : "Admin account",
       child: Container(
         width: 20,
         height: 20,
         decoration: BoxDecoration(
-          color: Colors.deepOrange,
+          color: color,
           shape: BoxShape.circle,
           border: Border.all(color: Colors.white, width: 2),
         ),
-        child: const Icon(
-          Icons.admin_panel_settings_rounded,
+        child: Icon(
+          isDeveloper ? Icons.code_rounded : Icons.admin_panel_settings_rounded,
           color: Colors.white,
           size: 12,
         ),
       ),
     );
   }
+}
+
+bool _hasPrivilegedRole(String? role) {
+  return role == 'developer' || role == 'admin';
 }
 
 class _Avatar extends StatelessWidget {

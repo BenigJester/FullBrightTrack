@@ -6,6 +6,7 @@ import 'display_name_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  static String? lastGoogleSignInError;
 
   // Email Login
   Future<User?> login(String email, String password) async {
@@ -38,16 +39,74 @@ class AuthService {
     return result.user;
   }
 
+  Future<User?> linkGoogleToCurrentUser({
+    bool forceAccountSelection = true,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    lastGoogleSignInError = null;
+    try {
+      if (forceAccountSelection) {
+        try {
+          await _googleSignIn.disconnect();
+        } catch (_) {
+          await _googleSignIn.signOut();
+        }
+      }
+
+      final googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        lastGoogleSignInError = 'Google sign-in was cancelled by the user.';
+        return null;
+      }
+
+      if (user.email != null &&
+          googleUser.email.toLowerCase() != user.email!.toLowerCase()) {
+        await _googleSignIn.signOut();
+        throw FirebaseAuthException(
+          code: 'email-mismatch',
+          message:
+              'Please choose the Google account that uses ${user.email}.',
+        );
+      }
+
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final result = await user.linkWithCredential(credential);
+      return result.user;
+    } catch (e) {
+      lastGoogleSignInError = e.toString();
+      debugPrint("Google link error: $e");
+      rethrow;
+    }
+  }
+
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  Future<bool> signInWithGoogle() async {
+  Future<bool> signInWithGoogle({bool forceAccountSelection = true}) async {
+    lastGoogleSignInError = null;
     try {
-      // await _googleSignIn.disconnect();
-      await _googleSignIn.signOut();
+      if (forceAccountSelection) {
+        try {
+          await _googleSignIn.disconnect();
+        } catch (_) {
+          await _googleSignIn.signOut();
+        }
+      } else {
+        await _googleSignIn.signOut();
+      }
 
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
 
-      if (googleUser == null) return false;
+      if (googleUser == null) {
+        lastGoogleSignInError = 'Google sign-in was cancelled by the user.';
+        return false;
+      }
 
       final googleAuth = await googleUser.authentication;
 
@@ -59,6 +118,7 @@ class AuthService {
       await FirebaseAuth.instance.signInWithCredential(credential);
       return true;
     } catch (e) {
+      lastGoogleSignInError = e.toString();
       debugPrint("Google Sign-In Error: $e");
       return false;
     }
@@ -143,6 +203,7 @@ class AuthService {
       'name': nextName,
       'email': refreshed.email,
       'photoUrl': nextPhoto,
+      'role': 'user',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });

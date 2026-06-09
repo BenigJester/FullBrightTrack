@@ -36,14 +36,30 @@ class StreakTab extends StatelessWidget {
 
         child: Column(
           children: [
-            Row(
-              children: [
-                Expanded(child: _heroCard(streak)),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 360;
+                final cards = [_heroCard(streak), _moodStreakCard(moodStreak)];
 
-                const SizedBox(width: 14),
+                if (compact) {
+                  return Column(
+                    children: [
+                      cards.first,
+                      const SizedBox(height: 14),
+                      cards.last,
+                    ],
+                  );
+                }
 
-                Expanded(child: _moodStreakCard(moodStreak)),
-              ],
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: cards.first),
+                    const SizedBox(width: 14),
+                    Expanded(child: cards.last),
+                  ],
+                );
+              },
             ),
 
             const SizedBox(height: 16),
@@ -64,14 +80,14 @@ class StreakTab extends StatelessWidget {
   // ================= HERO =================
 
   Widget _heroCard(Map<String, int> streak) {
-    const color = Colors.deepOrange;
+    const color = Color(0xFFEA580C);
     return Container(
       padding: const EdgeInsets.all(18),
 
       decoration: BoxDecoration(
         color: Colors.white,
 
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: const Color(0xFFE2E8F0)),
 
         boxShadow: [
@@ -93,8 +109,8 @@ class StreakTab extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
 
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(14),
                 ),
 
                 child: const Icon(
@@ -106,12 +122,19 @@ class StreakTab extends StatelessWidget {
 
               const Spacer(),
 
-              const Text(
-                "\u{1F525} Active",
-                style: TextStyle(
-                  color: color,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  "Steps",
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -132,7 +155,7 @@ class StreakTab extends StatelessWidget {
           const SizedBox(height: 6),
 
           const Text(
-            "Current Streak",
+            "Step streak",
             style: TextStyle(
               color: Color(0xFF64748B),
               fontSize: 13,
@@ -175,7 +198,7 @@ class StreakTab extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
 
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: const Color(0xFFE2E8F0)),
 
         boxShadow: [
@@ -197,25 +220,32 @@ class StreakTab extends StatelessWidget {
                 padding: const EdgeInsets.all(8),
 
                 decoration: BoxDecoration(
-                  color: Colors.indigo.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
                 ),
 
                 child: const Icon(
                   Icons.mood_rounded,
-                  color: Colors.indigo,
+                  color: Color(0xFF4F46E5),
                   size: 20,
                 ),
               ),
 
               const Spacer(),
 
-              Text(
-                status,
-                style: const TextStyle(
-                  color: Colors.indigo,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  status,
+                  style: const TextStyle(
+                    color: Color(0xFF4F46E5),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -249,7 +279,7 @@ class StreakTab extends StatelessWidget {
           _miniBestBadge(
             label: "Best",
             value: "${moodStreak["longest"] ?? 0} days",
-            color: Colors.indigo,
+            color: const Color(0xFF4F46E5),
           ),
         ],
       ),
@@ -266,7 +296,7 @@ class StreakTab extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
@@ -326,7 +356,7 @@ class StreakTab extends StatelessWidget {
 
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(22),
 
         border: Border.all(color: consistencyColor.withValues(alpha: 0.15)),
 
@@ -701,8 +731,9 @@ class StreakTab extends StatelessWidget {
       padding: const EdgeInsets.all(18),
 
       decoration: BoxDecoration(
-        color: bgColor,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: iconColor.withValues(alpha: 0.14)),
 
         boxShadow: [
           BoxShadow(
@@ -721,8 +752,8 @@ class StreakTab extends StatelessWidget {
             height: 52,
 
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
+              color: bgColor,
+              borderRadius: BorderRadius.circular(16),
             ),
 
             child: Icon(icon, color: iconColor, size: 28),
