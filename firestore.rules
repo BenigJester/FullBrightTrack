@@ -86,6 +86,9 @@ service cloud.firestore {
             'supportResolutionNote',
             'supportResolutionType',
             'supportResolutionUpdatedAt',
+            'contactPhoneNumber',
+            'contactRelationship',
+            'contactUpdatedAt',
             'resolvedWarningJournals',
             'stressHistory',
             'updatedAt'

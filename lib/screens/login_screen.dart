@@ -168,6 +168,8 @@ class _LoginTabState extends State<LoginTab>
 
       if (success) {
         await createUserIfNotExists();
+      } else if (AuthService.pendingGoogleCredential != null) {
+        await _confirmAndLinkExistingPasswordAccount();
       }
     } catch (e) {
       if (mounted) {
@@ -177,6 +179,92 @@ class _LoginTabState extends State<LoginTab>
       if (mounted) {
         setState(() => isLoading = false);
       }
+    }
+  }
+
+  Future<void> _confirmAndLinkExistingPasswordAccount() async {
+    final googleEmail = AuthService.pendingGoogleEmail?.trim();
+    final email = googleEmail?.isNotEmpty == true
+        ? googleEmail!
+        : emailController.text.trim();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        icon: Container(
+          width: 62,
+          height: 62,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF0EA),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Icon(
+            Icons.link_rounded,
+            color: Color(0xFFFF7A59),
+            size: 32,
+          ),
+        ),
+        title: const Text(
+          'Link existing account?',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          '$email already has an email/password account. Sign in with the password for this email to link Google Sign-In to the same account.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade700, height: 1.45),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: const Color(0xFFFF7A59),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: const Text('Link with password'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    if (!mounted) return;
+    emailController.text = email;
+    final password = passwordController.text.trim();
+    if (password.isEmpty) {
+      showErrorSnackBar('Enter your password first, then try Google again.');
+      return;
+    }
+
+    try {
+      await auth.login(email, password);
+      final credential = AuthService.pendingGoogleCredential;
+      if (credential == null) return;
+      await auth.linkGoogleToCurrentUser(googleCredential: credential);
+      await createUserIfNotExists();
+      if (mounted) showErrorSnackBar('Google Sign-In linked to your account');
+    } on FirebaseAuthException catch (e) {
+      if (mounted) showErrorSnackBar(_getErrorMessage(e));
     }
   }
 

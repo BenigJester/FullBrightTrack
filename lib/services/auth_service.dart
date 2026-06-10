@@ -7,6 +7,8 @@ import 'display_name_service.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static String? lastGoogleSignInError;
+  static AuthCredential? pendingGoogleCredential;
+  static String? pendingGoogleEmail;
 
   // Email Login
   Future<User?> login(String email, String password) async {
@@ -41,12 +43,20 @@ class AuthService {
 
   Future<User?> linkGoogleToCurrentUser({
     bool forceAccountSelection = true,
+    AuthCredential? googleCredential,
   }) async {
     final user = _auth.currentUser;
     if (user == null) return null;
 
     lastGoogleSignInError = null;
     try {
+      if (googleCredential != null) {
+        final result = await user.linkWithCredential(googleCredential);
+        pendingGoogleCredential = null;
+        pendingGoogleEmail = null;
+        return result.user;
+      }
+
       if (forceAccountSelection) {
         try {
           await _googleSignIn.disconnect();
@@ -66,8 +76,7 @@ class AuthService {
         await _googleSignIn.signOut();
         throw FirebaseAuthException(
           code: 'email-mismatch',
-          message:
-              'Please choose the Google account that uses ${user.email}.',
+          message: 'Please choose the Google account that uses ${user.email}.',
         );
       }
 
@@ -90,6 +99,8 @@ class AuthService {
 
   Future<bool> signInWithGoogle({bool forceAccountSelection = true}) async {
     lastGoogleSignInError = null;
+    pendingGoogleCredential = null;
+    pendingGoogleEmail = null;
     try {
       if (forceAccountSelection) {
         try {
@@ -117,11 +128,28 @@ class AuthService {
 
       await FirebaseAuth.instance.signInWithCredential(credential);
       return true;
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'account-exists-with-different-credential') {
+        pendingGoogleCredential = e.credential;
+        pendingGoogleEmail = e.email ?? googleUserEmailFromMessage(e.message);
+      }
+      lastGoogleSignInError = e.toString();
+      debugPrint("Google Sign-In Error: $e");
+      return false;
     } catch (e) {
       lastGoogleSignInError = e.toString();
       debugPrint("Google Sign-In Error: $e");
       return false;
     }
+  }
+
+  static String? googleUserEmailFromMessage(String? message) {
+    if (message == null) return null;
+    final match = RegExp(
+      r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}',
+      caseSensitive: false,
+    ).firstMatch(message);
+    return match?.group(0);
   }
 
   Future<void> logout() async {

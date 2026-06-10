@@ -16,11 +16,11 @@ Current app version: `1.0.1`
 - Task management with deadlines, overdue state, completion, and collapsible sections.
 - Streak dashboard for step and mood consistency.
 - Firestore leaderboard using combined step and mood streak points with short cache on reopen and pull-to-refresh reload.
-- Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, Week/Month charts, warning signals, and alert-target highlighting.
+- Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, Week/Month charts, warning signals, contact calling, and alert-target highlighting.
 - Admin warning resolution workflow and daily stress history charting.
 - Admin warning verification supports support-provided and false-positive outcomes.
 - Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads.
-- Account flows for email/password and Google sign-in, with backend-sent registration confirmation links that create Firebase Auth accounts after confirmation.
+- Account flows for email/password and Google sign-in, with backend-sent registration confirmation links, provider-link confirmation, and account contact information.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, unreachable backend, and very slow internet.
@@ -243,6 +243,8 @@ Account Information switches its action button based on linked Firebase provider
 - Google-only account: `Add Password`
 - Email/password-only account: `Verify with Google Sign-In` and `Reset Password`
 - Account with both providers: `Reset Password`
+
+Users can also maintain a Philippine mobile contact number and relationship label. This contact is mirrored to Admin Monitoring so admins can call a saved support contact when review requires it.
 
 The developer app uses the same account action logic and adds hide/show controls to password fields.
 
@@ -468,7 +470,7 @@ Current test coverage includes:
 - Step counts are saved locally first and synced to Firestore when possible.
 - The leaderboard is Firestore-only and uses public summary documents.
 - Raw AI scoring is consent-gated and requires the backend when AI output is needed.
-- Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, and charted by Week or Month.
+- Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, charted by Week or Month, and can store contact numbers after Philippine mobile validation.
 - Admin FCM alerts require the backend worker route or `ADMIN_ALERT_WORKER_INTERVAL_SECONDS`; client-side token registration alone does not send push notifications.
 - Leaderboard results use a short in-memory cache when reopening the screen; pull-to-refresh bypasses the cache.
 - Journal warning review uses the AI backend and fails visibly if the online service is unavailable. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.

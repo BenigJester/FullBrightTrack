@@ -271,19 +271,59 @@ class _RegisterTabState extends State<RegisterTab> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          title: const Text("Account already exists"),
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          icon: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF0EA),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: const Icon(
+              Icons.link_rounded,
+              color: Color(0xFFFF7A59),
+              size: 34,
+            ),
+          ),
+          title: const Text(
+            "Link existing account?",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           content: Text(
             "$email is already used by another sign-in method. "
-            "Sign in with Google to add this password to the same account?",
+            "Sign in with Google to add this password to the same account before we send any confirmation email.",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey.shade700, height: 1.45),
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("Cancel"),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  elevation: 0,
+                  backgroundColor: const Color(0xFFFF7A59),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: const Text("Link with Google"),
+              ),
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text("Continue"),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Cancel"),
+              ),
             ),
           ],
         );

@@ -184,20 +184,6 @@ class StreakTab extends StatelessWidget {
   // ================= MOOD =================
 
   Widget _moodStreakCard(Map<String, int> moodStreak) {
-    final currentMoodStreak = moodStreak["current"] ?? 0;
-
-    String status;
-
-    if (currentMoodStreak == 0) {
-      status = "\u{1F642} Start";
-    } else if (currentMoodStreak < 3) {
-      status = "\u{1F331} Growing";
-    } else if (currentMoodStreak < 7) {
-      status = "\u{1F49B} Positive";
-    } else {
-      status = "\u{1F33F} Balanced";
-    }
-
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 170;
@@ -258,7 +244,7 @@ class StreakTab extends StatelessWidget {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        status,
+                        "Mood",
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(

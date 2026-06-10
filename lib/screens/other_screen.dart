@@ -437,13 +437,26 @@ class AccountInformationScreen extends StatefulWidget {
 }
 
 class _AccountInformationScreenState extends State<AccountInformationScreen> {
+  static const _contactRelationships = [
+    'Student',
+    'Mother',
+    'Father',
+    'Guardian',
+    'Sibling',
+    'Relative',
+    'Other',
+  ];
+
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  String _contactRelationship = _contactRelationships.first;
   bool _saving = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _contactExpanded = false;
 
   @override
   void initState() {
@@ -452,15 +465,55 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     final user = FirebaseAuth.instance.currentUser;
     _nameController.text = _firstName(user?.displayName);
     _emailController.text = user?.email ?? "";
+    _loadContactInformation();
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadContactInformation() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      final monitoringDoc = await FirebaseFirestore.instance
+          .collection('admin_monitoring')
+          .doc(user.uid)
+          .get();
+
+      final userData = userDoc.data() ?? const <String, dynamic>{};
+      final monitoringData = monitoringDoc.data() ?? const <String, dynamic>{};
+      final phone =
+          (userData['contactPhoneNumber'] as String?)?.trim().isNotEmpty == true
+          ? (userData['contactPhoneNumber'] as String).trim()
+          : (monitoringData['contactPhoneNumber'] as String?)?.trim() ?? '';
+      final relationship =
+          (userData['contactRelationship'] as String?)?.trim().isNotEmpty ==
+              true
+          ? (userData['contactRelationship'] as String).trim()
+          : (monitoringData['contactRelationship'] as String?)?.trim() ?? '';
+
+      if (!mounted) return;
+      setState(() {
+        _phoneController.text = phone;
+        if (_contactRelationships.contains(relationship)) {
+          _contactRelationship = relationship;
+        }
+      });
+    } catch (error) {
+      debugPrint('Contact information load error: $error');
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -469,23 +522,51 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
 
     final name = DisplayNameService.normalize(_nameController.text);
     final error = DisplayNameService.validationError(name);
+    final phoneInput = _phoneController.text.trim();
+    final normalizedPhone = phoneInput.isEmpty
+        ? ''
+        : _normalizePhilippineMobile(phoneInput);
 
     if (error != null) {
       _showMessage(error);
       return;
     }
 
+    if (phoneInput.isNotEmpty && normalizedPhone == null) {
+      _showMessage("Enter a valid Philippine mobile number");
+      return;
+    }
+
     _nameController.text = name;
+    _phoneController.text = normalizedPhone ?? '';
     setState(() => _saving = true);
 
     try {
       await user.updateDisplayName(name);
+      final contactData = {
+        'contactPhoneNumber': normalizedPhone ?? '',
+        'contactRelationship':
+            normalizedPhone == null || normalizedPhone.isEmpty
+            ? ''
+            : _contactRelationship,
+        'contactUpdatedAt': FieldValue.serverTimestamp(),
+      };
+
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'name': name,
         'email': user.email,
         'photoUrl': user.photoURL,
+        ...contactData,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      await FirebaseFirestore.instance
+          .collection('admin_monitoring')
+          .doc(user.uid)
+          .set({
+            'email': user.email,
+            ...contactData,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
 
       await user.reload();
 
@@ -911,6 +992,17 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                     enabled: false,
                   ),
                   const SizedBox(height: 14),
+                  _input(
+                    controller: _phoneController,
+                    label: "Contact number",
+                    icon: Icons.phone_rounded,
+                    helperText:
+                        "Philippine mobile: 09XXXXXXXXX or +639XXXXXXXXX",
+                    maxLength: 16,
+                  ),
+                  const SizedBox(height: 14),
+                  _contactRelationshipCard(),
+                  const SizedBox(height: 14),
                   _accountSummaryCard(
                     provider: provider,
                     providers: providers,
@@ -1061,6 +1153,59 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
       ],
     );
   }
+
+  Widget _contactRelationshipCard() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: _contactExpanded,
+        onExpansionChanged: (value) => setState(() => _contactExpanded = value),
+        leading: const Icon(
+          Icons.family_restroom_rounded,
+          color: Colors.deepOrange,
+        ),
+        title: const Text(
+          "Contact relationship",
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(_contactRelationship),
+        children: [
+          for (final relationship in _contactRelationships)
+            ListTile(
+              onTap: _saving
+                  ? null
+                  : () => setState(() => _contactRelationship = relationship),
+              title: Text(relationship),
+              trailing: _contactRelationship == relationship
+                  ? const Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.deepOrange,
+                    )
+                  : const Icon(Icons.circle_outlined),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String? _normalizePhilippineMobile(String? raw) {
+  final cleaned = (raw ?? '').replaceAll(RegExp(r'[\s\-\(\)]'), '');
+  if (RegExp(r'^09\d{9}$').hasMatch(cleaned)) {
+    return '+63${cleaned.substring(1)}';
+  }
+  if (RegExp(r'^\+639\d{9}$').hasMatch(cleaned)) {
+    return cleaned;
+  }
+  if (RegExp(r'^639\d{9}$').hasMatch(cleaned)) {
+    return '+$cleaned';
+  }
+  return null;
 }
 
 class NotificationSettingsScreen extends StatefulWidget {

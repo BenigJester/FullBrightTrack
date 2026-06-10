@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/display_name_service.dart';
 import '../services/admin_alert_service.dart';
@@ -230,6 +231,9 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       uid: doc.id,
       name: _displayName(data),
       email: (data['email'] as String?)?.trim() ?? '',
+      contactPhoneNumber: (data['contactPhoneNumber'] as String?)?.trim() ?? '',
+      contactRelationship:
+          (data['contactRelationship'] as String?)?.trim() ?? '',
       photoUrl: data['photoUrl'] as String?,
       aiUpdatedAt: _timestampFromData(data),
       stressScore: modelResult.score,
@@ -1133,6 +1137,28 @@ class _StudentCard extends StatelessWidget {
   final bool highlighted;
   final Future<void> Function() onResolved;
 
+  Future<void> _contactStudent(BuildContext context) async {
+    var phone = _normalizePhilippineMobile(student.contactPhoneNumber);
+
+    if (phone == null) {
+      final saved = await showDialog<_ContactInfo>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _ContactInfoDialog(student: student),
+      );
+      if (saved == null || !context.mounted) return;
+      phone = saved.phoneNumber;
+    }
+
+    final uri = Uri(scheme: 'tel', path: phone);
+    final launched = await launchUrl(uri);
+    if (launched || !context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open the phone dialer')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final points = _studentPoints(student, range);
@@ -1162,6 +1188,7 @@ class _StudentCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               CircleAvatar(
                 radius: 24,
@@ -1173,43 +1200,24 @@ class _StudentCard extends StatelessWidget {
                     : null,
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      student.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    Text(
-                      student.email.isEmpty ? student.uid : student.email,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.grey.shade600),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'Status: ${_formatStatusTimestamp(student.aiUpdatedAt)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: _StudentIdentityBlock(student: student)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
               _RankBadge(
                 rank: student.stressRank,
                 score: student.stressScore,
                 confidence: student.mlFeatures.modelResult.confidence,
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _contactStudent(context),
+                icon: const Icon(Icons.phone_rounded),
+                label: const Text("Contact"),
               ),
             ],
           ),
@@ -1264,6 +1272,239 @@ class _StudentCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _StudentIdentityBlock extends StatelessWidget {
+  const _StudentIdentityBlock({required this.student});
+
+  final _StudentWellnessSummary student;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          student.name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        const SizedBox(height: 3),
+        SelectableText(
+          student.email.isEmpty ? student.uid : student.email,
+          style: TextStyle(color: Colors.grey.shade600, height: 1.25),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          'Status: ${_formatStatusTimestamp(student.aiUpdatedAt)}',
+          softWrap: true,
+          style: const TextStyle(
+            color: Color(0xFF64748B),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            height: 1.3,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContactInfoDialog extends StatefulWidget {
+  const _ContactInfoDialog({required this.student});
+
+  final _StudentWellnessSummary student;
+
+  @override
+  State<_ContactInfoDialog> createState() => _ContactInfoDialogState();
+}
+
+class _ContactInfoDialogState extends State<_ContactInfoDialog> {
+  static const _relationships = [
+    'Student',
+    'Mother',
+    'Father',
+    'Guardian',
+    'Sibling',
+    'Relative',
+    'Other',
+  ];
+
+  final _formKey = GlobalKey<FormState>();
+  final _phoneController = TextEditingController();
+  String _relationship = _relationships.first;
+  bool _saving = false;
+  bool _expanded = true;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_saving || _formKey.currentState?.validate() != true) return;
+
+    final phone = _normalizePhilippineMobile(_phoneController.text);
+    if (phone == null) return;
+
+    setState(() => _saving = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('admin_monitoring')
+          .doc(widget.student.uid)
+          .set({
+            'contactPhoneNumber': phone,
+            'contactRelationship': _relationship,
+            'contactUpdatedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        _ContactInfo(phoneNumber: phone, relationship: _relationship),
+      );
+    } on FirebaseException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not save contact: ${error.code}')),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text(
+          'Add contact number',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Form(
+          key: _formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${widget.student.name} does not have a saved contact number. Add a Philippine mobile number before calling.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    labelText: 'Philippine mobile number',
+                    hintText: '09XXXXXXXXX or +639XXXXXXXXX',
+                    prefixIcon: const Icon(Icons.phone_rounded),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  validator: (value) =>
+                      _normalizePhilippineMobile(value) == null
+                      ? 'Enter a valid Philippine mobile number.'
+                      : null,
+                  onFieldSubmitted: (_) => _save(),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F8FC),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: ExpansionTile(
+                    initiallyExpanded: _expanded,
+                    onExpansionChanged: (value) =>
+                        setState(() => _expanded = value),
+                    title: const Text(
+                      'Whose number is this?',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    children: [
+                      for (final relationship in _relationships)
+                        ListTile(
+                          enabled: !_saving,
+                          onTap: _saving
+                              ? null
+                              : () {
+                                  setState(() => _relationship = relationship);
+                                },
+                          title: Text(relationship),
+                          trailing: _relationship == relationship
+                              ? const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Colors.deepOrange,
+                                )
+                              : const Icon(Icons.circle_outlined),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: _saving ? null : _save,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.deepOrange,
+              foregroundColor: Colors.white,
+            ),
+            icon: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.save_rounded),
+            label: const Text('Save and call'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContactInfo {
+  const _ContactInfo({required this.phoneNumber, required this.relationship});
+
+  final String phoneNumber;
+  final String relationship;
+}
+
+String? _normalizePhilippineMobile(String? raw) {
+  final cleaned = (raw ?? '').replaceAll(RegExp(r'[\s\-\(\)]'), '');
+  if (RegExp(r'^09\d{9}$').hasMatch(cleaned)) {
+    return '+63${cleaned.substring(1)}';
+  }
+  if (RegExp(r'^\+639\d{9}$').hasMatch(cleaned)) {
+    return cleaned;
+  }
+  if (RegExp(r'^639\d{9}$').hasMatch(cleaned)) {
+    return '+$cleaned';
+  }
+  return null;
 }
 
 class _WarningSnippetPanel extends StatelessWidget {
@@ -2210,7 +2451,7 @@ class _RankBadge extends StatelessWidget {
     final label = isResolved
         ? "Resolved"
         : confidence > 0
-        ? rank
+        ? score.toStringAsFixed(0)
         : "Pending";
 
     return Container(
@@ -2223,13 +2464,12 @@ class _RankBadge extends StatelessWidget {
         children: [
           Text(
             label,
-            style: TextStyle(color: color, fontWeight: FontWeight.bold),
-          ),
-          if (!isResolved && confidence > 0)
-            Text(
-              score.toStringAsFixed(0),
-              style: TextStyle(color: color, fontSize: 12),
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: confidence > 0 && !isResolved ? 18 : 13,
             ),
+          ),
         ],
       ),
     );
@@ -2304,6 +2544,8 @@ class _StudentWellnessSummary {
     required this.uid,
     required this.name,
     required this.email,
+    required this.contactPhoneNumber,
+    required this.contactRelationship,
     required this.photoUrl,
     required this.aiUpdatedAt,
     required this.stressScore,
@@ -2330,6 +2572,8 @@ class _StudentWellnessSummary {
   final String uid;
   final String name;
   final String email;
+  final String contactPhoneNumber;
+  final String contactRelationship;
   final String? photoUrl;
   final DateTime? aiUpdatedAt;
   final double stressScore;
