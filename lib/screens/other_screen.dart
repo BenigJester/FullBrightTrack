@@ -271,7 +271,7 @@ class _MoreScreenState extends State<MoreScreen> {
                         showAboutDialog(
                           context: context,
                           applicationName: "Productivity and Wellbeing",
-                          applicationVersion: "0.4.0-alpha+5",
+                          applicationVersion: "1.0.0",
                         );
                       },
                     ),
@@ -725,124 +725,127 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-        return AlertDialog(
-          backgroundColor: const Color(0xFFF7F8FC),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
-          contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          title: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(
-                  Icons.add_moderator_outlined,
-                  color: Colors.deepOrange,
-                ),
+            return AlertDialog(
+              backgroundColor: const Color(0xFFF7F8FC),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
               ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  "Add Password",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          content: _settingsCard(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  "Create a password so this Google account can also sign in with email.",
-                  style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-                ),
-                const SizedBox(height: 16),
-                _input(
-                  controller: _passwordController,
-                  label: "Password",
-                  icon: Icons.lock_outline_rounded,
-                  obscureText: _obscurePassword,
-                  suffixIcon: IconButton(
-                    tooltip: _obscurePassword
-                        ? "Show password"
-                        : "Hide password",
-                    onPressed: () => setDialogState(
-                      () => _obscurePassword = !_obscurePassword,
+              titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+              contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 8),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              title: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
+                    child: const Icon(
+                      Icons.add_moderator_outlined,
+                      color: Colors.deepOrange,
                     ),
                   ),
-                ),
-                const SizedBox(height: 12),
-                _input(
-                  controller: _confirmPasswordController,
-                  label: "Confirm password",
-                  icon: Icons.lock_person_outlined,
-                  obscureText: _obscureConfirmPassword,
-                  suffixIcon: IconButton(
-                    tooltip: _obscureConfirmPassword
-                        ? "Show password"
-                        : "Hide password",
-                    onPressed: () => setDialogState(
-                      () => _obscureConfirmPassword =
-                          !_obscureConfirmPassword,
-                    ),
-                    icon: Icon(
-                      _obscureConfirmPassword
-                          ? Icons.visibility_outlined
-                          : Icons.visibility_off_outlined,
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      "Add Password",
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
+                ],
+              ),
+              content: _settingsCard(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      "Create a password so this Google account can also sign in with email.",
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _input(
+                      controller: _passwordController,
+                      label: "Password",
+                      icon: Icons.lock_outline_rounded,
+                      obscureText: _obscurePassword,
+                      suffixIcon: IconButton(
+                        tooltip: _obscurePassword
+                            ? "Show password"
+                            : "Hide password",
+                        onPressed: () => setDialogState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _input(
+                      controller: _confirmPasswordController,
+                      label: "Confirm password",
+                      icon: Icons.lock_person_outlined,
+                      obscureText: _obscureConfirmPassword,
+                      suffixIcon: IconButton(
+                        tooltip: _obscureConfirmPassword
+                            ? "Show password"
+                            : "Hide password",
+                        onPressed: () => setDialogState(
+                          () => _obscureConfirmPassword =
+                              !_obscureConfirmPassword,
+                        ),
+                        icon: Icon(
+                          _obscureConfirmPassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  label: const Text("Cancel"),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.deepOrange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  onPressed: () {
+                    final password = _passwordController.text.trim();
+                    final confirm = _confirmPasswordController.text.trim();
+
+                    if (password.length < 6) {
+                      _showMessage("Password must be at least 6 characters");
+                      return;
+                    }
+
+                    if (password != confirm) {
+                      _showMessage("Passwords do not match");
+                      return;
+                    }
+
+                    Navigator.pop(context, password);
+                  },
+                  icon: const Icon(Icons.check_rounded),
+                  label: const Text("Add"),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton.icon(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.close_rounded),
-              label: const Text("Cancel"),
-            ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.deepOrange,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              onPressed: () {
-                final password = _passwordController.text.trim();
-                final confirm = _confirmPasswordController.text.trim();
-
-                if (password.length < 6) {
-                  _showMessage("Password must be at least 6 characters");
-                  return;
-                }
-
-                if (password != confirm) {
-                  _showMessage("Passwords do not match");
-                  return;
-                }
-
-                Navigator.pop(context, password);
-              },
-              icon: const Icon(Icons.check_rounded),
-              label: const Text("Add"),
-            ),
-          ],
-        );
+            );
           },
         );
       },

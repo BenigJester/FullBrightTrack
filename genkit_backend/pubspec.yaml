@@ -1,7 +1,7 @@
 name: fullbright_stress_ai
 description: Groq backend for minimized FullBrightTrack stress scoring.
 publish_to: 'none'
-version: 0.2.0
+version: 1.0.0
 
 environment:
   sdk: ^3.10.8
