@@ -4,7 +4,7 @@ This is the server-side AI endpoint for Admin Monitoring stress scoring and the 
 
 Backend version: `0.2.0`
 
-It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration and fallback. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. If the user has not agreed to raw data processing in the app, the Flutter client uses local fallback scoring instead of calling this endpoint.
+It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. AI-dependent requests require a reachable backend and Groq configuration.
 
 The backend still returns compact structured scoring output only:
 
@@ -30,7 +30,6 @@ The backend can also run thesis-demo account and admin alert workflows:
 
 - `/start-registration` creates a pending email confirmation record.
 - `/confirm-registration` shows a confirmation page; the Firebase Auth account is created only after the user presses the confirmation button.
-- `/complete-registration` lets the Flutter app verify an already confirmed registration request.
 - `/request-password-reset` creates a one-time reset token for an existing Firebase Auth user.
 - `/confirm-password-reset` validates a reset token and shows the reset form.
 - `/complete-password-reset` updates the Firebase Auth password after the new password and confirmation match.
@@ -69,7 +68,7 @@ Use these on both local PowerShell and Render:
 
 | Variable | Required | How to use |
 | --- | --- | --- |
-| `GROQ_API_KEY` | Optional for startup, required for Groq AI | Groq console API key. If empty, backend uses local fallback scoring. |
+| `GROQ_API_KEY` | Required for AI | Groq console API key. If empty, AI routes return an error instead of fallback output. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Required for account, password, FCM, developer delete | Paste the full service account JSON as one environment variable. Locally, load it with `Get-Content ".\service-account.json" -Raw`. |
 | `FIREBASE_WEB_API_KEY` | Required for automatic Firebase Auth account creation | Firebase Web API key from Google Cloud or Firebase project settings. Keep it on the backend, not inside Flutter. |
 | `PUBLIC_BASE_URL` | Required for online email links | Local: `http://localhost:8080`. Render: `https://YOUR_RENDER_SERVICE.onrender.com`. |
@@ -80,11 +79,9 @@ Use these on both local PowerShell and Render:
 | `ADMIN_NOTIFICATION_TEST_SECRET` | Optional | If set, `/test-admin-notification` requires header `x-admin-test-secret`. |
 | `EMAIL_DEBUG_RETURN_LINK` | Optional local testing only | Set to `true` to include confirmation/reset links in API responses. |
 
-This backend uses Groq, not Google Gemini. Do not run it with `genkit start`
-or a Google/Gemini provider command. If you see a message about a missing
-Google API key, you are running a different tool or old backend command. For
-this server, only `GROQ_API_KEY` is used for AI calls. If `GROQ_API_KEY` is not
-set, the server still starts and uses local fallback scoring.
+This backend uses Groq. Run it with `dart run bin/server.dart`. AI routes use
+`GROQ_API_KEY`; if it is not set, the server still starts, but AI routes return
+an error.
 
 Firebase account and FCM endpoints require `FIREBASE_SERVICE_ACCOUNT_JSON`. Automatic account creation from the confirmation link uses the service account plus `FIREBASE_WEB_API_KEY` to identify the Firebase project. Email confirmation on Render free services should use the Brevo HTTPS API because Render blocks outbound SMTP ports on free web services. Keep service account JSON and email API keys on the backend only. Never put them in Flutter.
 
@@ -209,19 +206,6 @@ The backend stores records under:
 pending_registrations/{requestId}
 ```
 
-`/complete-registration` is kept only as a verification endpoint for the Flutter app:
-
-```powershell
-$body = @{
-  requestId = "REQUEST_ID"
-  email = "student@example.com"
-} | ConvertTo-Json -Compress
-
-Invoke-RestMethod -Uri "http://localhost:8080/complete-registration" -Method Post -ContentType "application/json" -Body $body
-```
-
-If confirmed, the endpoint reports that the email is already ready for sign-in.
-
 ## How To Test Password Reset
 
 ```powershell
@@ -340,9 +324,7 @@ Optional model override:
 $env:GROQ_MODEL="llama-3.3-70b-versatile"
 ```
 
-The backend also has a deterministic local fallback if Groq is unavailable, returns an invalid response, or if only the local baseline is usable. The local fallback never calls Groq.
-
-To protect Groq free-tier token limits, repeated `/stress` scoring calls use a short cooldown. If the same payload repeats during cooldown, the backend can reuse the latest Groq result. If no cached Groq result is available, it returns a `server-local-fallback` response with a `fallbackReason`. The Flutter app preserves the last real AI result when available so temporary cooldown fallback does not overwrite Admin Monitoring or AI Analysis with local scoring.
+AI routes now fail with an error if Groq is unavailable, returns an invalid response, or is not configured. This keeps online AI results explicit instead of silently substituting fallback scoring.
 
 ## Deploy To Render
 

@@ -261,7 +261,7 @@ class WellnessSignalService {
             adminResolutionContext: adminResolutionContext,
           )
         : LocalStressModelService.analyze(input);
-    final result = _resultForStorage(analyzedResult, previousMonitoringData);
+    final result = analyzedResult;
     final displayName = DisplayNameService.cleanForDisplay(
       profileData['name'] as String? ?? user.displayName,
       fallback: 'Student',
@@ -314,10 +314,8 @@ class WellnessSignalService {
       'aiMoodStatus': _moodStatusFor(result),
       'aiMoodStatusUpdatedAt': FieldValue.serverTimestamp(),
       'stressHistory': stressHistory,
-      'source':
-          result.modelVersion == LocalStressModelService.modelVersion ||
-              result.modelVersion.startsWith('server-local-fallback')
-          ? 'local_fallback'
+      'source': result.modelVersion == LocalStressModelService.modelVersion
+          ? 'local_no_raw_consent'
           : 'ai_raw_payload',
       'rawAiDataConsent': hasRawAiConsent,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -346,48 +344,6 @@ class WellnessSignalService {
       (runningTotal, steps) => runningTotal + steps,
     );
     return total / positiveSteps.length;
-  }
-
-  static StressModelResult _resultForStorage(
-    StressModelResult analyzedResult,
-    Map<String, dynamic> previousMonitoringData,
-  ) {
-    if (!_isTemporaryBackendFallback(analyzedResult)) {
-      return analyzedResult;
-    }
-
-    final previousScore = (previousMonitoringData['stressScore'] as num?)
-        ?.toDouble();
-    final previousRank = previousMonitoringData['stressRank'] as String?;
-    final previousConfidence = (previousMonitoringData['confidence'] as num?)
-        ?.toDouble();
-    final previousModelVersion =
-        previousMonitoringData['modelVersion'] as String?;
-    if (previousScore == null ||
-        previousRank == null ||
-        previousConfidence == null ||
-        previousModelVersion == null ||
-        previousModelVersion.startsWith('server-local-fallback') ||
-        previousModelVersion == LocalStressModelService.modelVersion) {
-      return analyzedResult;
-    }
-
-    return StressModelResult(
-      score: previousScore.clamp(0, 100).toDouble(),
-      rank: previousRank,
-      confidence: previousConfidence.clamp(0, 1).toDouble(),
-      modelVersion: '$previousModelVersion+preserved-during-cooldown',
-      rationale:
-          (previousMonitoringData['rationale'] as List?)
-              ?.whereType<String>()
-              .take(3)
-              .toList() ??
-          analyzedResult.rationale,
-    );
-  }
-
-  static bool _isTemporaryBackendFallback(StressModelResult result) {
-    return result.modelVersion.startsWith('server-local-fallback');
   }
 
   static JournalWarningSeverity _maxSeverity(

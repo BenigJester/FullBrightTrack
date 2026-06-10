@@ -36,30 +36,20 @@ class StreakTab extends StatelessWidget {
 
         child: Column(
           children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final compact = constraints.maxWidth < 360;
-                final cards = [_heroCard(streak), _moodStreakCard(moodStreak)];
-
-                if (compact) {
-                  return Column(
-                    children: [
-                      cards.first,
-                      const SizedBox(height: 14),
-                      cards.last,
-                    ],
-                  );
-                }
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: cards.first),
-                    const SizedBox(width: 14),
-                    Expanded(child: cards.last),
-                  ],
-                );
-              },
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AspectRatio(aspectRatio: 1, child: _heroCard(streak)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: _moodStreakCard(moodStreak),
+                  ),
+                ),
+              ],
             ),
 
             const SizedBox(height: 16),
@@ -81,97 +71,113 @@ class StreakTab extends StatelessWidget {
 
   Widget _heroCard(Map<String, int> streak) {
     const color = Color(0xFFEA580C);
-    return Container(
-      padding: const EdgeInsets.all(18),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 170;
+        final padding = compact ? 12.0 : 16.0;
+        final topGap = compact ? 10.0 : 14.0;
+        final labelGap = compact ? 4.0 : 6.0;
+        final badgeGap = compact ? 8.0 : 10.0;
 
-      decoration: BoxDecoration(
-        color: Colors.white,
+        return Container(
+          padding: EdgeInsets.all(padding),
 
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+          decoration: BoxDecoration(
+            color: Colors.white,
 
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
           ),
-        ],
-      ),
 
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
 
-        children: [
-          Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(compact ? 7 : 8),
 
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+
+                    child: Icon(
+                      Icons.local_fire_department_rounded,
+                      color: color,
+                      size: compact ? 18 : 20,
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 7 : 9,
+                      vertical: compact ? 4 : 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      "Steps",
+                      style: TextStyle(
+                        color: color,
+                        fontSize: compact ? 11 : 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: topGap),
+
+              Text(
+                "${streak["current"]}",
+                style: TextStyle(
+                  color: const Color(0xFF111827),
+                  fontSize: compact ? 28 : 32,
+                  fontWeight: FontWeight.bold,
+                  height: 1,
                 ),
+              ),
 
-                child: const Icon(
-                  Icons.local_fire_department_rounded,
-                  color: color,
-                  size: 20,
+              SizedBox(height: labelGap),
+
+              Text(
+                "Step streak",
+                style: TextStyle(
+                  color: const Color(0xFF64748B),
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
 
               const Spacer(),
 
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  "Steps",
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+              SizedBox(height: badgeGap),
+
+              _miniBestBadge(
+                label: "Best",
+                value: "${streak["longest"] ?? 0} days",
+                color: color,
+                compact: compact,
               ),
             ],
           ),
-
-          const SizedBox(height: 18),
-
-          Text(
-            "${streak["current"]}",
-            style: const TextStyle(
-              color: Color(0xFF111827),
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
-              height: 1,
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          const Text(
-            "Step streak",
-            style: TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-
-          const SizedBox(height: 14),
-
-          _miniBestBadge(
-            label: "Best",
-            value: "${streak["longest"] ?? 0} days",
-            color: color,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -192,97 +198,117 @@ class StreakTab extends StatelessWidget {
       status = "\u{1F33F} Balanced";
     }
 
-    return Container(
-      padding: const EdgeInsets.all(18),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 170;
+        final padding = compact ? 12.0 : 16.0;
+        final topGap = compact ? 10.0 : 14.0;
+        final labelGap = compact ? 4.0 : 6.0;
+        final badgeGap = compact ? 8.0 : 10.0;
 
-      decoration: BoxDecoration(
-        color: Colors.white,
+        return Container(
+          padding: EdgeInsets.all(padding),
 
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+          decoration: BoxDecoration(
+            color: Colors.white,
 
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 5),
+              ),
+            ],
           ),
-        ],
-      ),
 
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
 
-        children: [
-          Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(compact ? 7 : 8),
 
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+
+                    child: Icon(
+                      Icons.mood_rounded,
+                      color: const Color(0xFF4F46E5),
+                      size: compact ? 18 : 20,
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  Flexible(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 7 : 9,
+                        vertical: compact ? 4 : 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: const Color(0xFF4F46E5),
+                          fontSize: compact ? 11 : 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              SizedBox(height: topGap),
+
+              Text(
+                "${moodStreak["current"]}",
+                style: TextStyle(
+                  color: const Color(0xFF111827),
+                  fontSize: compact ? 28 : 32,
+                  fontWeight: FontWeight.bold,
+                  height: 1,
                 ),
+              ),
 
-                child: const Icon(
-                  Icons.mood_rounded,
-                  color: Color(0xFF4F46E5),
-                  size: 20,
+              SizedBox(height: labelGap),
+
+              Text(
+                "Mood Streak",
+                style: TextStyle(
+                  color: const Color(0xFF64748B),
+                  fontSize: compact ? 12 : 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
 
               const Spacer(),
 
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4F46E5).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  status,
-                  style: const TextStyle(
-                    color: Color(0xFF4F46E5),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+              SizedBox(height: badgeGap),
+
+              _miniBestBadge(
+                label: "Best",
+                value: "${moodStreak["longest"] ?? 0} days",
+                color: const Color(0xFF4F46E5),
+                compact: compact,
               ),
             ],
           ),
-
-          const SizedBox(height: 18),
-
-          Text(
-            "${moodStreak["current"]}",
-            style: const TextStyle(
-              color: Color(0xFF111827),
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
-              height: 1,
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          const Text(
-            "Mood Streak",
-            style: TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-
-          const SizedBox(height: 14),
-
-          _miniBestBadge(
-            label: "Best",
-            value: "${moodStreak["longest"] ?? 0} days",
-            color: const Color(0xFF4F46E5),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -290,10 +316,14 @@ class StreakTab extends StatelessWidget {
     required String label,
     required String value,
     required Color color,
+    bool compact = false,
   }) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 10,
+        vertical: compact ? 6 : 8,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(16),
@@ -302,18 +332,18 @@ class StreakTab extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 12,
+            style: TextStyle(
+              color: const Color(0xFF64748B),
+              fontSize: compact ? 11 : 12,
               fontWeight: FontWeight.w600,
             ),
           ),
           const Spacer(),
           Text(
             value,
-            style: const TextStyle(
-              color: Color(0xFF111827),
-              fontSize: 12,
+            style: TextStyle(
+              color: const Color(0xFF111827),
+              fontSize: compact ? 11 : 12,
               fontWeight: FontWeight.bold,
             ),
           ),

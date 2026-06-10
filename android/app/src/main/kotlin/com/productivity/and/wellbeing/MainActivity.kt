@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -21,6 +23,7 @@ import java.time.LocalDate
 class MainActivity : FlutterActivity() {
     private val channelName = "fullbright_track/step_service"
     private val deviceReadinessChannelName = "fullbright_track/device_readiness"
+    private val connectivityChannelName = "fullbright_track/connectivity"
     private var activityPermissionResult: MethodChannel.Result? = null
     private var notificationPermissionResult: MethodChannel.Result? = null
 
@@ -73,6 +76,13 @@ class MainActivity : FlutterActivity() {
                 "permissionDiagnostics" -> result.success(permissionDiagnostics())
                 "requestActivityRecognition" -> requestActivityRecognition(result)
                 "requestPostNotifications" -> requestPostNotifications(result)
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, connectivityChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "status" -> result.success(connectivityStatus())
                 else -> result.notImplemented()
             }
         }
@@ -300,6 +310,46 @@ class MainActivity : FlutterActivity() {
             "notificationGranted" to hasNotificationPermission(),
             "notificationCanRequest" to canRequestPermission(Manifest.permission.POST_NOTIFICATIONS),
             "notificationShouldShowRationale" to shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+        )
+    }
+
+    private fun connectivityStatus(): Map<String, Any> {
+        val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork
+        val capabilities = network?.let { connectivityManager.getNetworkCapabilities(it) }
+        val transports = mutableListOf<String>()
+
+        if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) {
+            transports.add("wifi")
+        }
+        if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) {
+            transports.add("cellular")
+        }
+        if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true) {
+            transports.add("ethernet")
+        }
+        if (capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) {
+            transports.add("vpn")
+        }
+
+        val validated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        val hasInternetCapability = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val downstreamKbps = capabilities?.linkDownstreamBandwidthKbps ?: 0
+        val upstreamKbps = capabilities?.linkUpstreamBandwidthKbps ?: 0
+        val airplaneMode = Settings.Global.getInt(
+            contentResolver,
+            Settings.Global.AIRPLANE_MODE_ON,
+            0
+        ) == 1
+
+        return mapOf(
+            "airplaneMode" to airplaneMode,
+            "hasNetwork" to (network != null),
+            "hasInternetCapability" to hasInternetCapability,
+            "validated" to validated,
+            "transports" to transports,
+            "downstreamKbps" to downstreamKbps,
+            "upstreamKbps" to upstreamKbps
         )
     }
 

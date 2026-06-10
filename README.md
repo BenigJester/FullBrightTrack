@@ -19,10 +19,11 @@ Current app version: `0.4.0-alpha+5`
 - Admin Monitoring for wellbeing summaries, stress ranking, rank filters, confidence sorting, paged review, Week/Month charts, warning signals, and alert-target highlighting.
 - Admin warning resolution workflow and daily stress history charting.
 - Admin warning verification supports support-provided and false-positive outcomes.
-- Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads and local fallback scoring.
+- Groq-backed AI stress estimate endpoint with consent-gated raw wellness payloads.
 - Account flows for email/password and Google sign-in, with backend-sent registration confirmation links that create Firebase Auth accounts after confirmation.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
+- App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, unreachable backend, and very slow internet.
 - Step reminder notification support with 1, 2, or 3 hour intervals.
 - Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
 - Daily motivation popup.
@@ -138,7 +139,7 @@ flutter pub get
 - Set `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_WEB_API_KEY`, `PUBLIC_BASE_URL`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` on the backend if registration confirmation emails are enabled.
 - Use both the deployed backend base URL and `/stress` endpoint when running or building Flutter.
 - Debug builds default to `http://10.0.2.2:8080/stress` if `GENKIT_STRESS_FLOW_URL` is not provided, which is useful for Android emulator testing against a local backend.
-- Users must agree to the raw wellness data processing consent on login before raw mood, journal, task, and step records are sent to the AI backend. Without consent, the app uses local fallback scoring.
+- Users must agree to the raw wellness data processing consent on login before raw mood, journal, task, and step records are sent to the AI backend. AI-dependent online reviews require internet access and a reachable backend.
 
 4. Configure admin FCM alerts, optional but recommended for admin safety review:
 
@@ -275,7 +276,7 @@ These summaries contain numeric wellbeing signals, weighted journal warning seve
 
 When a user gives raw AI processing consent at login, recent raw mood, journal, task, and step records may be sent to the configured AI backend for scoring. That raw payload is used by the backend request and is not copied into `admin_monitoring`.
 
-If the Groq backend temporarily returns a server-local fallback during cooldown, the app preserves the last real AI result when available so AI Analysis and Admin Monitoring do not visibly drop to local scoring during rapid updates.
+If online AI is unavailable, AI-dependent actions fail visibly instead of silently replacing the result with fallback scoring. Native step tracking remains offline-capable and syncs when Firestore is reachable.
 
 Privacy-safe admin alert records are stored under:
 
@@ -427,12 +428,15 @@ Important Android permissions:
 - `RECEIVE_BOOT_COMPLETED`
 - `WAKE_LOCK`
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
+- `ACCESS_NETWORK_STATE`
 
 The app also includes `StepBootReceiver.kt` so the service can restart after boot/package update when Android allows it.
 
 After login, the app checks notification, physical activity, and battery optimization status. If any access is denied or restricted, it shows a user-friendly dialog explaining which features are limited. The `Allow` buttons request the matching Android permission without automatically redirecting to App Info. Explicit management links remain available in More > Permissions through `Manage / disable` and `Choose battery mode`.
 
 When both physical activity and notification access are granted, the app starts the step foreground service so Android can show the persistent step-tracking notification. Battery unrestricted access uses Android's direct allow dialog and refreshes the access prompt when the app resumes.
+
+The app also watches internet status while the user is inside the app. If online services become unavailable, it shows a professional dialog with `Retry connection` and `Exit app`. Android reports airplane mode, missing Wi-Fi/mobile data, Wi-Fi without internet, and weak/slow connection hints through a native connectivity channel. Native step tracking remains offline-capable; AI, account, Firestore, and admin alert services require working internet.
 
 ## Testing
 
@@ -463,11 +467,11 @@ Current test coverage includes:
 
 - Step counts are saved locally first and synced to Firestore when possible.
 - The leaderboard is Firestore-only and uses public summary documents.
-- Raw AI scoring is consent-gated. If consent is unavailable, the local deterministic stress model is used.
+- Raw AI scoring is consent-gated and requires the backend when AI output is needed.
 - Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, and charted by Week or Month.
 - Admin FCM alerts require the backend worker route or `ADMIN_ALERT_WORKER_INTERVAL_SECONDS`; client-side token registration alone does not send push notifications.
 - Leaderboard results use a short in-memory cache when reopening the screen; pull-to-refresh bypasses the cache.
-- Journal warning review uses the AI backend when available, with local privacy-safe fallback labels for self-harm, harm toward others, threats, explicit unsafe wording, and Philippine language warning signals. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.
+- Journal warning review uses the AI backend and fails visibly if the online service is unavailable. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.
 - Step streaks preserve the current streak during the unfinished current day and reset the next day if no goal is reached.
 - Midnight step rollover saves the previous day under its correct date before starting the new day.
 - Native step counter and detector events are reconciled to avoid double counting while keeping closed-app step updates live.

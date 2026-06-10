@@ -11,21 +11,15 @@ import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_router/shelf_router.dart';
 
 const _modelVersion = 'groq-llama-stress-v1';
-const _fallbackVersion = 'server-local-fallback-v1';
 const _groqEndpoint = 'https://api.groq.com/openai/v1/chat/completions';
 const _defaultGroqModel = 'llama-3.1-8b-instant';
-const _stressGroqCooldown = Duration(seconds: 70);
 const _pendingRegistrationTtl = Duration(minutes: 30);
 const _passwordResetTtl = Duration(minutes: 20);
 
-DateTime? _lastGroqStressStartedAt;
-String? _lastGroqStressInputKey;
-Map<String, dynamic>? _lastGroqStressResult;
 _FirebaseBackend? _firebaseBackend;
 
 Future<void> main() async {
   final apiKey = Platform.environment['GROQ_API_KEY']?.trim();
-  final googleApiKey = Platform.environment['GOOGLE_API_KEY']?.trim();
   _firebaseBackend = _FirebaseBackend.fromEnvironment();
 
   final router = Router()
@@ -34,7 +28,6 @@ Future<void> main() async {
     ..post('/start-registration', _startRegistration)
     ..get('/confirm-registration', _confirmRegistration)
     ..post('/confirm-registration', _completeRegistrationFromLink)
-    ..post('/complete-registration', _completeRegistration)
     ..post('/request-password-reset', _requestPasswordReset)
     ..get('/confirm-password-reset', _confirmPasswordReset)
     ..post('/complete-password-reset', _completePasswordReset)
@@ -53,13 +46,6 @@ Future<void> main() async {
   stdout.writeln(
     'Groq API key: ${apiKey == null || apiKey.isEmpty ? 'missing' : 'configured'}',
   );
-  if ((apiKey == null || apiKey.isEmpty) &&
-      googleApiKey != null &&
-      googleApiKey.isNotEmpty) {
-    stdout.writeln(
-      'Note: GOOGLE_API_KEY is ignored by this backend. Set GROQ_API_KEY for AI calls, or leave it empty to use local fallback scoring.',
-    );
-  }
   stdout.writeln('Groq model: ${_groqModel()}');
   stdout.writeln(
     'Firebase backend: ${_firebaseBackend == null ? 'not configured' : 'configured'}',
@@ -245,47 +231,6 @@ Future<Response> _completeRegistrationFromLink(Request request) async {
       message:
           'We could not complete this confirmation. ${_escapePlainText(error.toString())}',
     );
-  }
-}
-
-Future<Response> _completeRegistration(Request request) async {
-  try {
-    final backend = _requireFirebaseBackend();
-    final payload = await _readJsonObject(request);
-    final id = ((payload['requestId'] as String?) ?? '').trim();
-    final email = _emailFromPayload(payload);
-    if (id.isEmpty) {
-      throw const _BadRequest('Registration request id is required.');
-    }
-
-    final doc = await backend.getDocument('pending_registrations/$id');
-    if (doc == null) {
-      throw const _BadRequest('Confirmation request was not found.');
-    }
-    if ((doc['email'] as String?)?.toLowerCase() != email.toLowerCase()) {
-      throw const _BadRequest('This confirmation belongs to another email.');
-    }
-
-    final status = doc['status'] as String? ?? 'pending';
-    if (status != 'confirmed') {
-      throw const _BadRequest(
-        'Email is not confirmed yet. Open the confirmation link first.',
-      );
-    }
-
-    await backend.updateDocument('pending_registrations/$id', {
-      'lastVerifiedAt': DateTime.now().toUtc().toIso8601String(),
-      'updatedAt': DateTime.now().toUtc().toIso8601String(),
-    });
-
-    return _jsonResponse({
-      'ok': true,
-      'email': email,
-      'requestId': id,
-      'message': 'Email is confirmed and ready for Firebase Auth creation.',
-    });
-  } catch (error) {
-    return _errorResponse(error);
   }
 }
 
@@ -1005,7 +950,11 @@ String _html(String value) => const HtmlEscape().convert(value);
 String _escapePlainText(String value) => value.replaceFirst('Exception: ', '');
 
 Response _errorResponse(Object error) {
-  final status = error is _BadRequest ? 400 : 500;
+  final status = error is _BadRequest
+      ? 400
+      : error is _ProviderUnavailable
+      ? 503
+      : 500;
   return Response(
     status,
     body: jsonEncode({'ok': false, 'error': error.toString()}),
@@ -1019,11 +968,7 @@ Future<Response> _stress(Request request, String? apiKey) async {
   try {
     final body = await request.readAsString();
     final decoded = _decodeBody(body);
-    final payload =
-        decoded is Map<String, dynamic> &&
-            decoded['data'] is Map<String, dynamic>
-        ? decoded['data'] as Map<String, dynamic>
-        : decoded;
+    final payload = decoded;
 
     if (payload is Map<String, dynamic> &&
         payload['mode'] == 'journal-warning') {
@@ -1042,36 +987,12 @@ Future<Response> _stress(Request request, String? apiKey) async {
     }
 
     input = _readInputFromDecoded(decoded);
-    final inputKey = jsonEncode(input);
-    if (_shouldUseStressFallbackNow()) {
-      final cached = _lastGroqStressResult;
-      if (cached != null && _lastGroqStressInputKey == inputKey) {
-        return Response.ok(
-          jsonEncode({...cached, 'cacheStatus': 'reused_recent_groq_result'}),
-        );
-      }
-      final fallback = _localScore(input)
-        ..['fallbackReason'] = 'server_stress_groq_cooldown_no_cache';
-      return Response.ok(jsonEncode(fallback));
-    }
-
-    _lastGroqStressStartedAt = DateTime.now();
     final result = await _scoreWithGroq(input, apiKey);
-    if ((result['modelVersion'] as String?) == _modelVersion) {
-      _lastGroqStressInputKey = inputKey;
-      _lastGroqStressResult = Map<String, dynamic>.from(result);
-    }
 
     return Response.ok(jsonEncode(result));
   } catch (error) {
-    if (error is _BadRequest) {
-      return Response(400, body: jsonEncode({'error': error.message}));
-    }
-
     stderr.writeln('Unexpected /stress error: $error');
-    final fallback = _localScore(input ?? await _tryReadInput(request));
-    fallback['fallbackReason'] = 'request_error';
-    return Response.ok(jsonEncode(fallback));
+    return _errorResponse(error);
   }
 }
 
@@ -1080,22 +1001,11 @@ Future<Map<String, dynamic>> _taskContentWithGroq(
   String? apiKey,
 ) async {
   final title = (payload['taskTitle'] as String?)?.trim() ?? '';
-  final localBlocked = RegExp(
-    r'\b(kill myself|suicide|end my life|hurt myself|harm myself|magpakamatay|cheat on exam|hurt someone)\b',
-    caseSensitive: false,
-  ).hasMatch(title);
-
-  if (title.isEmpty || apiKey == null || apiKey.isEmpty) {
-    return {
-      'allow': title.isNotEmpty && !localBlocked,
-      'label': localBlocked
-          ? 'unsafe or inappropriate task wording'
-          : 'appropriate',
-      'feedback': localBlocked
-          ? 'Please rewrite this as a safe, constructive support action before saving.'
-          : 'Task wording appears appropriate.',
-      'modelVersion': _fallbackVersion,
-    };
+  if (title.isEmpty) {
+    throw const _BadRequest('Task title is required.');
+  }
+  if (apiKey == null || apiKey.isEmpty) {
+    throw const _ProviderUnavailable('Groq API key is not configured.');
   }
 
   try {
@@ -1128,26 +1038,16 @@ Future<Map<String, dynamic>> _taskContentWithGroq(
         .timeout(const Duration(seconds: 12));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      return {
-        'allow': !localBlocked,
-        'label': localBlocked ? 'unsafe task wording' : 'appropriate',
-        'feedback': localBlocked
-            ? 'Please rewrite this as a safe support action before saving.'
-            : 'Task wording appears appropriate.',
-        'modelVersion': _fallbackVersion,
-      };
+      throw _ProviderUnavailable(
+        'Groq task review failed ${response.statusCode}: ${_shortError(response.body)}',
+      );
     }
 
     final parsed = _extractJson(_groqMessageContent(jsonDecode(response.body)));
     if (parsed == null) {
-      return {
-        'allow': !localBlocked,
-        'label': localBlocked ? 'unsafe task wording' : 'appropriate',
-        'feedback': localBlocked
-            ? 'Please rewrite this as a safe support action before saving.'
-            : 'Task wording appears appropriate.',
-        'modelVersion': _fallbackVersion,
-      };
+      throw const _ProviderUnavailable(
+        'Groq returned an invalid task review response.',
+      );
     }
 
     return {
@@ -1157,16 +1057,10 @@ Future<Map<String, dynamic>> _taskContentWithGroq(
       'modelVersion': '$_modelVersion+task-content',
     };
   } catch (error) {
-    return {
-      'allow': !localBlocked,
-      'label': localBlocked ? 'unsafe task wording' : 'appropriate',
-      'feedback': localBlocked
-          ? 'Please rewrite this as a safe support action before saving.'
-          : 'Task wording appears appropriate.',
-      'modelVersion': _fallbackVersion,
-      'fallbackReason': 'task_content_failed',
-      'providerError': _shortError(error.toString()),
-    };
+    if (error is _BadRequest || error is _ProviderUnavailable) rethrow;
+    throw _ProviderUnavailable(
+      'Groq task review failed: ${_shortError(error.toString())}',
+    );
   }
 }
 
@@ -1176,22 +1070,11 @@ Future<Map<String, dynamic>> _journalMoodWithGroq(
 ) async {
   final text = (payload['rawJournalText'] as String?)?.trim() ?? '';
   if (text.isEmpty) {
-    return const {
-      'moodIndex': 1,
-      'moodIntensity': 0.5,
-      'criteria': 'No journal text was provided.',
-      'modelVersion': _fallbackVersion,
-    };
+    throw const _BadRequest('Journal text is required.');
   }
 
   if (apiKey == null || apiKey.isEmpty) {
-    return {
-      'moodIndex': 1,
-      'moodIntensity': 0.5,
-      'criteria': 'Missing Groq API key; app should use local fallback.',
-      'modelVersion': _fallbackVersion,
-      'fallbackReason': 'missing_groq_api_key',
-    };
+    throw const _ProviderUnavailable('Groq API key is not configured.');
   }
 
   try {
@@ -1224,24 +1107,16 @@ Future<Map<String, dynamic>> _journalMoodWithGroq(
         .timeout(const Duration(seconds: 12));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      return {
-        'moodIndex': 1,
-        'moodIntensity': 0.5,
-        'criteria': 'Groq mood request failed.',
-        'modelVersion': _fallbackVersion,
-        'fallbackReason': 'groq_http_${response.statusCode}',
-      };
+      throw _ProviderUnavailable(
+        'Groq mood request failed ${response.statusCode}: ${_shortError(response.body)}',
+      );
     }
 
     final parsed = _extractJson(_groqMessageContent(jsonDecode(response.body)));
     if (parsed == null) {
-      return {
-        'moodIndex': 1,
-        'moodIntensity': 0.5,
-        'criteria': 'Groq returned an invalid mood response.',
-        'modelVersion': _fallbackVersion,
-        'fallbackReason': 'groq_non_json_response',
-      };
+      throw const _ProviderUnavailable(
+        'Groq returned an invalid mood response.',
+      );
     }
 
     return {
@@ -1253,21 +1128,11 @@ Future<Map<String, dynamic>> _journalMoodWithGroq(
       'modelVersion': '$_modelVersion+journal-mood',
     };
   } catch (error) {
-    return {
-      'moodIndex': 1,
-      'moodIntensity': 0.5,
-      'criteria': 'Mood request failed.',
-      'modelVersion': _fallbackVersion,
-      'fallbackReason': 'journal_mood_failed',
-      'providerError': _shortError(error.toString()),
-    };
+    if (error is _BadRequest || error is _ProviderUnavailable) rethrow;
+    throw _ProviderUnavailable(
+      'Groq mood request failed: ${_shortError(error.toString())}',
+    );
   }
-}
-
-Future<Map<String, dynamic>> _readInput(Request request) async {
-  final body = await request.readAsString();
-  final decoded = _decodeBody(body);
-  return _readInputFromDecoded(decoded);
 }
 
 Map<String, dynamic> _readInputFromDecoded(Object? decoded) {
@@ -1275,15 +1140,13 @@ Map<String, dynamic> _readInputFromDecoded(Object? decoded) {
     throw const _BadRequest('Expected a JSON object.');
   }
 
-  final payload = decoded['data'] is Map<String, dynamic>
-      ? decoded['data'] as Map<String, dynamic>
-      : decoded;
+  final payload = decoded;
   final baseline = payload['localBaseline'] is Map<String, dynamic>
       ? payload['localBaseline'] as Map<String, dynamic>
-      : payload;
+      : throw const _BadRequest('localBaseline object is required.');
   final rawData = payload['rawData'] is Map<String, dynamic>
       ? payload['rawData'] as Map<String, dynamic>
-      : <String, dynamic>{};
+      : throw const _BadRequest('rawData object is required.');
   final adminResolutionContext =
       payload['adminResolutionContext'] is Map<String, dynamic>
       ? payload['adminResolutionContext'] as Map<String, dynamic>
@@ -1315,24 +1178,11 @@ Future<Map<String, dynamic>> _journalWarningWithGroq(
 ) async {
   final text = (payload['rawJournalText'] as String?)?.trim() ?? '';
   if (text.isEmpty) {
-    return const {
-      'severity': 'none',
-      'weight': 0,
-      'warningSignalTerm': '',
-      'confidence': 0,
-      'modelVersion': _fallbackVersion,
-    };
+    throw const _BadRequest('Journal text is required.');
   }
 
   if (apiKey == null || apiKey.isEmpty) {
-    return {
-      'severity': 'none',
-      'weight': 0,
-      'warningSignalTerm': '',
-      'confidence': 0,
-      'modelVersion': _fallbackVersion,
-      'fallbackReason': 'missing_groq_api_key',
-    };
+    throw const _ProviderUnavailable('Groq API key is not configured.');
   }
 
   try {
@@ -1365,26 +1215,16 @@ Future<Map<String, dynamic>> _journalWarningWithGroq(
         .timeout(const Duration(seconds: 12));
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      return {
-        'severity': 'none',
-        'weight': 0,
-        'warningSignalTerm': '',
-        'confidence': 0,
-        'modelVersion': _fallbackVersion,
-        'fallbackReason': 'groq_http_${response.statusCode}',
-      };
+      throw _ProviderUnavailable(
+        'Groq journal warning request failed ${response.statusCode}: ${_shortError(response.body)}',
+      );
     }
 
     final parsed = _extractJson(_groqMessageContent(jsonDecode(response.body)));
     if (parsed == null) {
-      return {
-        'severity': 'none',
-        'weight': 0,
-        'warningSignalTerm': '',
-        'confidence': 0,
-        'modelVersion': _fallbackVersion,
-        'fallbackReason': 'groq_non_json_response',
-      };
+      throw const _ProviderUnavailable(
+        'Groq returned an invalid journal warning response.',
+      );
     }
 
     final severity = (parsed['severity'] as String?)?.toLowerCase() ?? 'none';
@@ -1401,43 +1241,11 @@ Future<Map<String, dynamic>> _journalWarningWithGroq(
       'modelVersion': '$_modelVersion+journal-warning',
     };
   } catch (error) {
-    return {
-      'severity': 'none',
-      'weight': 0,
-      'warningSignalTerm': '',
-      'confidence': 0,
-      'modelVersion': _fallbackVersion,
-      'fallbackReason': 'journal_warning_failed',
-      'providerError': _shortError(error.toString()),
-    };
+    if (error is _BadRequest || error is _ProviderUnavailable) rethrow;
+    throw _ProviderUnavailable(
+      'Groq journal warning request failed: ${_shortError(error.toString())}',
+    );
   }
-}
-
-Future<Map<String, dynamic>> _tryReadInput(Request request) async {
-  try {
-    return await _readInput(request);
-  } catch (_) {
-    return const {
-      'avgMoodIndex': 0.0,
-      'avgMoodIntensity': 0.0,
-      'avgDailySteps': 0.0,
-      'moodLogCoverage': 0.0,
-      'journalEntryCount': 0,
-      'activeTaskCount': 0,
-      'completedTaskCount': 0,
-      'overdueTaskCount': 0,
-      'rawData': <String, dynamic>{},
-      'warningSnippets': <String>[],
-      'journalWarningWeight': 0.0,
-      'journalWarningSeverity': 'none',
-    };
-  }
-}
-
-bool _shouldUseStressFallbackNow() {
-  final lastStarted = _lastGroqStressStartedAt;
-  if (lastStarted == null) return false;
-  return DateTime.now().difference(lastStarted) < _stressGroqCooldown;
 }
 
 Future<Map<String, dynamic>> _scoreWithGroq(
@@ -1445,7 +1253,7 @@ Future<Map<String, dynamic>> _scoreWithGroq(
   String? apiKey,
 ) async {
   if (apiKey == null || apiKey.isEmpty) {
-    return _localScore(input)..['fallbackReason'] = 'missing_groq_api_key';
+    throw const _ProviderUnavailable('Groq API key is not configured.');
   }
 
   final local = _localScore(input);
@@ -1479,9 +1287,9 @@ Future<Map<String, dynamic>> _scoreWithGroq(
       stderr.writeln(
         'Groq request failed ${response.statusCode}: ${response.body}',
       );
-      return local
-        ..['fallbackReason'] = 'groq_http_${response.statusCode}'
-        ..['providerError'] = _shortError(response.body);
+      throw _ProviderUnavailable(
+        'Groq request failed ${response.statusCode}: ${_shortError(response.body)}',
+      );
     }
 
     final decoded = jsonDecode(response.body);
@@ -1489,12 +1297,14 @@ Future<Map<String, dynamic>> _scoreWithGroq(
     final parsed = _extractJson(content);
     if (parsed == null) {
       stderr.writeln('Groq returned non-JSON content: $content');
-      return local..['fallbackReason'] = 'groq_non_json_response';
+      throw const _ProviderUnavailable('Groq returned an invalid response.');
     }
 
-    final rawScore = (_asDouble(parsed['score']) ?? local['score'] as double)
-        .clamp(0, 100)
-        .toDouble();
+    final parsedScore = _asDouble(parsed['score']);
+    if (parsedScore == null) {
+      throw const _ProviderUnavailable('Groq response did not include score.');
+    }
+    final rawScore = parsedScore.clamp(0, 100).toDouble();
     final score = _calibratedScore(input, local, rawScore);
     final confidence =
         (_asDouble(parsed['confidence']) ?? local['confidence'] as double)
@@ -1517,11 +1327,12 @@ Future<Map<String, dynamic>> _scoreWithGroq(
       'rationale': rationale.isEmpty ? local['rationale'] : rationale,
     };
   } catch (error, stackTrace) {
+    if (error is _ProviderUnavailable) rethrow;
     stderr.writeln('Groq request failed: $error');
     stderr.writeln(stackTrace);
-    return local
-      ..['fallbackReason'] = 'groq_request_failed'
-      ..['providerError'] = _shortError(error.toString());
+    throw _ProviderUnavailable(
+      'Groq request failed: ${_shortError(error.toString())}',
+    );
   }
 }
 
@@ -1634,7 +1445,7 @@ Map<String, dynamic> _localScore(Map<String, dynamic> input) {
     'score': score,
     'rank': _rankForScore(score),
     'confidence': confidence,
-    'modelVersion': _fallbackVersion,
+    'modelVersion': 'local-calibration',
     'rationale': rationale.take(3).toList(),
   };
 }
@@ -2622,6 +2433,15 @@ class _BadRequest implements Exception {
 
 class _AlreadyCompleted implements Exception {
   const _AlreadyCompleted(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class _ProviderUnavailable implements Exception {
+  const _ProviderUnavailable(this.message);
 
   final String message;
 

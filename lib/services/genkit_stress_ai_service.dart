@@ -34,10 +34,9 @@ class GenkitStressAiService {
     Map<String, dynamic> adminResolutionContext = const {},
   }) async {
     if (!isConfigured) {
-      debugPrint(
-        'Stress AI fallback: GENKIT_STRESS_FLOW_URL is not configured.',
+      throw const AiServiceException(
+        'AI service is not configured. Connect to the backend and try again.',
       );
-      return LocalStressModelService.analyze(input);
     }
 
     try {
@@ -68,10 +67,9 @@ class GenkitStressAiService {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint(
-          'Stress AI fallback: backend returned ${response.statusCode}.',
+        throw AiServiceException(
+          'AI service returned ${response.statusCode}. Try again later.',
         );
-        return LocalStressModelService.analyze(input);
       }
 
       final decoded = jsonDecode(response.body);
@@ -104,22 +102,32 @@ class GenkitStressAiService {
       );
       final fallbackReason = output['fallbackReason'] as String?;
       if (fallbackReason != null && fallbackReason.trim().isNotEmpty) {
-        debugPrint('Stress AI backend used fallback: $fallbackReason');
-      } else {
-        debugPrint('Stress AI backend result: ${result.modelVersion}');
+        throw AiServiceException(
+          'AI service fallback was refused: $fallbackReason.',
+        );
       }
+      debugPrint('Stress AI backend result: ${result.modelVersion}');
       return result;
+    } on AiServiceException {
+      rethrow;
     } catch (_) {
-      debugPrint('Stress AI fallback: backend request failed.');
-      return LocalStressModelService.analyze(input);
+      throw const AiServiceException(
+        'AI service is unreachable. Check your internet connection and retry.',
+      );
     }
   }
 
   static Future<JournalWarningSummary> analyzeJournalWarning(
     String journalText,
   ) async {
-    final fallback = JournalWarningService.analyze(journalText);
-    if (!isConfigured || journalText.trim().isEmpty) return fallback;
+    if (journalText.trim().isEmpty) {
+      return const JournalWarningSummary(findings: []);
+    }
+    if (!isConfigured) {
+      throw const AiServiceException(
+        'AI journal warning review is not configured.',
+      );
+    }
 
     try {
       final response = await http
@@ -136,7 +144,9 @@ class GenkitStressAiService {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return fallback;
+        throw AiServiceException(
+          'AI journal warning review returned ${response.statusCode}.',
+        );
       }
 
       final decoded = jsonDecode(response.body);
@@ -148,38 +158,37 @@ class GenkitStressAiService {
           : data;
       final fallbackReason = output['fallbackReason'] as String?;
       if (fallbackReason != null && fallbackReason.trim().isNotEmpty) {
-        return fallback;
+        throw AiServiceException(
+          'AI journal warning fallback was refused: $fallbackReason.',
+        );
       }
       final severity = ((output['severity'] as String?) ?? 'none')
           .trim()
           .toLowerCase();
-      final confidence = ((output['confidence'] as num?)?.toDouble() ?? 0)
-          .clamp(0, 1)
-          .toDouble();
-      if (severity == 'none' && confidence < 0.65) {
-        return fallback;
-      }
 
       return JournalWarningService.fromAi(
         severity: severity,
-        weight: ((output['weight'] as num?)?.toDouble() ?? fallback.weight)
+        weight: ((output['weight'] as num?)?.toDouble() ?? 0)
             .clamp(0, 1)
             .toDouble(),
-        warningSignalTerm:
-            (output['warningSignalTerm'] as String?) ??
-            fallback.snippets.firstOrNull ??
-            '',
+        warningSignalTerm: (output['warningSignalTerm'] as String?) ?? '',
       );
+    } on AiServiceException {
+      rethrow;
     } catch (_) {
-      return fallback;
+      throw const AiServiceException(
+        'AI journal warning review is unreachable. Check your internet connection and retry.',
+      );
     }
   }
 
   static Future<JournalMoodResult> analyzeJournalMood(
     String journalText,
   ) async {
-    final fallback = JournalMoodResult.local(journalText);
-    if (!isConfigured || journalText.trim().isEmpty) return fallback;
+    if (journalText.trim().isEmpty) return JournalMoodResult.local(journalText);
+    if (!isConfigured) {
+      throw const AiServiceException('AI mood review is not configured.');
+    }
 
     try {
       final response = await http
@@ -196,7 +205,9 @@ class GenkitStressAiService {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return fallback;
+        throw AiServiceException(
+          'AI mood review returned ${response.statusCode}.',
+        );
       }
 
       final decoded = jsonDecode(response.body);
@@ -206,30 +217,40 @@ class GenkitStressAiService {
       final output = data['result'] is Map<String, dynamic>
           ? data['result'] as Map<String, dynamic>
           : data;
+      final fallbackReason = output['fallbackReason'] as String?;
+      if (fallbackReason != null && fallbackReason.trim().isNotEmpty) {
+        throw AiServiceException(
+          'AI mood fallback was refused: $fallbackReason.',
+        );
+      }
 
       return JournalMoodResult(
-        moodIndex:
-            ((output['moodIndex'] as num?)?.toInt() ?? fallback.moodIndex)
-                .clamp(0, 3),
-        moodIntensity:
-            ((output['moodIntensity'] as num?)?.toDouble() ??
-                    fallback.moodIntensity)
-                .clamp(0, 1)
-                .toDouble(),
+        moodIndex: ((output['moodIndex'] as num?)?.toInt() ?? 1).clamp(0, 3),
+        moodIntensity: ((output['moodIntensity'] as num?)?.toDouble() ?? 0.5)
+            .clamp(0, 1)
+            .toDouble(),
         criteria:
             (output['criteria'] as String?) ??
             (output['rationale'] as String?) ??
-            fallback.criteria,
+            'AI mood review completed.',
         source: (output['modelVersion'] as String?) ?? 'ai-journal-mood',
       );
+    } on AiServiceException {
+      rethrow;
     } catch (_) {
-      return fallback;
+      throw const AiServiceException(
+        'AI mood review is unreachable. Check your internet connection and retry.',
+      );
     }
   }
 
   static Future<TaskAiReviewResult> analyzeTaskContent(String taskTitle) async {
-    final fallback = TaskAiReviewResult.local(taskTitle);
-    if (!isConfigured || taskTitle.trim().isEmpty) return fallback;
+    if (taskTitle.trim().isEmpty) {
+      throw const AiServiceException('Task title is empty.');
+    }
+    if (!isConfigured) {
+      throw const AiServiceException('AI task review is not configured.');
+    }
 
     try {
       final response = await http
@@ -246,7 +267,9 @@ class GenkitStressAiService {
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return fallback;
+        throw AiServiceException(
+          'AI task review returned ${response.statusCode}.',
+        );
       }
 
       final decoded = jsonDecode(response.body);
@@ -256,17 +279,37 @@ class GenkitStressAiService {
       final output = data['result'] is Map<String, dynamic>
           ? data['result'] as Map<String, dynamic>
           : data;
+      final fallbackReason = output['fallbackReason'] as String?;
+      if (fallbackReason != null && fallbackReason.trim().isNotEmpty) {
+        throw AiServiceException(
+          'AI task fallback was refused: $fallbackReason.',
+        );
+      }
 
       return TaskAiReviewResult(
         isAllowed: output['allow'] == true,
-        label: (output['label'] as String?) ?? fallback.label,
-        feedback: (output['feedback'] as String?) ?? fallback.feedback,
+        label: (output['label'] as String?) ?? 'AI task review',
+        feedback:
+            (output['feedback'] as String?) ?? 'AI reviewed this task title.',
         source: (output['modelVersion'] as String?) ?? 'ai-task-content',
       );
+    } on AiServiceException {
+      rethrow;
     } catch (_) {
-      return fallback;
+      throw const AiServiceException(
+        'AI task review is unreachable. Check your internet connection and retry.',
+      );
     }
   }
+}
+
+class AiServiceException implements Exception {
+  const AiServiceException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 class TaskAiReviewResult {

@@ -115,7 +115,7 @@ class _RegisterTabState extends State<RegisterTab> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'We sent a secure confirmation link to ${confirmation.email}. Open it from your inbox to create your FullBrightTrack account automatically.',
+                'We sent a secure confirmation link to ${confirmation.email}. Open it from your inbox, then press the confirmation button to create your FullBrightTrack account.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade700, height: 1.45),
               ),

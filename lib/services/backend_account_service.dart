@@ -82,41 +82,6 @@ class BackendAccountService {
     );
   }
 
-  static Future<void> completeRegistration({
-    required String requestId,
-    required String email,
-  }) async {
-    if (!isConfigured) {
-      throw const BackendAccountException(
-        'Account confirmation backend is not configured.',
-      );
-    }
-
-    final response = await http
-        .post(
-          Uri.parse('$_baseUrl/complete-registration'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'requestId': requestId, 'email': email}),
-        )
-        .timeout(const Duration(seconds: 25));
-
-    final decoded = response.body.trim().isEmpty
-        ? <String, dynamic>{}
-        : jsonDecode(response.body);
-    final data = decoded is Map<String, dynamic>
-        ? decoded
-        : <String, dynamic>{};
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      final message = (data['error'] as String?)?.trim();
-      throw BackendAccountException(
-        message == null || message.isEmpty
-            ? 'Email has not been confirmed yet.'
-            : message,
-      );
-    }
-  }
-
   static Future<PasswordResetRequestResult> requestPasswordReset({
     required String email,
   }) async {

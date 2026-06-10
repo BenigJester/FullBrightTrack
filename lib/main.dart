@@ -9,6 +9,7 @@ import 'services/notification_service.dart';
 import 'services/reminder_scheduler_service.dart';
 import 'package:provider/provider.dart';
 import 'models/app_data.dart';
+import 'widgets/internet_guard.dart';
 
 @pragma('vm:entry-point')
 void main() async {
@@ -38,6 +39,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       navigatorKey: AppNavigatorService.navigatorKey,
       debugShowCheckedModeBanner: false,
+      builder: (context, child) =>
+          InternetGuard(child: child ?? const SizedBox.shrink()),
       home: const AuthWrapper(),
     );
   }
