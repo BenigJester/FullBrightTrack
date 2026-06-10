@@ -769,15 +769,22 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
                   labelText: 'Search user name or email',
                   hintText: 'Type a name or email address',
                   prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: FilledButton.icon(
+                      onPressed: _applyUserSearch,
+                      icon: const Icon(Icons.search_rounded, size: 18),
+                      label: const Text('Search'),
+                    ),
+                  ),
+                  suffixIconConstraints: const BoxConstraints(
+                    minWidth: 112,
+                    minHeight: 42,
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-              );
-              final searchButton = FilledButton.icon(
-                onPressed: _applyUserSearch,
-                icon: const Icon(Icons.search_rounded),
-                label: const Text('Search'),
               );
               final clearButton = _appliedUserSearch.isEmpty
                   ? null
@@ -792,12 +799,14 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     searchField,
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [searchButton, ?clearButton],
-                    ),
+                    if (clearButton != null) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [clearButton],
+                      ),
+                    ],
                   ],
                 );
               }
@@ -806,10 +815,8 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(child: searchField),
-                  const SizedBox(width: 10),
-                  searchButton,
                   if (clearButton != null) ...[
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 10),
                     clearButton,
                   ],
                 ],

@@ -4,7 +4,7 @@ import 'services/auth_wrapper.dart';
 import 'package:workmanager/workmanager.dart';
 import 'services/app_check_service.dart';
 import 'services/app_navigator_service.dart';
-import 'services/hourly_worker.dart';
+import 'services/steps_reminder_worker.dart';
 import 'services/notification_service.dart';
 import 'services/reminder_scheduler_service.dart';
 import 'package:provider/provider.dart';

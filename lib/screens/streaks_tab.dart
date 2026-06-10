@@ -74,10 +74,10 @@ class StreakTab extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 170;
-        final padding = compact ? 12.0 : 16.0;
-        final topGap = compact ? 10.0 : 14.0;
+        final padding = compact ? 11.0 : 16.0;
+        final topGap = compact ? 8.0 : 14.0;
         final labelGap = compact ? 4.0 : 6.0;
-        final badgeGap = compact ? 8.0 : 10.0;
+        final badgeGap = compact ? 6.0 : 10.0;
 
         return Container(
           padding: EdgeInsets.all(padding),
@@ -201,10 +201,10 @@ class StreakTab extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 170;
-        final padding = compact ? 12.0 : 16.0;
-        final topGap = compact ? 10.0 : 14.0;
+        final padding = compact ? 11.0 : 16.0;
+        final topGap = compact ? 8.0 : 14.0;
         final labelGap = compact ? 4.0 : 6.0;
-        final badgeGap = compact ? 8.0 : 10.0;
+        final badgeGap = compact ? 6.0 : 10.0;
 
         return Container(
           padding: EdgeInsets.all(padding),
@@ -322,7 +322,7 @@ class StreakTab extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
-        vertical: compact ? 6 : 8,
+        vertical: compact ? 5 : 8,
       ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.16),

@@ -10,7 +10,7 @@ void hourlyWorkerCallbackDispatcher() {
     final prefs = await SharedPreferences.getInstance();
 
     final savedDay = prefs.getString('bg_day') ?? '';
-    final steps = savedDay == HourlyWorker.todayKey()
+    final steps = savedDay == StepsReminderWorker.todayKey()
         ? prefs.getInt('bg_steps') ?? 0
         : 0;
 
@@ -29,8 +29,8 @@ void hourlyWorkerCallbackDispatcher() {
   });
 }
 
-class HourlyWorker {
-  static const taskName = 'hourly-step-reminder';
+class StepsReminderWorker {
+  static const taskName = 'steps-reminder-sync';
 
   static String todayKey() {
     final now = DateTime.now();

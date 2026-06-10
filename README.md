@@ -24,7 +24,7 @@ Current app version: `1.0.0`
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, unreachable backend, and very slow internet.
-- Step reminder notification support with 1, 2, or 3 hour intervals.
+- Steps Reminder support with live step updates, dismissible notification behavior where Android allows it, and preset or custom step thresholds starting at 100 steps.
 - Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
 - Daily motivation popup.
 
@@ -72,7 +72,7 @@ lib/
     display_name_service.dart
     genkit_stress_ai_service.dart
     hometab_service.dart
-    hourly_worker.dart
+    steps_reminder_worker.dart
     journal_service.dart
     journal_warning_service.dart
     leaderboard_service.dart

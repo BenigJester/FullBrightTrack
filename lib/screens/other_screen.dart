@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_access_service.dart';
 import '../services/admin_alert_service.dart';
@@ -11,7 +10,6 @@ import '../services/backend_account_service.dart';
 import '../services/device_readiness_service.dart';
 import '../services/display_name_service.dart';
 import '../services/logout_service.dart';
-import '../services/notification_service.dart';
 import '../services/notification_history_service.dart';
 import '../services/reminder_scheduler_service.dart';
 import '../services/step_foreground_service.dart';
@@ -1076,7 +1074,7 @@ class NotificationSettingsScreen extends StatefulWidget {
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
   bool _enabled = true;
-  int _intervalHours = 2;
+  int _minSteps = 100;
   bool _loading = true;
   bool _saving = false;
 
@@ -1093,21 +1091,23 @@ class _NotificationSettingsScreenState
 
     setState(() {
       _enabled = prefs.getBool(ReminderSchedulerService.enabledKey) ?? true;
-      _intervalHours = prefs.getInt(ReminderSchedulerService.intervalKey) ?? 2;
+      _minSteps = prefs.getInt(ReminderSchedulerService.minStepsKey) ?? 100;
       _loading = false;
     });
   }
 
-  Future<void> _saveSettings({bool? enabled, int? intervalHours}) async {
+  Future<void> _saveSettings({bool? enabled, int? minSteps}) async {
     setState(() => _saving = true);
 
     final nextEnabled = enabled ?? _enabled;
-    final nextInterval = intervalHours ?? _intervalHours;
+    final nextMinSteps = ReminderSchedulerService.normalizeMinSteps(
+      minSteps ?? _minSteps,
+    );
 
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(ReminderSchedulerService.enabledKey, nextEnabled);
-      await prefs.setInt(ReminderSchedulerService.intervalKey, nextInterval);
+      await prefs.setInt(ReminderSchedulerService.minStepsKey, nextMinSteps);
 
       if (nextEnabled) {
         await _requestNotificationPermission();
@@ -1115,14 +1115,14 @@ class _NotificationSettingsScreenState
 
       await ReminderSchedulerService.schedule(
         enabled: nextEnabled,
-        intervalHours: nextInterval,
+        minSteps: nextMinSteps,
       );
 
       if (!mounted) return;
 
       setState(() {
         _enabled = nextEnabled;
-        _intervalHours = nextInterval;
+        _minSteps = nextMinSteps;
       });
 
       _showMessage("Notification settings updated");
@@ -1143,25 +1143,17 @@ class _NotificationSettingsScreenState
 
   Future<void> _sendTestNotification() async {
     await _requestNotificationPermission();
+    final state = await StepForegroundService.getCurrentState();
+    final steps = (state['steps'] as num?)?.toInt() ?? 0;
+    if (steps < _minSteps) {
+      _showMessage(
+        "Step reminder starts at $_minSteps steps. Current: $steps.",
+      );
+      return;
+    }
 
-    final prefs = await SharedPreferences.getInstance();
-    final steps = prefs.getInt('bg_steps') ?? 0;
-
-    const androidDetails = AndroidNotificationDetails(
-      'hourly_steps',
-      'Hourly Step Reminder',
-      channelDescription: 'Hourly wellness reminders',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      onlyAlertOnce: true,
-    );
-
-    await NotificationService.notifications.show(
-      id: 101,
-      title: 'Step Reminder',
-      body: '$steps steps today',
-      notificationDetails: const NotificationDetails(android: androidDetails),
-    );
+    await StepForegroundService.start();
+    _showMessage("Live step reminder refreshed");
   }
 
   void _showMessage(String message) {
@@ -1183,14 +1175,14 @@ class _NotificationSettingsScreenState
     if (_loading) {
       return Scaffold(
         backgroundColor: const Color(0xFFF7F8FC),
-        appBar: _settingsAppBar("Notifications"),
+        appBar: _settingsAppBar("Steps Reminder"),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FC),
-      appBar: _settingsAppBar("Notifications"),
+      appBar: _settingsAppBar("Steps Reminder"),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -1210,19 +1202,21 @@ class _NotificationSettingsScreenState
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: const Text(
-                      "Show a reminder notification while step tracking is active",
+                      "Show the live reminder after you reach your chosen step count.",
                     ),
                   ),
                   const Divider(height: 28),
-                  _intervalOption(1, "Every hour"),
-                  _intervalOption(2, "Every 2 hours"),
-                  _intervalOption(3, "Every 3 hours"),
+                  _stepsOption(500),
+                  _stepsOption(1000),
+                  _stepsOption(2000),
+                  _stepsOption(4000),
+                  _customStepsOption(),
                 ],
               ),
             ),
             const SizedBox(height: 18),
             _secondaryButton(
-              label: "Send Test Notification",
+              label: "Refresh Live Reminder",
               icon: Icons.notifications_active_outlined,
               onPressed: _sendTestNotification,
             ),
@@ -1232,13 +1226,13 @@ class _NotificationSettingsScreenState
     );
   }
 
-  Widget _intervalOption(int hours, String label) {
-    final selected = _intervalHours == hours;
+  Widget _stepsOption(int steps) {
+    final selected = _minSteps == steps;
     final disabled = !_enabled || _saving;
 
     return InkWell(
       borderRadius: BorderRadius.circular(14),
-      onTap: disabled ? null : () => _saveSettings(intervalHours: hours),
+      onTap: disabled ? null : () => _saveSettings(minSteps: steps),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
@@ -1255,7 +1249,7 @@ class _NotificationSettingsScreenState
             ),
             const SizedBox(width: 12),
             Text(
-              label,
+              "$steps steps",
               style: TextStyle(
                 color: disabled ? Colors.grey.shade500 : Colors.black87,
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
@@ -1265,6 +1259,112 @@ class _NotificationSettingsScreenState
         ),
       ),
     );
+  }
+
+  Widget _customStepsOption() {
+    final customSelected = !const [500, 1000, 2000, 4000].contains(_minSteps);
+    final disabled = !_enabled || _saving;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: disabled ? null : _showCustomStepsDialog,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              customSelected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: disabled
+                  ? Colors.grey.shade400
+                  : customSelected
+                  ? Colors.deepOrange
+                  : Colors.grey.shade500,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                customSelected ? "Custom ($_minSteps steps)" : "Custom",
+                style: TextStyle(
+                  color: disabled ? Colors.grey.shade500 : Colors.black87,
+                  fontWeight: customSelected
+                      ? FontWeight.w700
+                      : FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(Icons.edit_rounded, color: Colors.grey.shade500, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCustomStepsDialog() async {
+    final controller = TextEditingController(text: _minSteps.toString());
+    final formKey = GlobalKey<FormState>();
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          title: const Text("Custom step reminder"),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: "Minimum steps",
+                helperText: "Minimum allowed is 100 steps.",
+                prefixIcon: const Icon(Icons.directions_walk_rounded),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              validator: (value) {
+                final parsed = int.tryParse(value?.trim() ?? '');
+                if (parsed == null) return "Enter a valid step count.";
+                if (parsed < 100) return "Use at least 100 steps.";
+                return null;
+              },
+              onFieldSubmitted: (_) {
+                if (formKey.currentState?.validate() != true) return;
+                Navigator.pop(context, int.parse(controller.text.trim()));
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel"),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.deepOrange,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                if (formKey.currentState?.validate() != true) return;
+                Navigator.pop(context, int.parse(controller.text.trim()));
+              },
+              child: const Text("Save"),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+    if (result == null) return;
+
+    await _saveSettings(minSteps: result);
   }
 }
 

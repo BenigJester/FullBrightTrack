@@ -23,11 +23,13 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   final TextEditingController _pageController = TextEditingController(
     text: '1',
   );
+  final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final Map<String, GlobalKey> _studentCardKeys = <String, GlobalKey>{};
   _AdminRange _range = _AdminRange.week;
   _StressRankFilter _rankFilter = _StressRankFilter.all;
   _ConfidenceSort _confidenceSort = _ConfidenceSort.descending;
+  String _appliedSearch = '';
   int _page = 1;
   bool _scrolledToHighlightedUser = false;
 
@@ -40,6 +42,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   @override
   void dispose() {
     _pageController.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -101,12 +104,37 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     _goToPage(requested, totalPages);
   }
 
+  void _applySearch() {
+    setState(() {
+      _appliedSearch = _searchController.text.trim();
+      _setPage(1);
+      _scrolledToHighlightedUser = false;
+    });
+  }
+
+  void _clearSearch() {
+    setState(() {
+      _searchController.clear();
+      _appliedSearch = '';
+      _setPage(1);
+      _scrolledToHighlightedUser = false;
+    });
+  }
+
   List<_StudentWellnessSummary> _filteredStudents(
     List<_StudentWellnessSummary> students,
   ) {
+    final search = _appliedSearch.trim().toLowerCase();
     final filtered = students.where((student) {
-      return _rankFilter == _StressRankFilter.all ||
+      final rankMatches =
+          _rankFilter == _StressRankFilter.all ||
           student.normalizedStressRank == _rankFilter.label;
+      if (!rankMatches) return false;
+      if (search.isEmpty) return true;
+
+      return student.name.toLowerCase().contains(search) ||
+          student.email.toLowerCase().contains(search) ||
+          student.uid.toLowerCase().contains(search);
     }).toList();
 
     filtered.sort((a, b) {
@@ -420,6 +448,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                 _AdminStudentControls(
                   rankFilter: _rankFilter,
                   confidenceSort: _confidenceSort,
+                  searchController: _searchController,
+                  appliedSearch: _appliedSearch,
                   pageController: _pageController,
                   currentPage: safePage,
                   totalPages: totalPages,
@@ -437,6 +467,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
                       _setPage(1);
                     });
                   },
+                  onSearchSubmitted: _applySearch,
+                  onClearSearch: _appliedSearch.isEmpty ? null : _clearSearch,
                   onPrevious: safePage > 1
                       ? () => _goToPage(safePage - 1, totalPages)
                       : null,
@@ -690,6 +722,8 @@ class _AdminStudentControls extends StatelessWidget {
   const _AdminStudentControls({
     required this.rankFilter,
     required this.confidenceSort,
+    required this.searchController,
+    required this.appliedSearch,
     required this.pageController,
     required this.currentPage,
     required this.totalPages,
@@ -697,6 +731,8 @@ class _AdminStudentControls extends StatelessWidget {
     required this.pageSize,
     required this.onRankChanged,
     required this.onSortChanged,
+    required this.onSearchSubmitted,
+    required this.onClearSearch,
     required this.onPrevious,
     required this.onNext,
     required this.onPageSubmitted,
@@ -704,6 +740,8 @@ class _AdminStudentControls extends StatelessWidget {
 
   final _StressRankFilter rankFilter;
   final _ConfidenceSort confidenceSort;
+  final TextEditingController searchController;
+  final String appliedSearch;
   final TextEditingController pageController;
   final int currentPage;
   final int totalPages;
@@ -711,6 +749,8 @@ class _AdminStudentControls extends StatelessWidget {
   final int pageSize;
   final ValueChanged<_StressRankFilter> onRankChanged;
   final ValueChanged<_ConfidenceSort> onSortChanged;
+  final VoidCallback onSearchSubmitted;
+  final VoidCallback? onClearSearch;
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final VoidCallback onPageSubmitted;
@@ -737,7 +777,7 @@ class _AdminStudentControls extends StatelessWidget {
             children: [
               const Expanded(
                 child: Text(
-                  "Student filters",
+                  "Student search",
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ),
@@ -751,6 +791,52 @@ class _AdminStudentControls extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+          TextField(
+            controller: searchController,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => onSearchSubmitted(),
+            decoration: InputDecoration(
+              labelText: "Search student",
+              hintText: "Type name, email, or UID",
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilledButton.icon(
+                  onPressed: onSearchSubmitted,
+                  icon: const Icon(Icons.search_rounded, size: 18),
+                  label: const Text("Search"),
+                ),
+              ),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 112,
+                minHeight: 42,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+          if (onClearSearch != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: onClearSearch,
+                icon: const Icon(Icons.close_rounded),
+                label: Text('Clear "$appliedSearch"'),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            "Stress rank",
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,

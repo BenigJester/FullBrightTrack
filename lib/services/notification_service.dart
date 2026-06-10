@@ -35,26 +35,6 @@ class NotificationService {
         );
   }
 
-  static Future<void> showHourlySteps(int steps) async {
-    const androidDetails = AndroidNotificationDetails(
-      'hourly_steps',
-      'Hourly Step Reminder',
-      channelDescription: 'Hourly wellness reminders',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
-      onlyAlertOnce: true,
-    );
-
-    const details = NotificationDetails(android: androidDetails);
-
-    await notifications.show(
-      id: 100,
-      title: 'Step Reminder',
-      body: '$steps steps today \u{1F6B6}',
-      notificationDetails: details,
-    );
-  }
-
   static Future<void> showAdminSafetyAlert({
     required String displayName,
     required String rank,
