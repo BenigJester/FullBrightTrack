@@ -1262,6 +1262,7 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
           initialUserId: item.userId == null || item.userId!.isEmpty
               ? null
               : item.userId,
+          refreshOnOpen: true,
         ),
       ),
     );

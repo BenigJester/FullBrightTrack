@@ -229,14 +229,15 @@ class AdminAlertService {
     }
 
     final userId = (message.data['userId'] as String?) ?? '';
-    final displayName =
-        (message.data['displayName'] as String?) ?? 'Student';
+    final displayName = (message.data['displayName'] as String?) ?? 'Student';
     final rank = (message.data['stressRank'] as String?) ?? 'High';
 
     unawaited(
       NotificationHistoryService.add(
         NotificationHistoryItem(
-          id: message.messageId ?? 'remote_${DateTime.now().microsecondsSinceEpoch}',
+          id:
+              message.messageId ??
+              'remote_${DateTime.now().microsecondsSinceEpoch}',
           title: title,
           body: body,
           type: 'admin_safety_alert',
@@ -328,6 +329,7 @@ class AdminAlertService {
       MaterialPageRoute(
         builder: (_) => AdminMonitoringScreen(
           initialUserId: userId == null || userId.isEmpty ? null : userId,
+          refreshOnOpen: true,
         ),
       ),
     );

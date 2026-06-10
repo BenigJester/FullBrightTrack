@@ -24,7 +24,7 @@ Current app version: `1.0.1`
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, unreachable backend, and very slow internet.
-- Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
+- Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts refreshes Admin Monitoring and opens the matching user.
 - Daily motivation popup.
 
 ## Tech Stack
@@ -285,7 +285,7 @@ admin_fcm_tokens/{adminUid}/tokens/{token}
 
 `admin_alerts` stores only review metadata, the affected user id, display name, stress rank, score, status, warning signature, and push delivery status. It does not store raw journal text. `admin_fcm_tokens` stores verified admin/developer device tokens so the backend worker can send FCM push notifications for active alerts.
 
-When an admin taps an active safety alert or its notification history item, the app opens Admin Monitoring and highlights the matching user.
+When an admin taps an active safety alert or its notification history item, the app refreshes Admin Monitoring from the server first, then highlights the matching user.
 
 ## Suggested Firestore Rules
 
@@ -467,7 +467,7 @@ Current test coverage includes:
 - The leaderboard is Firestore-only and uses public summary documents.
 - Raw AI scoring is consent-gated and requires the backend when AI output is needed.
 - Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, charted by Week or Month, and can store contact numbers after Philippine mobile validation.
-- Admin FCM alerts require the backend worker route or `ADMIN_ALERT_WORKER_INTERVAL_SECONDS`; client-side token registration alone does not send push notifications.
+- Admin FCM alerts require the backend worker route or `ADMIN_ALERT_WORKER_INTERVAL_SECONDS`; client-side token registration alone does not send push notifications. The Flutter app also registers a background FCM handler so admin alert/test payloads remain usable when the app is backgrounded or opened from a closed state.
 - Leaderboard results use a short in-memory cache when reopening the screen; pull-to-refresh bypasses the cache.
 - Journal warning review uses the AI backend and fails visibly if the online service is unavailable. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.
 - Step streaks preserve the current streak during the unfinished current day and reset the next day if no goal is reached.

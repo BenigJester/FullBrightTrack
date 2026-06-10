@@ -73,11 +73,11 @@ class StreakTab extends StatelessWidget {
     const color = Color(0xFFEA580C);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 170;
-        final padding = compact ? 11.0 : 16.0;
-        final topGap = compact ? 8.0 : 14.0;
+        final compact = constraints.maxWidth < 175;
+        final padding = compact ? 10.0 : 14.0;
+        final topGap = compact ? 6.0 : 10.0;
         final labelGap = compact ? 4.0 : 6.0;
-        final badgeGap = compact ? 6.0 : 10.0;
+        final badgeGap = compact ? 4.0 : 6.0;
 
         return Container(
           padding: EdgeInsets.all(padding),
@@ -147,7 +147,7 @@ class StreakTab extends StatelessWidget {
                 "${streak["current"]}",
                 style: TextStyle(
                   color: const Color(0xFF111827),
-                  fontSize: compact ? 28 : 32,
+                  fontSize: compact ? 26 : 30,
                   fontWeight: FontWeight.bold,
                   height: 1,
                 ),
@@ -186,11 +186,11 @@ class StreakTab extends StatelessWidget {
   Widget _moodStreakCard(Map<String, int> moodStreak) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 170;
-        final padding = compact ? 11.0 : 16.0;
-        final topGap = compact ? 8.0 : 14.0;
+        final compact = constraints.maxWidth < 175;
+        final padding = compact ? 10.0 : 14.0;
+        final topGap = compact ? 6.0 : 10.0;
         final labelGap = compact ? 4.0 : 6.0;
-        final badgeGap = compact ? 6.0 : 10.0;
+        final badgeGap = compact ? 4.0 : 6.0;
 
         return Container(
           padding: EdgeInsets.all(padding),
@@ -264,7 +264,7 @@ class StreakTab extends StatelessWidget {
                 "${moodStreak["current"]}",
                 style: TextStyle(
                   color: const Color(0xFF111827),
-                  fontSize: compact ? 28 : 32,
+                  fontSize: compact ? 26 : 30,
                   fontWeight: FontWeight.bold,
                   height: 1,
                 ),
@@ -308,7 +308,7 @@ class StreakTab extends StatelessWidget {
       width: double.infinity,
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,
-        vertical: compact ? 5 : 8,
+        vertical: compact ? 4 : 6,
       ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.16),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/admin_alert_service.dart';
 import '../services/auth_service.dart';
 import '../services/device_readiness_service.dart';
@@ -53,17 +55,69 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     final status = await DeviceReadinessService.checkStatus();
-    if (!mounted || !status.needsAttention) return;
+    if (!mounted) return;
 
-    await showDialog<void>(
-      context: context,
-      builder: (context) => _PermissionReadinessDialog(
-        initialStatus: status,
-        onChanged: () {
-          if (mounted) setState(() {});
-        },
-      ),
-    );
+    if (status.needsAttention) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => _PermissionReadinessDialog(
+          initialStatus: status,
+          onChanged: () {
+            if (mounted) setState(() {});
+          },
+        ),
+      );
+    }
+
+    if (!mounted) return;
+    await _ensureContactNumber();
+  }
+
+  Future<void> _ensureContactNumber() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final firestore = FirebaseFirestore.instance;
+      final userDoc = await firestore.collection('users').doc(user.uid).get();
+      final monitoringDoc = await firestore
+          .collection('admin_monitoring')
+          .doc(user.uid)
+          .get();
+
+      final profilePhone =
+          (userDoc.data()?['contactPhoneNumber'] as String?)?.trim() ?? '';
+      final monitoringPhone =
+          (monitoringDoc.data()?['contactPhoneNumber'] as String?)?.trim() ??
+          '';
+
+      if (_normalizePhilippineMobile(profilePhone) != null ||
+          _normalizePhilippineMobile(monitoringPhone) != null) {
+        return;
+      }
+
+      if (!mounted) return;
+      final contact = await showDialog<_RequiredContactInfo>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const _RequiredContactDialog(),
+      );
+      if (contact == null) return;
+
+      await firestore.collection('users').doc(user.uid).set({
+        'contactPhoneNumber': contact.phoneNumber,
+        'contactRelationship': contact.relationship,
+        'contactUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await firestore.collection('admin_monitoring').doc(user.uid).set({
+        'contactPhoneNumber': contact.phoneNumber,
+        'contactRelationship': contact.relationship,
+        'contactUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      debugPrint('Contact prompt skipped: $error');
+    }
   }
 
   void onItemTapped(int index) {
@@ -117,6 +171,216 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.local_fire_department_outlined),
             activeIcon: Icon(Icons.local_fire_department),
             label: "Streaks",
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+const _contactRelationships = [
+  'My number',
+  'Mother',
+  'Father',
+  'Guardian',
+  'Sibling',
+  'Relative',
+  'Trusted contact',
+];
+
+String? _normalizePhilippineMobile(String value) {
+  final digits = value.replaceAll(RegExp(r'[^0-9+]'), '');
+  if (RegExp(r'^09\d{9}$').hasMatch(digits)) {
+    return '+63${digits.substring(1)}';
+  }
+  if (RegExp(r'^\+639\d{9}$').hasMatch(digits)) return digits;
+  if (RegExp(r'^639\d{9}$').hasMatch(digits)) return '+$digits';
+  return null;
+}
+
+class _RequiredContactInfo {
+  const _RequiredContactInfo({
+    required this.phoneNumber,
+    required this.relationship,
+  });
+
+  final String phoneNumber;
+  final String relationship;
+}
+
+class _RequiredContactDialog extends StatefulWidget {
+  const _RequiredContactDialog();
+
+  @override
+  State<_RequiredContactDialog> createState() => _RequiredContactDialogState();
+}
+
+class _RequiredContactDialogState extends State<_RequiredContactDialog> {
+  final _phoneController = TextEditingController();
+  String _relationship = _contactRelationships.first;
+  String? _error;
+  bool _expanded = false;
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final phone = _normalizePhilippineMobile(_phoneController.text);
+    if (phone == null) {
+      setState(
+        () => _error =
+            'Enter a valid Philippine mobile number, like 09171234567.',
+      );
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      _RequiredContactInfo(phoneNumber: phone, relationship: _relationship),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+        contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 10, 24, 20),
+        title: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.deepOrange.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Icon(
+                Icons.phone_in_talk_rounded,
+                color: Colors.deepOrange,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Add contact number',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'A support contact is required so authorized staff can reach you or your trusted contact during verified safety reviews.',
+                style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Philippine mobile number',
+                  hintText: '09171234567',
+                  errorText: _error,
+                  prefixIcon: const Icon(Icons.phone_android_rounded),
+                  filled: true,
+                  fillColor: const Color(0xFFF7F8FC),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7F8FC),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.family_restroom_rounded),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _relationship,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            _expanded
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                          ),
+                        ],
+                      ),
+                      if (_expanded) ...[
+                        const SizedBox(height: 10),
+                        for (final relationship in _contactRelationships)
+                          ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(relationship),
+                            trailing: _relationship == relationship
+                                ? const Icon(
+                                    Icons.check_circle_rounded,
+                                    color: Colors.deepOrange,
+                                  )
+                                : const Icon(
+                                    Icons.radio_button_unchecked_rounded,
+                                  ),
+                            onTap: () {
+                              setState(() {
+                                _relationship = relationship;
+                                _expanded = false;
+                              });
+                            },
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _save,
+              icon: const Icon(Icons.check_circle_rounded),
+              label: const Text('Save contact'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.deepOrange,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+            ),
           ),
         ],
       ),

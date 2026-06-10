@@ -385,15 +385,24 @@ Future<Response> _testAdminNotification(Request request) async {
         ((payload['body'] as String?) ?? 'Admin FCM token delivery is working.')
             .trim();
     final tokens = await backend.adminFcmTokens();
+    final safeTitle = title.isEmpty ? 'FullBrightTrack test alert' : title;
+    final safeBody = body.isEmpty
+        ? 'Admin FCM token delivery is working.'
+        : body;
     var successCount = 0;
     var failureCount = 0;
 
     for (final token in tokens) {
       final sent = await backend.sendFcm(
         token: token,
-        title: title.isEmpty ? 'FullBrightTrack test alert' : title,
-        body: body.isEmpty ? 'Admin FCM token delivery is working.' : body,
-        data: {'type': 'admin_notification_test', 'source': 'backend'},
+        title: safeTitle,
+        body: safeBody,
+        data: {
+          'type': 'admin_notification_test',
+          'source': 'backend',
+          'title': safeTitle,
+          'body': safeBody,
+        },
       );
       if (sent) {
         successCount++;
@@ -669,20 +678,24 @@ Future<Map<String, dynamic>> _sendPendingAdminAlerts() async {
     final data = alert.data;
     final displayName = (data['displayName'] as String?) ?? 'Student';
     final rank = (data['stressRank'] as String?) ?? 'High';
+    final title = 'Wellness signal needs review';
+    final body = '$displayName has a $rank stress signal.';
     var alertSuccess = 0;
     var alertFailure = 0;
 
     for (final token in tokens) {
       final sent = await backend.sendFcm(
         token: token,
-        title: 'Wellness signal needs review',
-        body: '$displayName has a $rank stress signal.',
+        title: title,
+        body: body,
         data: {
           'type': 'admin_safety_alert',
           'alertId': alert.id,
           'userId': (data['userId'] as String?) ?? '',
           'displayName': displayName,
           'stressRank': rank,
+          'title': title,
+          'body': body,
         },
       );
       if (sent) {

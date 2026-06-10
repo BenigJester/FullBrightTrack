@@ -40,6 +40,18 @@ class NotificationService {
     required String rank,
     String? userId,
   }) async {
+    await showAdminSafetyNotification(
+      title: 'Wellness signal needs review',
+      body: '$displayName has a $rank stress signal. Open Admin Monitoring.',
+      userId: userId,
+    );
+  }
+
+  static Future<void> showAdminSafetyNotification({
+    required String title,
+    required String body,
+    String? userId,
+  }) async {
     const androidDetails = AndroidNotificationDetails(
       'admin_safety_alerts',
       'Admin Safety Alerts',
@@ -50,8 +62,8 @@ class NotificationService {
 
     await notifications.show(
       id: 200,
-      title: 'Wellness signal needs review',
-      body: '$displayName has a $rank stress signal. Open Admin Monitoring.',
+      title: title,
+      body: body,
       notificationDetails: const NotificationDetails(android: androidDetails),
       payload: jsonEncode({
         'type': 'admin_safety_alert',
@@ -75,6 +87,7 @@ class NotificationService {
         MaterialPageRoute(
           builder: (_) => AdminMonitoringScreen(
             initialUserId: userId == null || userId.isEmpty ? null : userId,
+            refreshOnOpen: true,
           ),
         ),
       );

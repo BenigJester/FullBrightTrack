@@ -9,9 +9,14 @@ import '../services/admin_alert_service.dart';
 import '../services/local_stress_model_service.dart';
 
 class AdminMonitoringScreen extends StatefulWidget {
-  const AdminMonitoringScreen({super.key, this.initialUserId});
+  const AdminMonitoringScreen({
+    super.key,
+    this.initialUserId,
+    this.refreshOnOpen = false,
+  });
 
   final String? initialUserId;
+  final bool refreshOnOpen;
 
   @override
   State<AdminMonitoringScreen> createState() => _AdminMonitoringScreenState();
@@ -37,7 +42,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   @override
   void initState() {
     super.initState();
-    _dashboardFuture = _loadDashboard();
+    _dashboardFuture = _loadDashboard(forceServer: widget.refreshOnOpen);
   }
 
   @override
@@ -50,14 +55,15 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
 
   Future<void> _refresh() async {
     setState(() {
-      _dashboardFuture = _loadDashboard();
+      _dashboardFuture = _loadDashboard(forceServer: true);
       _setPage(1);
+      _scrolledToHighlightedUser = false;
     });
 
     await _dashboardFuture;
   }
 
-  Future<_AdminDashboardData> _loadDashboard() async {
+  Future<_AdminDashboardData> _loadDashboard({bool forceServer = false}) async {
     final now = DateTime.now();
     final start = now.subtract(const Duration(days: 29));
     final dateKeys = List.generate(30, (index) {
@@ -68,7 +74,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         .collection('admin_monitoring')
         .orderBy('stressScore', descending: true)
         .limit(1000)
-        .get();
+        .get(forceServer ? const GetOptions(source: Source.server) : null);
 
     final summaries = <_StudentWellnessSummary>[];
 
@@ -1209,11 +1215,6 @@ class _StudentCard extends StatelessWidget {
             runSpacing: 10,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _RankBadge(
-                rank: student.stressRank,
-                score: student.stressScore,
-                confidence: student.mlFeatures.modelResult.confidence,
-              ),
               OutlinedButton.icon(
                 onPressed: () => _contactStudent(context),
                 icon: const Icon(Icons.phone_rounded),
@@ -2184,7 +2185,7 @@ class _PersonalMlPanel extends StatelessWidget {
                   label: "AI rank",
                   value: features.modelResult.confidence <= 0
                       ? "Pending"
-                      : features.modelResult.rank,
+                      : features.modelResult.score.toStringAsFixed(0),
                   color: _stressColor(features.modelResult.score),
                 ),
               ),
@@ -2426,49 +2427,6 @@ class _MetricPill extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RankBadge extends StatelessWidget {
-  const _RankBadge({
-    required this.rank,
-    required this.score,
-    required this.confidence,
-  });
-
-  final String rank;
-  final double score;
-  final double confidence;
-
-  @override
-  Widget build(BuildContext context) {
-    final isResolved = rank.trim().toLowerCase() == 'resolved';
-    final color = isResolved ? Colors.green : _stressColor(score);
-    final label = isResolved
-        ? "Resolved"
-        : confidence > 0
-        ? score.toStringAsFixed(0)
-        : "Pending";
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.bold,
-              fontSize: confidence > 0 && !isResolved ? 18 : 13,
-            ),
           ),
         ],
       ),
