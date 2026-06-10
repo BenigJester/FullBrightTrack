@@ -14,7 +14,7 @@ const _modelVersion = 'groq-llama-stress-v1';
 const _groqEndpoint = 'https://api.groq.com/openai/v1/chat/completions';
 const _defaultGroqModel = 'llama-3.1-8b-instant';
 const _pendingRegistrationTtl = Duration(minutes: 30);
-const _passwordResetTtl = Duration(minutes: 20);
+const _passwordResetTtl = Duration(minutes: 5);
 
 _FirebaseBackend? _firebaseBackend;
 
@@ -247,12 +247,9 @@ Future<Response> _requestPasswordReset(Request request) async {
     }
     final user = await backend.lookupUserByEmail(email);
     if (user == null) {
-      return _jsonResponse({
-        'ok': true,
-        'email': email,
-        'note':
-            'If this email exists, a reset link can be generated. No account was found in this demo backend.',
-      });
+      throw const _BadRequest(
+        'No Firebase Auth account exists for this email address.',
+      );
     }
 
     final id = _randomToken(12);
@@ -325,13 +322,8 @@ Future<Response> _completePasswordReset(Request request) async {
       },
     );
     final newPassword = (payload['newPassword'] as String?)?.trim() ?? '';
-    final confirmPassword =
-        (payload['confirmPassword'] as String?)?.trim() ?? '';
     if (newPassword.length < 6) {
       throw const _BadRequest('Password must be at least 6 characters.');
-    }
-    if (confirmPassword.isNotEmpty && confirmPassword != newPassword) {
-      throw const _BadRequest('Passwords do not match.');
     }
 
     await backend.updateUserPassword(reset['uid'] as String, newPassword);
@@ -814,11 +806,9 @@ Response _passwordResetPage({
           <input type="hidden" name="token" value="${_html(token)}" />
           <label for="newPassword">New password</label>
           <input id="newPassword" name="newPassword" type="password" minlength="6" autocomplete="new-password" required />
-          <label for="confirmPassword">Confirm new password</label>
-          <input id="confirmPassword" name="confirmPassword" type="password" minlength="6" autocomplete="new-password" required />
           <button class="button" type="submit">Update password</button>
         </form>
-        <p class="hint">After updating your password, return to FullBrightTrack and sign in again.</p>
+        <p class="hint">This secure link expires in 5 minutes. After updating your password, return to FullBrightTrack and sign in again.</p>
       ''',
     ),
   );
@@ -1741,7 +1731,7 @@ Open this secure link to reset your FullBrightTrack password:
 
 $resetUrl
 
-This link expires at ${expiresAt.toLocal()}.
+This link expires in ${_passwordResetTtl.inMinutes} minutes.
 
 If you did not request a password reset, you can ignore this email.
 ''';
@@ -1865,7 +1855,7 @@ Open this secure link to reset your FullBrightTrack password:
 
 $resetUrl
 
-This link expires at ${expiresAt.toLocal()}.
+This link expires in ${_passwordResetTtl.inMinutes} minutes.
 
 If you did not request a password reset, you can ignore this email.
 ''';

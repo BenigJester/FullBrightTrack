@@ -45,11 +45,6 @@
                 <action android:name="android.intent.action.USER_UNLOCKED"/>
             </intent-filter>
         </receiver>
-
-        <receiver
-            android:name="com.productivity.and.wellbeing.StepReminderReceiver"
-            android:enabled="true"
-            android:exported="false" />
     </application>
 
     <!-- Required to query activities that can process text, see:

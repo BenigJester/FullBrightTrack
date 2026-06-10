@@ -43,7 +43,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         title: const Text(
-          "Data Consent",
+          "Privacy Policy",
           style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
         ),
       ),
@@ -58,28 +58,40 @@ class _ConsentScreenState extends State<ConsentScreen> {
                   _header(),
                   const SizedBox(height: 16),
                   _section(
-                    icon: Icons.psychology_alt_rounded,
-                    title: "What FullBrightTrack analyzes",
+                    icon: Icons.person_pin_circle_rounded,
+                    title: "Information the app may use",
                     text:
-                        "With your permission, FullBrightTrack may process recent mood check-ins, mood intensity, step logs, journal entries, task titles, task status, deadlines, and locally detected warning labels to create AI wellness insights.",
+                        "FullBrightTrack may use account details, profile information, contact information, mood check-ins, mood intensity, step logs, journal entries, task titles, task status, deadlines, and warning labels to provide the app experience.",
                   ),
                   _section(
-                    icon: Icons.admin_panel_settings_rounded,
-                    title: "Why this matters",
+                    icon: Icons.psychology_alt_rounded,
+                    title: "AI wellness analysis",
                     text:
-                        "The AI status and Admin Monitoring tools use these signals to estimate stress rank, confidence, and short rationale labels. These are review aids, not medical diagnoses.",
+                        "When enabled, the app may send relevant wellness data to the configured AI backend to produce stress level, confidence, mood suggestions, task guidance, step insights, and support recommendations. These outputs are support tools only, not medical diagnosis or emergency care.",
                   ),
                   _section(
                     icon: Icons.security_rounded,
-                    title: "How your data is handled",
+                    title: "Privacy and storage",
                     text:
-                        "Raw data is sent only to the configured AI backend when this consent is active. Admin Monitoring stores derived values such as score, rank, confidence, rationale, and warning metadata instead of copying full raw journal text.",
+                        "Data is stored in Firebase services used by the app and may be processed by the configured backend. Access is limited by account role and security rules. Admin screens are intended for authorized review and support only.",
                   ),
                   _section(
                     icon: Icons.notifications_active_rounded,
-                    title: "Safety alerts",
+                    title: "Safety alerts and admin review",
                     text:
-                        "If a critical warning signal is detected, the app can create a privacy-safe admin alert. The alert includes review metadata and does not include full journal text.",
+                        "If the system detects possible harmful, explicit, or high-risk language, it may create an admin alert so authorized staff can review the signal, verify it, mark it resolved, or mark it as a false positive.",
+                  ),
+                  _section(
+                    icon: Icons.manage_accounts_rounded,
+                    title: "Your control",
+                    text:
+                        "You are responsible for keeping account information accurate, including contact details when required. App records may be updated when you change mood, journal, task, step, profile, or support information.",
+                  ),
+                  _section(
+                    icon: Icons.info_outline_rounded,
+                    title: "Important acknowledgement",
+                    text:
+                        "By continuing, you acknowledge that you have read this privacy policy summary and understand that FullBrightTrack is a wellness and productivity support app. For urgent mental health or safety concerns, contact trusted support or local emergency services.",
                   ),
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -118,7 +130,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
                     ? () => Navigator.pop(context, true)
                     : null,
                 icon: const Icon(Icons.check_circle_rounded),
-                label: const Text("I understand and agree"),
+                label: const Text("I acknowledge the Privacy Policy"),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.deepOrange,
                   foregroundColor: Colors.white,
@@ -153,7 +165,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
           Icon(Icons.verified_user_rounded, color: Colors.white, size: 38),
           SizedBox(height: 12),
           Text(
-            "AI wellness data consent",
+            "Privacy Policy acknowledgement",
             style: TextStyle(
               color: Colors.white,
               fontSize: 24,
@@ -162,7 +174,7 @@ class _ConsentScreenState extends State<ConsentScreen> {
           ),
           SizedBox(height: 8),
           Text(
-            "Please review how FullBrightTrack uses raw wellness data before continuing.",
+            "Please review how FullBrightTrack handles wellness, account, and support data before continuing.",
             style: TextStyle(color: Colors.white, height: 1.35),
           ),
         ],

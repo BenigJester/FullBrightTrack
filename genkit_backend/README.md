@@ -30,9 +30,9 @@ The backend can also run thesis-demo account and admin alert workflows:
 
 - `/start-registration` creates a pending email confirmation record.
 - `/confirm-registration` shows a confirmation page; the Firebase Auth account is created only after the user presses the confirmation button.
-- `/request-password-reset` creates a one-time reset token for an existing Firebase Auth user.
+- `/request-password-reset` checks Firebase Auth first, then creates a 5-minute one-time reset token for an existing user.
 - `/confirm-password-reset` validates a reset token and shows the reset form.
-- `/complete-password-reset` updates the Firebase Auth password after the new password and confirmation match.
+- `/complete-password-reset` updates the Firebase Auth password after the reset token is valid and unused.
 - `/admin-alert-worker` polls Firestore `admin_alerts`, reads admin FCM tokens, and sends push notifications through FCM HTTP v1.
 - `/test-admin-notification` sends a direct test notification to registered admin/developer FCM tokens.
 - `/developer-delete-user` lets the developer app delete Firebase Auth login credentials for a target UID or email after verifying the signed-in caller has `users/{uid}.role == "developer"`.
@@ -213,7 +213,7 @@ $body = @{ email = "student@example.com" } | ConvertTo-Json -Compress
 Invoke-RestMethod -Uri "http://localhost:8080/request-password-reset" -Method Post -ContentType "application/json" -Body $body
 ```
 
-Open the returned `resetUrl`. The browser page asks for `New password` and `Confirm new password`.
+Open the returned `resetUrl` within 5 minutes. The browser page asks for `New password`.
 
 You can also complete it manually:
 
@@ -222,7 +222,6 @@ $body = @{
   id = "REQUEST_ID"
   token = "TOKEN_FROM_RESET_URL"
   newPassword = "newPassword123"
-  confirmPassword = "newPassword123"
 } | ConvertTo-Json -Compress
 
 Invoke-RestMethod -Uri "http://localhost:8080/complete-password-reset" -Method Post -ContentType "application/json" -Body $body

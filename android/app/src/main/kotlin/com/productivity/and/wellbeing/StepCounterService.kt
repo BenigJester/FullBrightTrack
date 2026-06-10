@@ -38,24 +38,6 @@ class StepCounterService : Service(), SensorEventListener {
             return START_NOT_STICKY
         }
 
-        if (intent?.action == ACTION_REFRESH_REMINDER) {
-            if (!hasActivityPermission()) {
-                saveDebug("Native reminder refresh blocked: activity permission missing")
-                markRunning(false)
-                stopSelf()
-                return START_NOT_STICKY
-            }
-
-            markRunning(true)
-            startForeground(NOTIFICATION_ID, buildNotification(currentNotificationText()))
-            if (counterRegistered || detectorRegistered) {
-                updateNotification(currentNotificationText())
-                return START_REDELIVER_INTENT
-            }
-            startTracking()
-            return START_REDELIVER_INTENT
-        }
-
         try {
             if (!hasActivityPermission()) {
                 saveDebug("Native pedometer blocked: activity permission missing")
@@ -347,50 +329,28 @@ class StepCounterService : Service(), SensorEventListener {
 
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Steps Reminder",
+            "Step tracker",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Live step reminder while FullBrightTrack tracks steps"
+            description = "Keeps step tracking active while FullBrightTrack is running"
         }
 
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
-    private fun buildNotification(text: String): android.app.Notification {
-        val reminderReady = shouldRefreshReminderNotification()
-        val title = if (reminderReady) "Step Reminder" else "Step tracking active"
-        val content = if (reminderReady) {
-            text
-        } else {
-            "Reminder starts at ${minimumReminderSteps()} steps"
-        }
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun buildNotification(text: String) =
+        NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(applicationInfo.icon)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setOngoing(false)
-            .setAutoCancel(false)
+            .setContentTitle("FullBrightTrack step tracker")
+            .setContentText(text)
+            .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-    }
 
     private fun updateNotification(text: String) {
-        if (!shouldRefreshReminderNotification()) return
-
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(text))
-    }
-
-    private fun shouldRefreshReminderNotification(): Boolean {
-        if (!prefs().getBoolean(prefKey(KEY_REMINDERS_ENABLED), true)) return false
-
-        return readInt(KEY_STEPS) >= minimumReminderSteps()
-    }
-
-    private fun minimumReminderSteps(): Int {
-        return readInt(KEY_MIN_REMINDER_STEPS).coerceAtLeast(100)
     }
 
     private fun currentNotificationText(): String {
@@ -419,10 +379,9 @@ class StepCounterService : Service(), SensorEventListener {
     companion object {
         const val ACTION_START = "com.productivity.and.wellbeing.START_STEPS"
         const val ACTION_STOP = "com.productivity.and.wellbeing.STOP_STEPS"
-        const val ACTION_REFRESH_REMINDER = "com.productivity.and.wellbeing.REFRESH_STEP_REMINDER"
 
-        private const val CHANNEL_ID = "hourly_steps"
-        private const val NOTIFICATION_ID = 100
+        private const val CHANNEL_ID = "native_step_channel"
+        private const val NOTIFICATION_ID = 4100
         private const val MAX_REASONABLE_STEP_JUMP = 5000
 
         private const val KEY_STEPS = "bg_steps"
@@ -435,8 +394,6 @@ class StepCounterService : Service(), SensorEventListener {
         private const val KEY_DEBUG = "bg_debug"
         private const val KEY_QUEUE = "steps_queue"
         private const val KEY_RUNNING = "bg_native_running"
-        private const val KEY_REMINDERS_ENABLED = "hourly_step_reminders_enabled"
-        private const val KEY_MIN_REMINDER_STEPS = "step_reminder_min_steps"
 
         fun start(context: Context) {
             val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
@@ -467,23 +424,6 @@ class StepCounterService : Service(), SensorEventListener {
                     .edit()
                     .putString("flutter.$KEY_DEBUG", "Native pedometer could not start: ${error.message}")
                     .putBoolean("flutter.$KEY_RUNNING", false)
-                    .apply()
-            }
-        }
-
-        fun refreshReminder(context: Context) {
-            val intent = Intent(context, StepCounterService::class.java).setAction(ACTION_REFRESH_REMINDER)
-
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    ContextCompat.startForegroundService(context, intent)
-                } else {
-                    context.startService(intent)
-                }
-            } catch (error: Exception) {
-                context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                    .edit()
-                    .putString("flutter.$KEY_DEBUG", "Native reminder refresh failed: ${error.message}")
                     .apply()
             }
         }

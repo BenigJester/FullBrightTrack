@@ -342,8 +342,8 @@ class _LoginTabState extends State<LoginTab>
       if (!mounted) return;
       showErrorSnackBar(
         result.requestId.isEmpty
-            ? 'If this email exists, a password reset link will be sent.'
-            : 'Password reset link sent. Check your email.',
+            ? 'Password reset request completed.'
+            : 'Password reset link sent. Check your email within 5 minutes.',
       );
     } catch (error) {
       if (!mounted) return;
@@ -699,7 +699,9 @@ class _LoginTabState extends State<LoginTab>
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: rawDataConsent ? null : _openConsentScreen,
+        onTap: rawDataConsent
+            ? () => setState(() => rawDataConsent = false)
+            : _openConsentScreen,
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
@@ -715,7 +717,13 @@ class _LoginTabState extends State<LoginTab>
               Checkbox(
                 value: rawDataConsent,
                 activeColor: Colors.green,
-                onChanged: rawDataConsent ? null : (_) => _openConsentScreen(),
+                onChanged: (value) {
+                  if (rawDataConsent) {
+                    setState(() => rawDataConsent = false);
+                  } else {
+                    _openConsentScreen();
+                  }
+                },
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -724,8 +732,8 @@ class _LoginTabState extends State<LoginTab>
                   children: [
                     Text(
                       rawDataConsent
-                          ? 'Agreement confirmed'
-                          : 'AI wellness data agreement required',
+                          ? 'Privacy Policy acknowledged'
+                          : 'I have read and acknowledge the PRIVACY POLICY',
                       style: TextStyle(
                         color: rawDataConsent
                             ? Colors.green.shade700
@@ -734,18 +742,18 @@ class _LoginTabState extends State<LoginTab>
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      rawDataConsent
-                          ? 'You consented to AI wellness analysis and safety alerts.'
-                          : 'Tap to review the consent screen and scroll to the end before agreeing.',
-                      style: TextStyle(
-                        color: Colors.grey.shade700,
-                        fontSize: 12.2,
-                        height: 1.35,
-                        fontWeight: FontWeight.w600,
+                    if (rawDataConsent) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'You can continue using FullBrightTrack with wellness analysis and safety support enabled.',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12.2,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

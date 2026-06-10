@@ -24,7 +24,6 @@ Current app version: `1.0.1`
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
 - App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, unreachable backend, and very slow internet.
-- Steps Reminder support with live step updates, dismissible notification behavior where Android allows it, and preset or custom step thresholds starting at 100 steps.
 - Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts opens Admin Monitoring for the matching user.
 - Daily motivation popup.
 
@@ -36,7 +35,6 @@ Current app version: `1.0.1`
 - Google Sign-In
 - Provider state management
 - SharedPreferences local persistence
-- Workmanager background jobs
 - Flutter Local Notifications
 - Native Android Kotlin foreground service
 - Firebase App Check
@@ -72,7 +70,6 @@ lib/
     display_name_service.dart
     genkit_stress_ai_service.dart
     hometab_service.dart
-    steps_reminder_worker.dart
     journal_service.dart
     journal_warning_service.dart
     leaderboard_service.dart
@@ -80,7 +77,6 @@ lib/
     moodscreen_service.dart
     notification_service.dart
     quote_service.dart
-    reminder_scheduler_service.dart
     step_foreground_service.dart
     step_local_store.dart
     steps_service.dart
@@ -95,7 +91,6 @@ genkit_backend/
 android/app/src/main/kotlin/com/productivity/and/wellbeing/
   MainActivity.kt
   StepBootReceiver.kt
-  StepReminderReceiver.kt
   StepCounterService.kt
 
 test/
@@ -232,9 +227,10 @@ Invoke-RestMethod -Uri "http://localhost:8080/start-registration" -Method Post -
 
 1. User chooses reset password in Login or Account Information.
 2. Flutter calls `/request-password-reset`.
-3. Backend emails a one-time reset link.
-4. User opens the link, enters the new password twice, then presses `Update password`.
-5. Backend updates Firebase Auth password only after both passwords match.
+3. Backend checks that the email exists in Firebase Auth before sending anything.
+4. Backend emails a one-time reset link that expires in 5 minutes.
+5. User opens the link, enters the new password, then presses `Update password`.
+6. Backend updates the Firebase Auth password only after the reset token is valid and unused.
 
 ### Account Information Actions
 

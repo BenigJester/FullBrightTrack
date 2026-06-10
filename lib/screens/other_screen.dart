@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../services/admin_access_service.dart';
-import '../services/admin_alert_service.dart';
 import '../services/auth_service.dart';
 import '../services/backend_account_service.dart';
 import '../services/device_readiness_service.dart';
 import '../services/display_name_service.dart';
 import '../services/logout_service.dart';
 import '../services/notification_history_service.dart';
-import '../services/reminder_scheduler_service.dart';
 import '../services/step_foreground_service.dart';
 import 'admin_monitoring_screen.dart';
 
@@ -178,21 +175,6 @@ class _MoreScreenState extends State<MoreScreen> {
                         await _refreshProfile();
                       },
                     ),
-
-                    _tile(
-                      icon: Icons.notifications_none_rounded,
-                      title: "Step Reminders",
-                      subtitle: "Manage step reminder notifications",
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationSettingsScreen(),
-                          ),
-                        );
-                      },
-                    ),
-
                     FutureBuilder<bool>(
                       future: AdminAccessService.isCurrentUserAdmin(),
                       builder: (context, snapshot) {
@@ -664,8 +646,8 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
       if (!mounted) return;
       _showMessage(
         result.requestId.isEmpty
-            ? "If this email exists, a password reset link will be sent"
-            : "Password reset link sent. Check your email",
+            ? "Password reset request completed"
+            : "Password reset link sent. Check your email within 5 minutes",
       );
     } catch (e) {
       if (!mounted) return;
@@ -1208,311 +1190,6 @@ String? _normalizePhilippineMobile(String? raw) {
   return null;
 }
 
-class NotificationSettingsScreen extends StatefulWidget {
-  const NotificationSettingsScreen({super.key});
-
-  @override
-  State<NotificationSettingsScreen> createState() =>
-      _NotificationSettingsScreenState();
-}
-
-class _NotificationSettingsScreenState
-    extends State<NotificationSettingsScreen> {
-  bool _enabled = true;
-  int _minSteps = 100;
-  bool _loading = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    if (!mounted) return;
-
-    setState(() {
-      _enabled = prefs.getBool(ReminderSchedulerService.enabledKey) ?? true;
-      _minSteps = prefs.getInt(ReminderSchedulerService.minStepsKey) ?? 100;
-      _loading = false;
-    });
-  }
-
-  Future<void> _saveSettings({bool? enabled, int? minSteps}) async {
-    setState(() => _saving = true);
-
-    final nextEnabled = enabled ?? _enabled;
-    final nextMinSteps = ReminderSchedulerService.normalizeMinSteps(
-      minSteps ?? _minSteps,
-    );
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(ReminderSchedulerService.enabledKey, nextEnabled);
-      await prefs.setInt(ReminderSchedulerService.minStepsKey, nextMinSteps);
-
-      if (nextEnabled) {
-        await _requestNotificationPermission();
-      }
-
-      await ReminderSchedulerService.schedule(
-        enabled: nextEnabled,
-        minSteps: nextMinSteps,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _enabled = nextEnabled;
-        _minSteps = nextMinSteps;
-      });
-
-      _showMessage("Notification settings updated");
-    } catch (e) {
-      if (!mounted) return;
-      _showMessage("Could not update notification settings");
-      debugPrint("Notification settings error: $e");
-    } finally {
-      if (mounted) {
-        setState(() => _saving = false);
-      }
-    }
-  }
-
-  Future<void> _requestNotificationPermission() async {
-    await DeviceReadinessService.requestNotificationPermission();
-  }
-
-  Future<void> _sendTestNotification() async {
-    await _requestNotificationPermission();
-    final state = await StepForegroundService.getCurrentState();
-    final steps = (state['steps'] as num?)?.toInt() ?? 0;
-    if (steps < _minSteps) {
-      _showMessage(
-        "Step reminder starts at $_minSteps steps. Current: $steps.",
-      );
-      return;
-    }
-
-    await StepForegroundService.start();
-    _showMessage("Live step reminder refreshed");
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFF7F8FC),
-        appBar: _settingsAppBar("Steps Reminder"),
-        body: const Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FC),
-      appBar: _settingsAppBar("Steps Reminder"),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            _settingsCard(
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    value: _enabled,
-                    onChanged: _saving
-                        ? null
-                        : (value) => _saveSettings(enabled: value),
-                    activeThumbColor: Colors.deepOrange,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text(
-                      "Step reminders",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: const Text(
-                      "Show the live reminder after you reach your chosen step count.",
-                    ),
-                  ),
-                  const Divider(height: 28),
-                  _stepsOption(500),
-                  _stepsOption(1000),
-                  _stepsOption(2000),
-                  _stepsOption(4000),
-                  _customStepsOption(),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            _secondaryButton(
-              label: "Refresh Live Reminder",
-              icon: Icons.notifications_active_outlined,
-              onPressed: _sendTestNotification,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _stepsOption(int steps) {
-    final selected = _minSteps == steps;
-    final disabled = !_enabled || _saving;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: disabled ? null : () => _saveSettings(minSteps: steps),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              selected
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              color: disabled
-                  ? Colors.grey.shade400
-                  : selected
-                  ? Colors.deepOrange
-                  : Colors.grey.shade500,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              "$steps steps",
-              style: TextStyle(
-                color: disabled ? Colors.grey.shade500 : Colors.black87,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _customStepsOption() {
-    final customSelected = !const [500, 1000, 2000, 4000].contains(_minSteps);
-    final disabled = !_enabled || _saving;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: disabled ? null : _showCustomStepsDialog,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          children: [
-            Icon(
-              customSelected
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_unchecked_rounded,
-              color: disabled
-                  ? Colors.grey.shade400
-                  : customSelected
-                  ? Colors.deepOrange
-                  : Colors.grey.shade500,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                customSelected ? "Custom ($_minSteps steps)" : "Custom",
-                style: TextStyle(
-                  color: disabled ? Colors.grey.shade500 : Colors.black87,
-                  fontWeight: customSelected
-                      ? FontWeight.w700
-                      : FontWeight.w500,
-                ),
-              ),
-            ),
-            Icon(Icons.edit_rounded, color: Colors.grey.shade500, size: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showCustomStepsDialog() async {
-    final controller = TextEditingController(text: _minSteps.toString());
-    final formKey = GlobalKey<FormState>();
-
-    final result = await showDialog<int>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: const Text("Custom step reminder"),
-          content: Form(
-            key: formKey,
-            child: TextFormField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                labelText: "Minimum steps",
-                helperText: "Minimum allowed is 100 steps.",
-                prefixIcon: const Icon(Icons.directions_walk_rounded),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              validator: (value) {
-                final parsed = int.tryParse(value?.trim() ?? '');
-                if (parsed == null) return "Enter a valid step count.";
-                if (parsed < 100) return "Use at least 100 steps.";
-                return null;
-              },
-              onFieldSubmitted: (_) {
-                if (formKey.currentState?.validate() != true) return;
-                Navigator.pop(context, int.parse(controller.text.trim()));
-              },
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.deepOrange,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                if (formKey.currentState?.validate() != true) return;
-                Navigator.pop(context, int.parse(controller.text.trim()));
-              },
-              child: const Text("Save"),
-            ),
-          ],
-        );
-      },
-    );
-
-    controller.dispose();
-    if (result == null) return;
-
-    await _saveSettings(minSteps: result);
-  }
-}
-
 class NotificationHistoryScreen extends StatefulWidget {
   const NotificationHistoryScreen({super.key});
 
@@ -1523,71 +1200,71 @@ class NotificationHistoryScreen extends StatefulWidget {
 
 class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
   late Future<List<NotificationHistoryItem>> _historyFuture;
-  late Future<bool> _adminFuture;
-  bool _busy = false;
+  final Set<String> _deletingIds = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _adminFuture = AdminAccessService.isCurrentUserAdmin();
     _historyFuture = NotificationHistoryService.load();
   }
 
   Future<void> _refresh() async {
-    setState(() {
-      _historyFuture = NotificationHistoryService.load();
-    });
-
+    setState(() => _historyFuture = NotificationHistoryService.load());
     await _historyFuture;
   }
 
   Future<void> _delete(String id) async {
-    if (_busy) return;
-
-    setState(() => _busy = true);
-    await NotificationHistoryService.delete(id);
-    await _refresh();
-    if (mounted) setState(() => _busy = false);
+    if (_deletingIds.contains(id)) return;
+    setState(() => _deletingIds.add(id));
+    try {
+      await NotificationHistoryService.delete(id);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _deletingIds.remove(id));
+    }
   }
 
   Future<void> _clearAll() async {
-    if (_busy) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
+      builder: (context) => AlertDialog(
+        title: const Text("Clear notification history?"),
+        content: const Text(
+          "This removes saved admin notification history from this device account.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
-          title: const Text("Clear notification history?"),
-          content: const Text(
-            "This removes saved alert history from this device only.",
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.deepOrange,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Clear"),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("Cancel"),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text("Clear all"),
-            ),
-          ],
-        );
-      },
+        ],
+      ),
     );
-
     if (confirmed != true) return;
 
-    setState(() => _busy = true);
     await NotificationHistoryService.clearAll();
     await _refresh();
-    if (mounted) setState(() => _busy = false);
+  }
+
+  void _openItem(NotificationHistoryItem item) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminMonitoringScreen(
+          initialUserId: item.userId == null || item.userId!.isEmpty
+              ? null
+              : item.userId,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1605,186 +1282,99 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: "Clear all",
-            onPressed: _busy ? null : _clearAll,
-            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: "Clear history",
+            onPressed: _clearAll,
+            icon: const Icon(Icons.delete_sweep_rounded),
           ),
-          const SizedBox(width: 6),
         ],
       ),
-      body: FutureBuilder<bool>(
-        future: _adminFuture,
+      body: FutureBuilder<List<NotificationHistoryItem>>(
+        future: _historyFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
-
-          if (snapshot.data != true) {
+          if (snapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  "Notification history is available for admins only.",
+                  "Could not load notification history.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade700, height: 1.4),
+                  style: TextStyle(color: Colors.grey.shade700),
                 ),
               ),
             );
           }
 
-          return FutureBuilder<List<NotificationHistoryItem>>(
-            future: _historyFuture,
-            builder: (context, historySnapshot) {
-              if (historySnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
+          final items = snapshot.data ?? const <NotificationHistoryItem>[];
+          if (items.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  "No admin notifications yet.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              ),
+            );
+          }
 
-              final items =
-                  historySnapshot.data ?? const <NotificationHistoryItem>[];
-
-              return RefreshIndicator(
-                color: Colors.deepOrange,
-                onRefresh: _refresh,
-                child: items.isEmpty
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(24),
-                        children: [
-                          const SizedBox(height: 120),
-                          Icon(
-                            Icons.notifications_off_outlined,
-                            color: Colors.grey.shade500,
-                            size: 54,
-                          ),
-                          const SizedBox(height: 12),
-                          const Center(
-                            child: Text(
-                              "No admin alerts yet",
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            "Critical warning alerts will appear here after they are received on this admin account.",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      )
-                    : ListView.separated(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(20),
-                        itemBuilder: (context, index) {
-                          final item = items[index];
-                          return _NotificationHistoryTile(
-                            item: item,
-                            busy: _busy,
-                            onDelete: () => _delete(item.id),
-                            onReview: item.userId == null
-                                ? null
-                                : () => AdminAlertService.openAdminMonitoring(
-                                    userId: item.userId,
-                                  ),
-                          );
-                        },
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemCount: items.length,
+          return RefreshIndicator(
+            color: Colors.deepOrange,
+            onRefresh: _refresh,
+            child: ListView.separated(
+              padding: const EdgeInsets.all(20),
+              itemCount: items.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final deleting = _deletingIds.contains(item.id);
+                return _settingsCard(
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.deepOrange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(14),
                       ),
-              );
-            },
+                      child: const Icon(
+                        Icons.notifications_active_outlined,
+                        color: Colors.deepOrange,
+                      ),
+                    ),
+                    title: Text(
+                      item.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(
+                      item.body,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onTap: () => _openItem(item),
+                    trailing: deleting
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            tooltip: "Delete",
+                            onPressed: () => _delete(item.id),
+                            icon: const Icon(Icons.delete_outline_rounded),
+                          ),
+                  ),
+                );
+              },
+            ),
           );
         },
       ),
     );
-  }
-}
-
-class _NotificationHistoryTile extends StatelessWidget {
-  const _NotificationHistoryTile({
-    required this.item,
-    required this.busy,
-    required this.onDelete,
-    required this.onReview,
-  });
-
-  final NotificationHistoryItem item;
-  final bool busy;
-  final VoidCallback onDelete;
-  final VoidCallback? onReview;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: onReview,
-      child: _settingsCard(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: Colors.red.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(15),
-              ),
-              child: const Icon(Icons.warning_amber_rounded, color: Colors.red),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.body,
-                    style: TextStyle(color: Colors.grey.shade700, height: 1.35),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _formatHistoryTime(item.createdAt),
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: "Delete",
-              onPressed: busy ? null : onDelete,
-              icon: const Icon(Icons.delete_outline_rounded),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatHistoryTime(DateTime value) {
-    final hour = value.hour > 12
-        ? value.hour - 12
-        : value.hour == 0
-        ? 12
-        : value.hour;
-    final minute = value.minute.toString().padLeft(2, '0');
-    final period = value.hour >= 12 ? 'PM' : 'AM';
-    return '${value.month}/${value.day}/${value.year} $hour:$minute $period';
   }
 }
 

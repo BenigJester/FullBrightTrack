@@ -190,8 +190,8 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
       );
       setState(
         () => _message = result.requestId.isEmpty
-            ? 'If this developer account exists, a reset link will be sent.'
-            : 'Password reset link sent. Check the developer email.',
+            ? 'Password reset request completed.'
+            : 'Password reset link sent. Check the developer email within 5 minutes.',
       );
     } catch (error) {
       setState(() => _message = 'Password reset failed: $error');
@@ -1249,8 +1249,8 @@ class _DeveloperAccountScreenState extends State<_DeveloperAccountScreen> {
       if (!mounted) return;
       _showMessage(
         result.requestId.isEmpty
-            ? 'If this developer email exists, a reset link will be sent.'
-            : 'Password reset link sent. Check the developer email.',
+            ? 'Password reset request completed.'
+            : 'Password reset link sent. Check the developer email within 5 minutes.',
       );
     } catch (error) {
       if (!mounted) return;

@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'services/auth_wrapper.dart';
-import 'package:workmanager/workmanager.dart';
 import 'services/app_check_service.dart';
 import 'services/app_navigator_service.dart';
-import 'services/steps_reminder_worker.dart';
 import 'services/notification_service.dart';
-import 'services/reminder_scheduler_service.dart';
 import 'package:provider/provider.dart';
 import 'models/app_data.dart';
 import 'widgets/internet_guard.dart';
@@ -19,9 +16,6 @@ void main() async {
   await AppCheckService.activate();
 
   await NotificationService.initialize();
-
-  Workmanager().initialize(hourlyWorkerCallbackDispatcher);
-  await ReminderSchedulerService.scheduleFromPreferences();
 
   runApp(
     MultiProvider(

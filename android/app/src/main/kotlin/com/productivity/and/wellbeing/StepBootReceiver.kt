@@ -14,7 +14,6 @@ class StepBootReceiver : BroadcastReceiver() {
                 if (StepCounterService.hasActivityPermission(context)) {
                     StepCounterService.start(context)
                 }
-                StepReminderReceiver.schedule(context)
             }
         }
     }
