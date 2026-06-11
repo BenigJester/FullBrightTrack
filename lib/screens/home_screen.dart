@@ -306,7 +306,10 @@ class _RequiredContactDialogState extends State<_RequiredContactDialog> {
               const SizedBox(height: 12),
               InkWell(
                 borderRadius: BorderRadius.circular(16),
-                onTap: () => setState(() => _expanded = !_expanded),
+                onTap: () {
+                  FocusScope.of(context).unfocus();
+                  setState(() => _expanded = !_expanded);
+                },
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(

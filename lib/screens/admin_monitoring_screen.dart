@@ -1427,8 +1427,10 @@ class _ContactInfoDialogState extends State<_ContactInfoDialog> {
                   ),
                   child: ExpansionTile(
                     initiallyExpanded: _expanded,
-                    onExpansionChanged: (value) =>
-                        setState(() => _expanded = value),
+                    onExpansionChanged: (value) {
+                      if (value) FocusScope.of(context).unfocus();
+                      setState(() => _expanded = value);
+                    },
                     title: const Text(
                       'Whose number is this?',
                       style: TextStyle(fontWeight: FontWeight.w800),

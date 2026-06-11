@@ -433,11 +433,9 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
   final _emailController = TextEditingController();
   final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   String _contactRelationship = _contactRelationships.first;
   bool _saving = false;
   bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
   bool _contactExpanded = false;
 
   @override
@@ -456,7 +454,6 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
     _emailController.dispose();
     _phoneController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -777,9 +774,7 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
 
   Future<String?> _showPasswordDialog() async {
     _passwordController.clear();
-    _confirmPasswordController.clear();
     _obscurePassword = true;
-    _obscureConfirmPassword = true;
 
     return showDialog<String>(
       context: context,
@@ -848,27 +843,6 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    _input(
-                      controller: _confirmPasswordController,
-                      label: "Confirm password",
-                      icon: Icons.lock_person_outlined,
-                      obscureText: _obscureConfirmPassword,
-                      suffixIcon: IconButton(
-                        tooltip: _obscureConfirmPassword
-                            ? "Show password"
-                            : "Hide password",
-                        onPressed: () => setDialogState(
-                          () => _obscureConfirmPassword =
-                              !_obscureConfirmPassword,
-                        ),
-                        icon: Icon(
-                          _obscureConfirmPassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -888,15 +862,9 @@ class _AccountInformationScreenState extends State<AccountInformationScreen> {
                   ),
                   onPressed: () {
                     final password = _passwordController.text.trim();
-                    final confirm = _confirmPasswordController.text.trim();
 
                     if (password.length < 6) {
                       _showMessage("Password must be at least 6 characters");
-                      return;
-                    }
-
-                    if (password != confirm) {
-                      _showMessage("Passwords do not match");
                       return;
                     }
 

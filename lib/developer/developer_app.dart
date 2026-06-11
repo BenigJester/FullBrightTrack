@@ -1175,17 +1175,14 @@ class _DeveloperAccountScreen extends StatefulWidget {
 
 class _DeveloperAccountScreenState extends State<_DeveloperAccountScreen> {
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   bool _busy = false;
   bool _obscurePassword = true;
-  bool _obscureConfirmPassword = true;
 
   User get user => FirebaseAuth.instance.currentUser ?? widget.user;
 
   @override
   void dispose() {
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     super.dispose();
   }
 
@@ -1313,9 +1310,7 @@ class _DeveloperAccountScreenState extends State<_DeveloperAccountScreen> {
 
   Future<String?> _showPasswordDialog() async {
     _passwordController.clear();
-    _confirmPasswordController.clear();
     _obscurePassword = true;
-    _obscureConfirmPassword = true;
 
     return showDialog<String>(
       context: context,
@@ -1376,30 +1371,6 @@ class _DeveloperAccountScreenState extends State<_DeveloperAccountScreen> {
                       border: const OutlineInputBorder(),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _confirmPasswordController,
-                    obscureText: _obscureConfirmPassword,
-                    decoration: InputDecoration(
-                      labelText: 'Confirm password',
-                      prefixIcon: const Icon(Icons.lock_person_outlined),
-                      suffixIcon: IconButton(
-                        tooltip: _obscureConfirmPassword
-                            ? 'Show password'
-                            : 'Hide password',
-                        onPressed: () => setDialogState(
-                          () => _obscureConfirmPassword =
-                              !_obscureConfirmPassword,
-                        ),
-                        icon: Icon(
-                          _obscureConfirmPassword
-                              ? Icons.visibility_outlined
-                              : Icons.visibility_off_outlined,
-                        ),
-                      ),
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
                 ],
               ),
               actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -1409,13 +1380,8 @@ class _DeveloperAccountScreenState extends State<_DeveloperAccountScreen> {
                   child: FilledButton(
                     onPressed: () {
                       final password = _passwordController.text.trim();
-                      final confirm = _confirmPasswordController.text.trim();
                       if (password.length < 6) {
                         _showMessage('Password must be at least 6 characters.');
-                        return;
-                      }
-                      if (password != confirm) {
-                        _showMessage('Passwords do not match.');
                         return;
                       }
                       Navigator.pop(context, password);
