@@ -71,25 +71,35 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
 
   String get _backendBaseUrl {
     const configured = String.fromEnvironment('FULLBRIGHT_BACKEND_URL');
-    if (configured.trim().isNotEmpty) {
-      return configured.trim().replaceAll(RegExp(r'/+$'), '');
+    final configuredUrl = _validBackendBaseUrl(configured);
+    if (configuredUrl != null) {
+      return configuredUrl;
     }
 
     const stressUrl = String.fromEnvironment('GENKIT_STRESS_FLOW_URL');
     final stressUri = Uri.tryParse(stressUrl.trim());
-    if (stressUri != null) {
+    if (stressUri != null && stressUri.hasScheme && stressUri.host.isNotEmpty) {
       final segments = stressUri.pathSegments.where((part) => part != 'stress');
-      return stressUri
+      final baseUrl = stressUri
           .replace(pathSegments: segments, query: '', fragment: '')
-          .toString()
-          .replaceAll(RegExp(r'/+$'), '');
+          .toString();
+      final normalized = _validBackendBaseUrl(baseUrl);
+      if (normalized != null) return normalized;
     }
 
     const localUrl = String.fromEnvironment(
       'FULLBRIGHT_BACKEND_LOCAL_URL',
       defaultValue: 'http://10.0.2.2:8080',
     );
-    return localUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    return _validBackendBaseUrl(localUrl) ?? 'http://10.0.2.2:8080';
+  }
+
+  String? _validBackendBaseUrl(String value) {
+    final trimmed = value.trim().replaceAll(RegExp(r'/+$'), '');
+    if (trimmed.isEmpty) return null;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return null;
+    return trimmed;
   }
 
   Future<void> _signIn() async {
@@ -255,7 +265,7 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
     final confirmed = await _confirmAction(
       title: 'Delete login credentials?',
       message:
-          'This deletes Firebase Auth sign-in credentials for ${target.displayName}, including email/password or Google sign-in. Firestore profile data is kept.',
+          'This deletes Firebase Auth sign-in credentials for ${target.displayName}, including email/password or Google sign-in, plus matching Firestore user data to avoid duplicate identities after re-registration.',
       confirmLabel: 'Delete credentials',
       icon: Icons.person_remove_alt_1_rounded,
       destructive: true,
@@ -271,9 +281,11 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
     setState(() => _busyUserId = target.uid);
     try {
       final token = await admin.getIdToken(true);
+      final backendUrl = _backendBaseUrl;
+      final endpoint = Uri.parse('$backendUrl/developer-delete-user');
       final response = await http
           .post(
-            Uri.parse('$_backendBaseUrl/developer-delete-user'),
+            endpoint,
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
@@ -298,12 +310,13 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
         details: {
           'deletedUid': data['deletedUid'],
           'deletedEmail': data['deletedEmail'],
+          'deletedFirestorePaths': data['deletedFirestorePaths'],
         },
       );
       setState(
         () => _message =
             data['message'] as String? ??
-            'Firebase Auth login credentials were deleted.',
+            'Firebase Auth login credentials and Firestore user data were deleted.',
       );
     } catch (error) {
       setState(() => _message = 'Delete credentials failed: $error');

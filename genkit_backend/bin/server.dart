@@ -451,13 +451,17 @@ Future<Response> _developerDeleteUser(Request request) async {
     }
 
     await backend.deleteAuthUser(targetUid);
+    final deletedFirestorePaths = await backend.deleteUserFirestoreData(
+      targetUid,
+    );
 
     return _jsonResponse({
       'ok': true,
       'deletedUid': targetUid,
       'deletedEmail': targetEmail,
+      'deletedFirestorePaths': deletedFirestorePaths,
       'message':
-          'Firebase Auth login credentials were deleted. Firestore profile data was not deleted.',
+          'Firebase Auth login credentials and matching Firestore user data were deleted.',
     });
   } catch (error) {
     return _errorResponse(error);
@@ -2270,6 +2274,138 @@ class _FirebaseBackend {
       body: jsonEncode({'localId': uid}),
     );
     _throwIfBad(response, 'delete Firebase Auth user');
+  }
+
+  Future<List<String>> deleteUserFirestoreData(String uid) async {
+    final deleted = <String>[];
+
+    for (final path in [
+      'users/$uid',
+      'admin_monitoring/$uid',
+      'leaderboard/$uid',
+      'admin_fcm_tokens/$uid',
+    ]) {
+      deleted.addAll(await deleteDocumentTree(path));
+    }
+
+    deleted.addAll(
+      await deleteDocumentsWhere(
+        collectionId: 'admin_alerts',
+        fieldPath: 'userId',
+        stringValue: uid,
+      ),
+    );
+
+    return deleted;
+  }
+
+  Future<List<String>> deleteDocumentTree(String documentPath) async {
+    final deleted = <String>[];
+    final childCollections = await listCollectionIds(documentPath);
+
+    for (final collectionId in childCollections) {
+      final childCollectionPath = '$documentPath/$collectionId';
+      final childDocuments = await listDocuments(childCollectionPath);
+      for (final childPath in childDocuments) {
+        deleted.addAll(await deleteDocumentTree(childPath));
+      }
+    }
+
+    if (await deleteDocument(documentPath)) {
+      deleted.add(documentPath);
+    }
+    return deleted;
+  }
+
+  Future<List<String>> listCollectionIds(String documentPath) async {
+    final client = await _authClient();
+    final ids = <String>[];
+    String? pageToken;
+
+    do {
+      final response = await client.post(
+        Uri.parse('$_documentsBase/$documentPath:listCollectionIds'),
+        headers: {HttpHeaders.contentTypeHeader: 'application/json'},
+        body: jsonEncode({
+          'pageSize': 100,
+          if (pageToken != null) 'pageToken': pageToken,
+        }),
+      );
+      if (response.statusCode == 404) return ids;
+      _throwIfBad(response, 'list Firestore subcollections');
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      ids.addAll(
+        (decoded['collectionIds'] as List? ?? const []).whereType<String>(),
+      );
+      pageToken = decoded['nextPageToken'] as String?;
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    return ids;
+  }
+
+  Future<List<String>> listDocuments(String collectionPath) async {
+    final client = await _authClient();
+    final paths = <String>[];
+    String? pageToken;
+
+    do {
+      final uri = Uri.parse('$_documentsBase/$collectionPath').replace(
+        queryParameters: {
+          'pageSize': '100',
+          if (pageToken != null) 'pageToken': pageToken,
+        },
+      );
+      final response = await client.get(uri);
+      if (response.statusCode == 404) return paths;
+      _throwIfBad(response, 'list Firestore documents');
+      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+      for (final document
+          in (decoded['documents'] as List? ?? const []).whereType<Map>()) {
+        final name = document['name'] as String?;
+        if (name != null) paths.add(_relativePath(name));
+      }
+      pageToken = decoded['nextPageToken'] as String?;
+    } while (pageToken != null && pageToken.isNotEmpty);
+
+    return paths;
+  }
+
+  Future<bool> deleteDocument(String path) async {
+    final client = await _authClient();
+    final response = await client.delete(Uri.parse('$_documentsBase/$path'));
+    if (response.statusCode == 404) return false;
+    _throwIfBad(response, 'delete Firestore document');
+    return true;
+  }
+
+  Future<List<String>> deleteDocumentsWhere({
+    required String collectionId,
+    required String fieldPath,
+    required String stringValue,
+  }) async {
+    final results = await _runQuery({
+      'structuredQuery': {
+        'from': [
+          {'collectionId': collectionId},
+        ],
+        'where': {
+          'fieldFilter': {
+            'field': {'fieldPath': fieldPath},
+            'op': 'EQUAL',
+            'value': {'stringValue': stringValue},
+          },
+        },
+        'limit': 500,
+      },
+    });
+
+    final deleted = <String>[];
+    for (final document in results) {
+      final name = document['name'] as String?;
+      if (name == null) continue;
+      deleted.addAll(await deleteDocumentTree(_relativePath(name)));
+    }
+    return deleted;
   }
 
   Future<bool> sendFcm({
