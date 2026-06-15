@@ -2,7 +2,7 @@
 
 This is the server-side AI endpoint for Admin Monitoring stress scoring and the Mood tab AI status.
 
-Backend version: `1.0.8`
+Backend version: `v1.0.9`
 
 It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. AI-dependent requests require a reachable backend and Groq configuration.
 

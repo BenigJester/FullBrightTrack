@@ -45,6 +45,8 @@ class StepsService with WidgetsBindingObserver {
 
   // ================= SAVE CONTROL =================
 
+  static const _firestoreStepSaveDelay = Duration(seconds: 10);
+
   Timer? _syncTimer;
   Timer? _localRefreshTimer;
   Timer? _firestoreSaveTimer;
@@ -144,8 +146,9 @@ class StepsService with WidgetsBindingObserver {
       if (stepsChanged && local.day.isNotEmpty) {
         _queueLocalState(local);
         await _persistQueue();
-        _autoSaveTodaySteps(local);
+        _scheduleFirestoreStepSave(local);
         if (syncNow) {
+          _firestoreSaveTimer?.cancel();
           await _saveTodayStepsToFirestore(local);
         }
       }
@@ -247,7 +250,8 @@ class StepsService with WidgetsBindingObserver {
   // ================= LOGOUT CLEAN UP ===================
 
   Future<void> fullLogoutCleanup() async {
-    await _flushCurrentStepsToFirestore();
+    _firestoreSaveTimer?.cancel();
+    await _refreshFromLocalCache();
 
     await StepForegroundService.stop();
 
@@ -264,37 +268,6 @@ class StepsService with WidgetsBindingObserver {
     await prefs.remove('bg_native_running');
     await prefs.remove('steps_queue');
     await prefs.remove('bg_debug');
-  }
-
-  Future<void> _flushCurrentStepsToFirestore() async {
-    _firestoreSaveTimer?.cancel();
-    await _refreshFromLocalCache();
-
-    final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
-    final state = StepLocalState(
-      steps: _steps,
-      baseline: _baseline,
-      initialSteps: _initialSteps,
-      lastRawSteps: _lastRawSteps,
-      anchorSteps: 0,
-      baselineSet: _baselineSet,
-      day: day,
-      debugText: _debugText,
-    );
-
-    _queueLocalState(state);
-    await _persistQueue();
-    await _waitForSyncIdle();
-    final saved = await _saveTodayStepsToFirestore(state);
-    if (!saved) {
-      throw Exception("Could not save today's steps before logout");
-    }
-  }
-
-  Future<void> _waitForSyncIdle() async {
-    for (var attempt = 0; attempt < 20 && _syncing; attempt++) {
-      await Future.delayed(const Duration(milliseconds: 100));
-    }
   }
 
   // =============== RESET ALL LOCAL DATA =================
@@ -513,45 +486,27 @@ class StepsService with WidgetsBindingObserver {
   Future<void> _enqueueSave() async {
     final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
 
-    _queueLocalState(
-      StepLocalState(
-        steps: _steps,
-        baseline: _baseline,
-        initialSteps: _initialSteps,
-        lastRawSteps: _lastRawSteps,
-        anchorSteps: 0,
-        baselineSet: _baselineSet,
-        day: day,
-        debugText: _debugText,
-      ),
+    final state = StepLocalState(
+      steps: _steps,
+      baseline: _baseline,
+      initialSteps: _initialSteps,
+      lastRawSteps: _lastRawSteps,
+      anchorSteps: 0,
+      baselineSet: _baselineSet,
+      day: day,
+      debugText: _debugText,
     );
 
+    _queueLocalState(state);
     await _persistQueue();
-    await _saveCurrentStepsToFirestore();
+    _scheduleFirestoreStepSave(state);
   }
 
-  void _autoSaveTodaySteps(StepLocalState state) {
+  void _scheduleFirestoreStepSave(StepLocalState state) {
     _firestoreSaveTimer?.cancel();
-    _firestoreSaveTimer = Timer(const Duration(milliseconds: 600), () {
+    _firestoreSaveTimer = Timer(_firestoreStepSaveDelay, () {
       unawaited(_saveTodayStepsToFirestore(state));
     });
-  }
-
-  Future<bool> _saveCurrentStepsToFirestore() {
-    final day = _currentDay.isEmpty ? _todayKey() : _currentDay;
-
-    return _saveTodayStepsToFirestore(
-      StepLocalState(
-        steps: _steps,
-        baseline: _baseline,
-        initialSteps: _initialSteps,
-        lastRawSteps: _lastRawSteps,
-        anchorSteps: 0,
-        baselineSet: _baselineSet,
-        day: day,
-        debugText: _debugText,
-      ),
-    );
   }
 
   Future<bool> _saveTodayStepsToFirestore(StepLocalState state) async {
@@ -661,12 +616,28 @@ class StepsService with WidgetsBindingObserver {
     try {
       while (_offlineQueue.isNotEmpty) {
         final item = _offlineQueue.first;
+        final itemDay = item['day'] as String?;
+        if (itemDay == null || itemDay.isEmpty) {
+          _offlineQueue.removeAt(0);
+          await _persistQueue();
+          continue;
+        }
+        final timestamp = (item['timestamp'] as num?)?.toInt() ?? 0;
+        final isFreshCurrentDay =
+            itemDay == _todayKey() &&
+            timestamp > 0 &&
+            DateTime.now().millisecondsSinceEpoch - timestamp <
+                _firestoreStepSaveDelay.inMilliseconds;
+
+        if (isFreshCurrentDay) {
+          return;
+        }
 
         final ref = FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .collection('steps')
-            .doc(item['day']);
+            .doc(itemDay);
 
         final doc = await ref.get();
 

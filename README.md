@@ -2,7 +2,7 @@
 
 FullBrightTrack is a Flutter productivity and wellbeing app for students. It combines step tracking, mood check-ins, journaling, task management, streak tracking, and Firestore leaderboards in one mobile experience.
 
-Current app version: `1.0.8`
+Current app version: `v1.0.9`
 
 ## Features
 
@@ -23,7 +23,7 @@ Current app version: `1.0.8`
 - Account flows for email/password and Google sign-in, with backend-sent registration confirmation links, provider-link confirmation, and account contact information.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
-- App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, and unreachable backend.
+- App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, and Wi-Fi without internet access.
 - Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts refreshes Admin Monitoring and opens the matching user.
 - Daily motivation popup.
 
@@ -434,7 +434,7 @@ After login, the app checks notification, physical activity, and battery optimiz
 
 When both physical activity and notification access are granted, the app starts the step foreground service so Android can show the persistent step-tracking notification. Battery unrestricted access uses Android's direct allow dialog and refreshes the access prompt when the app resumes.
 
-The app also watches internet status while the user is inside the app. If internet access or online services become unavailable, it shows a professional dialog with `Retry connection` and `Exit app`. Android reports airplane mode, missing Wi-Fi/mobile data, and Wi-Fi without internet through a native connectivity channel. Native step tracking remains offline-capable; AI, account, Firestore, and admin alert services require working internet.
+The app also watches device internet status while the user is inside the app. If Android reports airplane mode, missing Wi-Fi/mobile data, or Wi-Fi without internet access, it shows a professional dialog with `Retry connection` and `Exit app`. It does not treat backend timeout or service downtime as a device internet outage. Native step tracking remains offline-capable; AI, account, Firestore, and admin alert services require working internet.
 
 ## Testing
 
@@ -464,6 +464,7 @@ Current test coverage includes:
 ## Development Notes
 
 - Step counts are saved locally first and synced to Firestore when possible.
+- Current-day step updates are written to Firestore after the latest update has been quiet for about 10 seconds, and logout no longer waits for a final Firestore step save.
 - The leaderboard is Firestore-only and uses public summary documents.
 - Raw AI scoring is consent-gated and requires the backend when AI output is needed.
 - Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, charted by Week or Month, and can store contact numbers after Philippine mobile validation.

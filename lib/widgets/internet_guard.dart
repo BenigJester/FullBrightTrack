@@ -172,7 +172,6 @@ class _InternetGuardState extends State<InternetGuard>
       InternetProblemType.airplaneMode => Icons.airplanemode_active_rounded,
       InternetProblemType.wifiNoInternet => Icons.wifi_off_rounded,
       InternetProblemType.mobileDataOff => Icons.signal_cellular_off_rounded,
-      InternetProblemType.unreachable => Icons.cloud_off_rounded,
       _ => Icons.signal_wifi_connected_no_internet_4_rounded,
     };
   }
