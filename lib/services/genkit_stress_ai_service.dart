@@ -19,11 +19,28 @@ class GenkitStressAiService {
 
   static String get _flowUrl {
     final configured = _configuredFlowUrl.trim();
-    if (configured.isNotEmpty) return configured;
-    return kReleaseMode ? '' : _debugLocalFlowUrl.trim();
+    if (configured.isNotEmpty) return _normalizeStressFlowUrl(configured);
+    return kReleaseMode ? '' : _normalizeStressFlowUrl(_debugLocalFlowUrl);
   }
 
   static bool get isConfigured => _flowUrl.isNotEmpty;
+
+  static String _normalizeStressFlowUrl(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) return trimmed;
+
+    final meaningfulSegments = uri.pathSegments
+        .where((segment) => segment.trim().isNotEmpty)
+        .toList(growable: false);
+    if (meaningfulSegments.isEmpty) {
+      return uri.replace(path: '/stress').toString();
+    }
+
+    return trimmed;
+  }
 
   static Future<StressModelResult> analyze({
     required StressModelInput input,

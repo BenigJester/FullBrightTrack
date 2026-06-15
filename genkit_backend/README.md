@@ -2,7 +2,7 @@
 
 This is the server-side AI endpoint for Admin Monitoring stress scoring and the Mood tab AI status.
 
-Backend version: `1.0.5`
+Backend version: `1.0.6`
 
 It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. AI-dependent requests require a reachable backend and Groq configuration.
 
@@ -132,7 +132,7 @@ For Android emulator testing, Flutter can call the local backend through:
 flutter run --flavor user --dart-define=FULLBRIGHT_BACKEND_URL=http://10.0.2.2:8080 --dart-define=GENKIT_STRESS_FLOW_URL=http://10.0.2.2:8080/stress
 ```
 
-Debug Flutter builds also default to `http://10.0.2.2:8080/stress` when `GENKIT_STRESS_FLOW_URL` is omitted.
+Debug Flutter builds also default to `http://10.0.2.2:8080/stress` when `GENKIT_STRESS_FLOW_URL` is omitted. `GENKIT_STRESS_FLOW_URL` may be either the backend base URL or the full `/stress` URL; the Flutter app normalizes a base URL to `/stress` before calling AI reviews.
 
 Stress endpoint:
 

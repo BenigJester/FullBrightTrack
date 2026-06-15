@@ -2,7 +2,7 @@
 
 FullBrightTrack is a Flutter productivity and wellbeing app for students. It combines step tracking, mood check-ins, journaling, task management, streak tracking, and Firestore leaderboards in one mobile experience.
 
-Current app version: `1.0.5`
+Current app version: `1.0.6`
 
 ## Features
 
@@ -132,7 +132,7 @@ flutter pub get
 - Deploy `genkit_backend` to Render or another Docker host.
 - Set `GROQ_API_KEY` as a server environment variable.
 - Set `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_WEB_API_KEY`, `PUBLIC_BASE_URL`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, and `BREVO_SENDER_NAME` on the backend if registration confirmation emails are enabled.
-- Use both the deployed backend base URL and `/stress` endpoint when running or building Flutter.
+- Use both the deployed backend base URL and AI endpoint when running or building Flutter. `GENKIT_STRESS_FLOW_URL` may be either the backend base URL or the full `/stress` URL; the app normalizes a base URL to `/stress` for AI reviews.
 - Debug builds default to `http://10.0.2.2:8080/stress` if `GENKIT_STRESS_FLOW_URL` is not provided, which is useful for Android emulator testing against a local backend.
 - Users must agree to the raw wellness data processing consent on login before raw mood, journal, task, and step records are sent to the AI backend. AI-dependent online reviews require internet access and a reachable backend.
 
@@ -189,7 +189,7 @@ flutter run --flavor developer -t lib/developer/developer_app.dart --dart-define
 For a release/demo APK with App Check debug token support:
 
 ```bash
-flutter build apk --release --flavor developer -t lib/developer/developer_app.dart --dart-define=USE_APP_CHECK_DEBUG=true --dart-define=APP_CHECK_DEBUG_TOKEN=YOUR_VERSION_4_UUID
+flutter build apk --release --split-per-abi --flavor developer -t lib/developer/developer_app.dart --dart-define=FULLBRIGHT_BACKEND_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=GENKIT_STRESS_FLOW_URL=https://YOUR_RENDER_SERVICE.onrender.com --dart-define=USE_APP_CHECK_DEBUG=true --dart-define=APP_CHECK_DEBUG_TOKEN=YOUR_VERSION_4_UUID
 ```
 
 The developer app uses package `com.productivity.and.wellbeing.developer`, so it must have its own Firebase Android app, OAuth clients, App Check registration, and matching SHA-1/SHA-256 fingerprints.
