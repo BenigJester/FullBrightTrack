@@ -48,6 +48,7 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
   final _passwordController = TextEditingController();
   final _userSearchController = TextEditingController();
   final _userPageController = TextEditingController(text: '1');
+  final _userSearchFocusNode = FocusNode();
 
   String? _message;
   bool _authBusy = false;
@@ -55,6 +56,8 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
   String? _busyUserId;
   int _currentUserPage = 1;
   String _appliedUserSearch = '';
+  String? _developerAccessUid;
+  Future<bool>? _developerAccessFuture;
 
   @override
   void dispose() {
@@ -62,6 +65,7 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
     _passwordController.dispose();
     _userSearchController.dispose();
     _userPageController.dispose();
+    _userSearchFocusNode.dispose();
     super.dispose();
   }
 
@@ -222,6 +226,14 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
       await Future<void>.delayed(const Duration(milliseconds: 350));
     }
     return false;
+  }
+
+  Future<bool> _developerAccessFor(User user) {
+    if (_developerAccessUid != user.uid || _developerAccessFuture == null) {
+      _developerAccessUid = user.uid;
+      _developerAccessFuture = _waitForDeveloperAccess();
+    }
+    return _developerAccessFuture!;
   }
 
   Future<void> _signOut() async {
@@ -483,7 +495,7 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
                               _signInCard()
                             else
                               FutureBuilder<bool>(
-                                future: _waitForDeveloperAccess(),
+                                future: _developerAccessFor(user),
                                 builder: (context, accessSnapshot) {
                                   if (accessSnapshot.connectionState ==
                                       ConnectionState.waiting) {
@@ -763,6 +775,7 @@ class _DeveloperConsoleScreenState extends State<DeveloperConsoleScreen> {
               final compact = constraints.maxWidth < 430;
               final searchField = TextField(
                 controller: _userSearchController,
+                focusNode: _userSearchFocusNode,
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) => _applyUserSearch(),
                 decoration: InputDecoration(
