@@ -15,6 +15,7 @@ class LeaderboardEntry {
     required this.rank,
     required this.isCurrentUser,
     required this.role,
+    required this.sourceDocumentId,
   });
 
   final String uid;
@@ -28,6 +29,7 @@ class LeaderboardEntry {
   final int rank;
   final bool isCurrentUser;
   final String role;
+  final String sourceDocumentId;
 
   LeaderboardEntry copyWith({int? rank}) {
     return LeaderboardEntry(
@@ -42,6 +44,7 @@ class LeaderboardEntry {
       rank: rank ?? this.rank,
       isCurrentUser: isCurrentUser,
       role: role,
+      sourceDocumentId: sourceDocumentId,
     );
   }
 }
@@ -88,10 +91,17 @@ class LeaderboardService {
 
     final docs = await _firestore.collection('leaderboard').get();
     final entries = <LeaderboardEntry>[];
+    final staleCurrentUserDocs = <String>[];
 
     for (final doc in docs.docs) {
       final data = doc.data();
       if (data['monthKey'] != monthKey) continue;
+      final canonicalUid = _canonicalUid(doc);
+      if (currentUser != null &&
+          canonicalUid == currentUser.uid &&
+          doc.id != currentUser.uid) {
+        staleCurrentUserDocs.add(doc.id);
+      }
 
       final entry = await _entryFromDoc(doc, currentUser?.uid);
       if (entry != null) {
@@ -99,7 +109,13 @@ class LeaderboardService {
       }
     }
 
-    entries.sort((a, b) {
+    if (staleCurrentUserDocs.isNotEmpty) {
+      _cleanupStaleCurrentUserLeaderboardDocs(staleCurrentUserDocs);
+    }
+
+    final deduped = _dedupeByCanonicalUser(entries);
+
+    deduped.sort((a, b) {
       final pointsCompare = b.streakPoints.compareTo(a.streakPoints);
       if (pointsCompare != 0) return pointsCompare;
 
@@ -116,8 +132,8 @@ class LeaderboardService {
     });
 
     final ranked = <LeaderboardEntry>[];
-    for (var index = 0; index < entries.length; index++) {
-      ranked.add(entries[index].copyWith(rank: index + 1));
+    for (var index = 0; index < deduped.length; index++) {
+      ranked.add(deduped[index].copyWith(rank: index + 1));
     }
 
     LeaderboardEntry? current;
@@ -188,9 +204,10 @@ class LeaderboardService {
     String? currentUid,
   ) async {
     final data = doc.data();
+    final uid = _canonicalUid(doc);
     var profileData = <String, dynamic>{};
     try {
-      final profile = await _firestore.collection('users').doc(doc.id).get();
+      final profile = await _firestore.collection('users').doc(uid).get();
       profileData = profile.data() ?? <String, dynamic>{};
     } catch (_) {
       profileData = <String, dynamic>{};
@@ -211,7 +228,7 @@ class LeaderboardService {
     }
 
     return LeaderboardEntry(
-      uid: doc.id,
+      uid: uid,
       name: _firstName(_displayName({...data, ...profileData})),
       photoUrl: _photoUrl({...data, ...profileData}),
       monthlySteps: monthlySteps,
@@ -220,9 +237,58 @@ class LeaderboardService {
       moodStreak: moodStreak,
       streakPoints: streakPoints,
       rank: 0,
-      isCurrentUser: doc.id == currentUid || data['uid'] == currentUid,
+      isCurrentUser: uid == currentUid,
       role: _role({...data, ...profileData}),
+      sourceDocumentId: doc.id,
     );
+  }
+
+  static List<LeaderboardEntry> _dedupeByCanonicalUser(
+    List<LeaderboardEntry> entries,
+  ) {
+    final byUid = <String, LeaderboardEntry>{};
+
+    for (final entry in entries) {
+      final current = byUid[entry.uid];
+      if (current == null || _preferEntry(entry, current)) {
+        byUid[entry.uid] = entry;
+      }
+    }
+
+    return byUid.values.toList();
+  }
+
+  static bool _preferEntry(
+    LeaderboardEntry candidate,
+    LeaderboardEntry current,
+  ) {
+    final candidateUsesCanonicalDoc =
+        candidate.sourceDocumentId == candidate.uid;
+    final currentUsesCanonicalDoc = current.sourceDocumentId == current.uid;
+    if (candidateUsesCanonicalDoc != currentUsesCanonicalDoc) {
+      return candidateUsesCanonicalDoc;
+    }
+
+    if (candidate.streakPoints != current.streakPoints) {
+      return candidate.streakPoints > current.streakPoints;
+    }
+
+    return candidate.monthlySteps > current.monthlySteps;
+  }
+
+  static String _canonicalUid(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final storedUid = (doc.data()['uid'] as String?)?.trim();
+    return storedUid == null || storedUid.isEmpty ? doc.id : storedUid;
+  }
+
+  static void _cleanupStaleCurrentUserLeaderboardDocs(List<String> docIds) {
+    for (final docId in docIds) {
+      _firestore
+          .collection('leaderboard')
+          .doc(docId)
+          .delete()
+          .catchError((_) {});
+    }
   }
 
   static Future<Map<String, int>> _loadUserMonthSteps({
