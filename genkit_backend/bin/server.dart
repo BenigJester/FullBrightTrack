@@ -437,31 +437,45 @@ Future<Response> _developerDeleteUser(Request request) async {
     final targetUser = rawUid.isNotEmpty
         ? await backend.lookupUserByUid(rawUid)
         : await backend.lookupUserByEmail(rawEmail);
-    if (targetUser == null) {
-      throw const _BadRequest('Target Firebase Auth user was not found.');
-    }
 
-    final targetUid = (targetUser['localId'] as String?) ?? '';
-    final targetEmail = (targetUser['email'] as String?) ?? rawEmail;
-    if (targetUid.isEmpty) {
-      throw const _BadRequest('Target Firebase Auth user has no UID.');
+    final targetUid = ((targetUser?['localId'] as String?) ?? rawUid).trim();
+    final targetEmail = ((targetUser?['email'] as String?) ?? rawEmail).trim();
+    final firestoreTargetUids = <String>{
+      if (targetUid.isNotEmpty) targetUid,
+      if (targetUid.isEmpty && rawEmail.isNotEmpty)
+        ...await backend.findUserDocumentIdsByEmail(rawEmail),
+    };
+
+    if (firestoreTargetUids.isEmpty) {
+      throw const _BadRequest(
+        'No Firebase Auth or Firestore user data was found for this target.',
+      );
     }
-    if (targetUid == developerUid) {
+    if (firestoreTargetUids.contains(developerUid)) {
       throw const _BadRequest('You cannot delete your own developer login.');
     }
 
-    await backend.deleteAuthUser(targetUid);
-    final deletedFirestorePaths = await backend.deleteUserFirestoreData(
-      targetUid,
-    );
+    var authDeleted = false;
+    if (targetUser != null && targetUid.isNotEmpty) {
+      await backend.deleteAuthUser(targetUid);
+      authDeleted = true;
+    }
+
+    final deletedFirestorePaths = <String>[];
+    for (final uid in firestoreTargetUids) {
+      deletedFirestorePaths.addAll(await backend.deleteUserFirestoreData(uid));
+    }
 
     return _jsonResponse({
       'ok': true,
-      'deletedUid': targetUid,
+      'deletedUid': targetUid.isNotEmpty ? targetUid : null,
       'deletedEmail': targetEmail,
+      'authDeleted': authDeleted,
+      'firestoreTargetUids': firestoreTargetUids.toList(),
       'deletedFirestorePaths': deletedFirestorePaths,
-      'message':
-          'Firebase Auth login credentials and matching Firestore user data were deleted.',
+      'message': authDeleted
+          ? 'Firebase Auth login credentials and matching Firestore user data were deleted.'
+          : 'Firebase Auth login credentials were not found, so matching Firestore user data was cleaned instead.',
     });
   } catch (error) {
     return _errorResponse(error);
@@ -2295,8 +2309,46 @@ class _FirebaseBackend {
         stringValue: uid,
       ),
     );
+    deleted.addAll(
+      await deleteDocumentsWhere(
+        collectionId: 'leaderboard',
+        fieldPath: 'uid',
+        stringValue: uid,
+      ),
+    );
 
-    return deleted;
+    return deleted.toSet().toList();
+  }
+
+  Future<List<String>> findUserDocumentIdsByEmail(String email) async {
+    final normalizedEmail = email.trim().toLowerCase();
+    if (normalizedEmail.isEmpty) return const [];
+
+    final results = await _runQuery({
+      'structuredQuery': {
+        'from': [
+          {'collectionId': 'users'},
+        ],
+        'where': {
+          'fieldFilter': {
+            'field': {'fieldPath': 'email'},
+            'op': 'EQUAL',
+            'value': {'stringValue': normalizedEmail},
+          },
+        },
+        'limit': 20,
+      },
+    });
+
+    return results
+        .map((document) => document['name'] as String?)
+        .whereType<String>()
+        .map(_relativePath)
+        .where((path) => path.startsWith('users/'))
+        .map((path) => path.substring('users/'.length))
+        .where((uid) => uid.isNotEmpty && !uid.contains('/'))
+        .toSet()
+        .toList();
   }
 
   Future<List<String>> deleteDocumentTree(String documentPath) async {

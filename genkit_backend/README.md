@@ -2,7 +2,7 @@
 
 This is the server-side AI endpoint for Admin Monitoring stress scoring and the Mood tab AI status.
 
-Backend version: `1.0.7`
+Backend version: `1.0.8`
 
 It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. AI-dependent requests require a reachable backend and Groq configuration.
 
@@ -306,7 +306,7 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-The backend verifies the developer token against Firebase Auth and checks `users/{developerUid}.role == "developer"` before deleting the target user. It deletes the Firebase Auth login credentials and matching Firestore identity records, including `users/{uid}` with its subcollections, `admin_monitoring/{uid}`, `leaderboard/{uid}`, `admin_fcm_tokens/{uid}` with token subcollections, and `admin_alerts` where `userId == uid`. This prevents duplicate old Firestore identities when the same email registers again and receives a new Firebase Auth UID.
+The backend verifies the developer token against Firebase Auth and checks `users/{developerUid}.role == "developer"` before deleting the target user. It deletes the Firebase Auth login credentials when they still exist and always cleans matching Firestore identity records it can identify, including `users/{uid}` with its subcollections, `admin_monitoring/{uid}`, `leaderboard/{uid}`, stale `leaderboard` aliases where stored `uid == uid`, `admin_fcm_tokens/{uid}` with token subcollections, and `admin_alerts` where `userId == uid`. This prevents duplicate old Firestore identities when the same email registers again and receives a new Firebase Auth UID.
 
 Journal warning mode example:
 
