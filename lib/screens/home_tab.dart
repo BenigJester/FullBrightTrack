@@ -424,13 +424,13 @@ class _HomeTabState extends State<HomeTab> {
 
   String moodIntensityLabel(double intensity) {
     if (intensity < 0.25) {
-      return "Low";
+      return "Calm";
     } else if (intensity < 0.5) {
-      return "Moderate";
+      return "Mild";
     } else if (intensity < 0.75) {
       return "High";
     } else {
-      return "Super";
+      return "Peak";
     }
   }
 
