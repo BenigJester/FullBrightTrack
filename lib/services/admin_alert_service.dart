@@ -204,9 +204,14 @@ class AdminAlertService {
       return;
     }
 
-    final title = message.notification?.title ?? 'FullBrightTrack alert';
+    final title =
+        message.notification?.title ??
+        message.data['title'] as String? ??
+        'FullBrightTrack alert';
     final body =
-        message.notification?.body ?? 'Admin notification delivery is working.';
+        message.notification?.body ??
+        message.data['body'] as String? ??
+        'Admin notification delivery is working.';
 
     if (type == 'admin_notification_test') {
       unawaited(

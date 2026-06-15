@@ -2,7 +2,7 @@
 
 FullBrightTrack is a Flutter productivity and wellbeing app for students. It combines step tracking, mood check-ins, journaling, task management, streak tracking, and Firestore leaderboards in one mobile experience.
 
-Current app version: `1.0.3`
+Current app version: `1.0.4`
 
 ## Features
 
@@ -468,6 +468,8 @@ Current test coverage includes:
 - Raw AI scoring is consent-gated and requires the backend when AI output is needed.
 - Admin Monitoring lists are filtered locally by rank, sorted by confidence, displayed in pages of 100 students, charted by Week or Month, and can store contact numbers after Philippine mobile validation.
 - Admin FCM alerts require the backend worker route or `ADMIN_ALERT_WORKER_INTERVAL_SECONDS`; client-side token registration alone does not send push notifications. The Flutter app also registers a background FCM handler so admin alert/test payloads remain usable when the app is backgrounded or opened from a closed state.
+- Admin FCM backend messages are sent as high-priority data payloads so the Flutter background handler can create the local Admin Safety Alert notification consistently.
+- The app-wide internet guard uses the root navigator context before showing retry/exit dialogs, preventing startup crashes when the guard is mounted above the Navigator.
 - Leaderboard results use a short in-memory cache when reopening the screen; pull-to-refresh bypasses the cache.
 - Journal warning review uses the AI backend and fails visibly if the online service is unavailable. The AI prompt can ignore safe slang, jokes, quotes, or non-risk context.
 - Step streaks preserve the current streak during the unfinished current day and reset the next day if no goal is reached.

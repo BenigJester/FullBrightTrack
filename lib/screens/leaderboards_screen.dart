@@ -29,7 +29,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
 
   Future<void> _refresh() async {
     final next = LeaderboardService.loadMonthlyLeaderboard(forceRefresh: true);
-    setState(() => _leaderboard = next);
+    setState(() {
+      _leaderboard = next;
+    });
     await next;
   }
 

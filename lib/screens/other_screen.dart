@@ -251,7 +251,7 @@ class _MoreScreenState extends State<MoreScreen> {
                         showAboutDialog(
                           context: context,
                           applicationName: "Productivity and Wellbeing",
-                          applicationVersion: "1.0.3",
+                          applicationVersion: "1.0.4",
                         );
                       },
                     ),
@@ -1177,7 +1177,9 @@ class _NotificationHistoryScreenState extends State<NotificationHistoryScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() => _historyFuture = NotificationHistoryService.load());
+    setState(() {
+      _historyFuture = NotificationHistoryService.load();
+    });
     await _historyFuture;
   }
 

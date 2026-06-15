@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/app_navigator_service.dart';
 import '../services/internet_status_service.dart';
 
 class InternetGuard extends StatefulWidget {
@@ -64,10 +65,20 @@ class _InternetGuardState extends State<InternetGuard>
 
   Future<void> _showProblem(InternetStatus status) async {
     if (_dialogVisible || !mounted) return;
+
+    final navigatorContext = AppNavigatorService.context;
+    if (navigatorContext == null || !navigatorContext.mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_showProblem(status));
+      });
+      return;
+    }
+
     _dialogVisible = true;
 
     await showDialog<void>(
-      context: context,
+      context: navigatorContext,
+      useRootNavigator: true,
       barrierDismissible: false,
       builder: (context) {
         return PopScope(
@@ -113,7 +124,7 @@ class _InternetGuardState extends State<InternetGuard>
                     final next = await InternetStatusService.check();
                     if (!context.mounted) return;
                     if (next.isOk) {
-                      Navigator.pop(context);
+                      Navigator.of(context, rootNavigator: true).pop();
                       return;
                     }
                     ScaffoldMessenger.of(context)

@@ -2,7 +2,7 @@
 
 This is the server-side AI endpoint for Admin Monitoring stress scoring and the Mood tab AI status.
 
-Backend version: `1.0.3`
+Backend version: `1.0.4`
 
 It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. AI-dependent requests require a reachable backend and Groq configuration.
 
@@ -36,6 +36,8 @@ The backend can also run thesis-demo account and admin alert workflows:
 - `/admin-alert-worker` polls Firestore `admin_alerts`, reads admin FCM tokens, and sends push notifications through FCM HTTP v1.
 - `/test-admin-notification` sends a direct test notification to registered admin/developer FCM tokens.
 - `/developer-delete-user` lets the developer app delete Firebase Auth login credentials for a target UID or email after verifying the signed-in caller has `users/{uid}.role == "developer"`.
+
+Admin FCM delivery uses high-priority data-only messages. The Flutter app receives the data payload in foreground/background handlers and creates the local `Admin Safety Alerts` notification, keeping notification tap behavior consistent when the app is open, backgrounded, or relaunched from a notification.
 
 ## Local Run
 

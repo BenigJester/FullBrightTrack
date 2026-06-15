@@ -2287,12 +2287,8 @@ class _FirebaseBackend {
       body: jsonEncode({
         'message': {
           'token': token,
-          'notification': {'title': title, 'body': body},
           'data': data,
-          'android': {
-            'priority': 'HIGH',
-            'notification': {'channel_id': 'admin_safety_alerts'},
-          },
+          'android': {'priority': 'HIGH'},
         },
       }),
     );
