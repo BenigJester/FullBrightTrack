@@ -2,7 +2,7 @@
 
 This is the server-side AI endpoint for Admin Monitoring stress scoring and the Mood tab AI status.
 
-Backend version: `1.0.4`
+Backend version: `1.0.5`
 
 It accepts a consent-gated raw wellness payload from the Flutter app plus a local numeric baseline for calibration. The raw payload can include recent steps, mood check-ins, journal text, journal warning labels, and task records. AI-dependent requests require a reachable backend and Groq configuration.
 
@@ -35,7 +35,7 @@ The backend can also run thesis-demo account and admin alert workflows:
 - `/complete-password-reset` updates the Firebase Auth password after the reset token is valid and unused.
 - `/admin-alert-worker` polls Firestore `admin_alerts`, reads admin FCM tokens, and sends push notifications through FCM HTTP v1.
 - `/test-admin-notification` sends a direct test notification to registered admin/developer FCM tokens.
-- `/developer-delete-user` lets the developer app delete Firebase Auth login credentials for a target UID or email after verifying the signed-in caller has `users/{uid}.role == "developer"`.
+- `/developer-delete-user` lets the developer app delete Firebase Auth login credentials and matching Firestore identity data for a target UID or email after verifying the signed-in caller has `users/{uid}.role == "developer"`.
 
 Admin FCM delivery uses high-priority data-only messages. The Flutter app receives the data payload in foreground/background handlers and creates the local `Admin Safety Alerts` notification, keeping notification tap behavior consistent when the app is open, backgrounded, or relaunched from a notification.
 
@@ -306,7 +306,7 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-The backend verifies the developer token against Firebase Auth and checks `users/{developerUid}.role == "developer"` before deleting the target Firebase Auth user. This deletes sign-in credentials only; Firestore profile/data documents are kept unless deleted separately.
+The backend verifies the developer token against Firebase Auth and checks `users/{developerUid}.role == "developer"` before deleting the target user. It deletes the Firebase Auth login credentials and matching Firestore identity records, including `users/{uid}` with its subcollections, `admin_monitoring/{uid}`, `leaderboard/{uid}`, `admin_fcm_tokens/{uid}` with token subcollections, and `admin_alerts` where `userId == uid`. This prevents duplicate old Firestore identities when the same email registers again and receives a new Firebase Auth UID.
 
 Journal warning mode example:
 

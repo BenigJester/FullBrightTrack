@@ -10,7 +10,6 @@ enum InternetProblemType {
   noConnection,
   wifiNoInternet,
   mobileDataOff,
-  verySlow,
   unreachable,
 }
 
@@ -67,18 +66,6 @@ class InternetStatusService {
         );
       }
 
-      if (stopwatch.elapsedMilliseconds > 5000) {
-        return InternetStatus(
-          type: InternetProblemType.verySlow,
-          title: 'Internet is very slow',
-          message:
-              'The connection is responding too slowly for AI, account, and alert services. Try again when the signal is stronger.',
-          downstreamKbps: native?['downstreamKbps'] is int
-              ? native!['downstreamKbps'] as int
-              : 0,
-        );
-      }
-
       return InternetStatus.ok;
     } on SocketException {
       return const InternetStatus(
@@ -89,10 +76,10 @@ class InternetStatusService {
       );
     } on TimeoutException {
       return const InternetStatus(
-        type: InternetProblemType.verySlow,
-        title: 'Internet is very slow',
+        type: InternetProblemType.unreachable,
+        title: 'Online services are unreachable',
         message:
-            'The connection timed out. AI, account, and alert services need a stronger connection.',
+            'FullBrightTrack cannot reach its online services right now. Check your connection and retry.',
       );
     } catch (_) {
       return const InternetStatus(
@@ -130,8 +117,6 @@ class InternetStatusService {
     final transports = (status['transports'] as List? ?? const [])
         .whereType<String>()
         .toSet();
-    final downstreamKbps = (status['downstreamKbps'] as num?)?.toInt() ?? 0;
-
     if (airplaneMode) {
       return const InternetStatus(
         type: InternetProblemType.airplaneMode,
@@ -165,16 +150,6 @@ class InternetStatusService {
         title: 'No internet access',
         message:
             'The device has a network connection, but internet access is not available.',
-      );
-    }
-
-    if (downstreamKbps > 0 && downstreamKbps < 150) {
-      return InternetStatus(
-        type: InternetProblemType.verySlow,
-        title: 'Internet is very slow',
-        message:
-            'The connection is too weak for reliable AI, account, and alert services. Try again when signal improves.',
-        downstreamKbps: downstreamKbps,
       );
     }
 

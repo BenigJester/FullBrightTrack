@@ -2,7 +2,7 @@
 
 FullBrightTrack is a Flutter productivity and wellbeing app for students. It combines step tracking, mood check-ins, journaling, task management, streak tracking, and Firestore leaderboards in one mobile experience.
 
-Current app version: `1.0.4`
+Current app version: `1.0.5`
 
 ## Features
 
@@ -23,7 +23,7 @@ Current app version: `1.0.4`
 - Account flows for email/password and Google sign-in, with backend-sent registration confirmation links, provider-link confirmation, and account contact information.
 - Login consent gate for processing raw wellness data such as mood, journal, task, and step records for AI insights and safety alerts.
 - App Check support for Firebase protection with debug-token support for development builds.
-- App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, unreachable backend, and very slow internet.
+- App-wide internet checker with retry/exit dialog for airplane mode, no Wi-Fi/mobile data, Wi-Fi without internet, and unreachable backend.
 - Backend worker support for sending admin FCM safety alerts from `admin_alerts` to registered `admin_fcm_tokens`; tapping alerts refreshes Admin Monitoring and opens the matching user.
 - Daily motivation popup.
 
@@ -434,7 +434,7 @@ After login, the app checks notification, physical activity, and battery optimiz
 
 When both physical activity and notification access are granted, the app starts the step foreground service so Android can show the persistent step-tracking notification. Battery unrestricted access uses Android's direct allow dialog and refreshes the access prompt when the app resumes.
 
-The app also watches internet status while the user is inside the app. If online services become unavailable, it shows a professional dialog with `Retry connection` and `Exit app`. Android reports airplane mode, missing Wi-Fi/mobile data, Wi-Fi without internet, and weak/slow connection hints through a native connectivity channel. Native step tracking remains offline-capable; AI, account, Firestore, and admin alert services require working internet.
+The app also watches internet status while the user is inside the app. If internet access or online services become unavailable, it shows a professional dialog with `Retry connection` and `Exit app`. Android reports airplane mode, missing Wi-Fi/mobile data, and Wi-Fi without internet through a native connectivity channel. Native step tracking remains offline-capable; AI, account, Firestore, and admin alert services require working internet.
 
 ## Testing
 

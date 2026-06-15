@@ -251,7 +251,7 @@ class _MoreScreenState extends State<MoreScreen> {
                         showAboutDialog(
                           context: context,
                           applicationName: "Productivity and Wellbeing",
-                          applicationVersion: "1.0.4",
+                          applicationVersion: "1.0.5",
                         );
                       },
                     ),
